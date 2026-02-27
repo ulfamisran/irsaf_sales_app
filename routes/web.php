@@ -7,6 +7,8 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\IncomingGoodsController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\LandingPageAdminController;
+use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
@@ -21,9 +23,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', [LandingPageController::class, 'index'])->name('landing.index');
 
 Route::get('/dashboard', function (Request $request) {
     $user = auth()->user();
@@ -259,6 +259,31 @@ Route::middleware('auth')->group(function () {
     Route::get('reports/stock-branch', [ReportController::class, 'stockBranch'])
         ->middleware('role:admin_cabang,kasir')
         ->name('reports.stock-branch');
+
+    Route::middleware('role:super_admin')->group(function () {
+        Route::get('landing-page', [LandingPageAdminController::class, 'index'])
+            ->name('landing-page.manage');
+        Route::put('landing-page/settings', [LandingPageAdminController::class, 'updateSettings'])
+            ->name('landing-page.settings.update');
+        Route::post('landing-page/slides', [LandingPageAdminController::class, 'storeSlide'])
+            ->name('landing-page.slides.store');
+        Route::put('landing-page/slides/{slide}', [LandingPageAdminController::class, 'updateSlide'])
+            ->name('landing-page.slides.update');
+        Route::delete('landing-page/slides/{slide}', [LandingPageAdminController::class, 'destroySlide'])
+            ->name('landing-page.slides.destroy');
+        Route::post('landing-page/features', [LandingPageAdminController::class, 'storeFeature'])
+            ->name('landing-page.features.store');
+        Route::put('landing-page/features/{feature}', [LandingPageAdminController::class, 'updateFeature'])
+            ->name('landing-page.features.update');
+        Route::delete('landing-page/features/{feature}', [LandingPageAdminController::class, 'destroyFeature'])
+            ->name('landing-page.features.destroy');
+        Route::post('landing-page/instagram', [LandingPageAdminController::class, 'storeInstagramPost'])
+            ->name('landing-page.instagram.store');
+        Route::put('landing-page/instagram/{post}', [LandingPageAdminController::class, 'updateInstagramPost'])
+            ->name('landing-page.instagram.update');
+        Route::delete('landing-page/instagram/{post}', [LandingPageAdminController::class, 'destroyInstagramPost'])
+            ->name('landing-page.instagram.destroy');
+    });
 });
 
 require __DIR__.'/auth.php';
