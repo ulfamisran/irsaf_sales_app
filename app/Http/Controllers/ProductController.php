@@ -88,7 +88,7 @@ class ProductController extends Controller
     {
         $product->load('category');
 
-        $query = ProductUnit::with('location')
+        $query = ProductUnit::with(['warehouse', 'branch'])
             ->where('product_id', $product->id)
             ->orderByDesc('id');
 

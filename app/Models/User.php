@@ -24,6 +24,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'is_active',
     ];
 
     public function branch(): BelongsTo
@@ -60,7 +61,12 @@ class User extends Authenticatable
      */
     public function isSuperAdmin(): bool
     {
-        return $this->hasRole(Role::SUPER_ADMIN);
+        return $this->roles()
+            ->where(function ($query) {
+                $query->whereIn('name', [Role::SUPER_ADMIN, 'super admin', 'Super Admin'])
+                    ->orWhereIn('display_name', ['Super Admin', 'super admin', 'super_admin']);
+            })
+            ->exists();
     }
 
     /**
@@ -83,6 +89,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 }

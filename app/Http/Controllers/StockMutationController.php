@@ -128,7 +128,7 @@ class StockMutationController extends Controller
 
         $total = (clone $query)->count();
         $serials = $query
-            ->orderBy('serial_number')
+            ->orderBy('id')
             ->limit($limit)
             ->pluck('serial_number')
             ->all();

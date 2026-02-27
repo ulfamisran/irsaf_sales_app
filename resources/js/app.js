@@ -16,6 +16,15 @@ function toNumericString(value) {
     if (/^\d+\.\d{1,2}$/.test(str)) {
         return String(Math.round(parseFloat(str)));
     }
+    // Indonesian format with comma decimals (e.g. 7.800.000,00)
+    if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(str)) {
+        const head = str.split(',')[0] || '';
+        return head.replace(/\./g, '');
+    }
+    // Simple comma decimal (e.g. 7800000,00)
+    if (/^\d+,\d{1,2}$/.test(str)) {
+        return String(Math.round(parseFloat(str.replace(',', '.'))));
+    }
     return str.replace(/[^\d]/g, '');
 }
 
@@ -40,7 +49,7 @@ function attachRupiahFormatter() {
         }
 
         input.addEventListener('input', () => {
-            const raw = input.value.replace(/[^\d]/g, '');
+            const raw = toNumericString(input.value);
             input.value = formatRupiah(raw);
             input.setSelectionRange(input.value.length, input.value.length);
         });
@@ -50,7 +59,7 @@ function attachRupiahFormatter() {
                 // Pastikan nilai Rupiah dinormalisasi SEBELUM form dikirim
                 const moneyInputs = input.form.querySelectorAll('input[data-rupiah="true"]');
                 moneyInputs.forEach((el) => {
-                    const raw = String(el.value || '').replace(/[^\d]/g, '');
+                    const raw = toNumericString(el.value);
                     el.value = raw;
                 });
             });

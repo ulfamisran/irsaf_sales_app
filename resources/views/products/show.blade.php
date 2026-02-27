@@ -54,8 +54,8 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi Tipe') }}</label>
                         <select name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
-                            <option value="warehouse" {{ request('location_type') === 'warehouse' ? 'selected' : '' }}>{{ __('Warehouse') }}</option>
-                            <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Branch') }}</option>
+                            <option value="warehouse" {{ request('location_type') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                            <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                         </select>
                     </div>
                     <div class="min-w-[220px]">
@@ -108,9 +108,15 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">
-                                    {{ $u->location_type }}
-                                    -
-                                    {{ $u->location?->name ?? ('#'.$u->location_id) }}
+                                    @php
+                                        $locationLabel = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE
+                                            ? __('Gudang')
+                                            : __('Cabang');
+                                        $locationName = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE
+                                            ? ($u->warehouse?->name ?? ('#'.$u->location_id))
+                                            : ($u->branch?->name ?? ('#'.$u->location_id));
+                                    @endphp
+                                    {{ $locationLabel }}: {{ $locationName }}
                                 </td>
                                 <td class="px-4 py-3">{{ $u->received_date?->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $u->sold_at?->format('d/m/Y H:i') }}</td>

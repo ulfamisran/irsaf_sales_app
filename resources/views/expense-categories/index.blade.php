@@ -3,7 +3,16 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Jenis Pengeluaran') }}</h2>
-            <x-icon-btn-add :href="route('expense-categories.create')" :label="__('Tambah Jenis Pengeluaran')" />
+            @if (auth()->user()->isSuperAdmin())
+                <x-icon-btn-add :href="route('expense-categories.create')" :label="__('Tambah Jenis Pengeluaran')" />
+            @else
+                <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    {{ __('Tambah Jenis Pengeluaran') }}
+                </button>
+            @endif
         </div>
     </x-slot>
 
@@ -67,12 +76,25 @@
                             </td>
                             <td class="px-4 py-3 text-right">
                                 <div class="flex items-center justify-end gap-2">
-                                    <x-icon-btn-edit :href="route('expense-categories.edit', $category)" />
-                                    <form action="{{ route('expense-categories.destroy', $category) }}" method="POST" class="inline">
-                                        @csrf
-                                        @method('DELETE')
-                                        <x-icon-btn-delete />
-                                    </form>
+                                    @if (auth()->user()->isSuperAdmin())
+                                        <x-icon-btn-edit :href="route('expense-categories.edit', $category)" />
+                                        <form action="{{ route('expense-categories.destroy', $category) }}" method="POST" class="inline">
+                                            @csrf
+                                            @method('DELETE')
+                                            <x-icon-btn-delete />
+                                        </form>
+                                    @else
+                                        <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M17.414 2.586a2 2 0 010 2.828l-9.9 9.9a1 1 0 01-.353.222l-4 1.333a1 1 0 01-1.263-1.263l1.333-4a1 1 0 01.222-.353l9.9-9.9a2 2 0 012.828 0z"/>
+                                            </svg>
+                                        </button>
+                                        <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M6 7a1 1 0 011-1h6a1 1 0 011 1v9a2 2 0 01-2 2H8a2 2 0 01-2-2V7zm2-3a1 1 0 00-1 1v1h6V5a1 1 0 00-1-1H8z" clip-rule="evenodd"/>
+                                            </svg>
+                                        </button>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

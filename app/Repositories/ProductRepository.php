@@ -49,6 +49,25 @@ class ProductRepository
                 });
         }, 'ready_stock');
 
+        // Total stok di gudang
+        $query->selectSub(function ($q) {
+            $q->from('stocks')
+                ->selectRaw('COALESCE(SUM(quantity), 0)')
+                ->whereColumn('stocks.product_id', 'products.id')
+                ->where('stocks.location_type', Stock::LOCATION_WAREHOUSE);
+        }, 'warehouse_stock');
+
+        // Total stok di cabang (bisa difilter per cabang)
+        $query->selectSub(function ($q) use ($filters) {
+            $q->from('stocks')
+                ->selectRaw('COALESCE(SUM(quantity), 0)')
+                ->whereColumn('stocks.product_id', 'products.id')
+                ->where('stocks.location_type', Stock::LOCATION_BRANCH)
+                ->when(! empty($filters['branch_id']), function ($q2) use ($filters) {
+                    $q2->where('stocks.location_id', (int) $filters['branch_id']);
+                });
+        }, 'branch_stock');
+
         return $query->paginate($perPage)->withQueryString();
     }
 

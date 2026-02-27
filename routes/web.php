@@ -17,6 +17,7 @@ use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
 use App\Http\Controllers\StockInOutController;
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WarehouseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -283,6 +284,12 @@ Route::middleware('auth')->group(function () {
             ->name('landing-page.instagram.update');
         Route::delete('landing-page/instagram/{post}', [LandingPageAdminController::class, 'destroyInstagramPost'])
             ->name('landing-page.instagram.destroy');
+
+        Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
+        Route::get('users/create', [UserManagementController::class, 'create'])->name('users.create');
+        Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
+        Route::put('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
+        Route::patch('users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('users.toggle-active');
     });
 });
 

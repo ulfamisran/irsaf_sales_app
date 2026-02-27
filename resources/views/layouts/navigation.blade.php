@@ -207,17 +207,26 @@
 
                 <!-- Pengaturan -->
                 @if (auth()->user()->isSuperAdmin())
-                <li class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('landing-page.*', 'users.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pengaturan</p>
-                    <x-sidebar-nav-link :href="route('landing-page.manage')" :active="request()->routeIs('landing-page.*')">
-                        <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V7.414a2 2 0 00-.586-1.414l-2.414-2.414A2 2 0 0014.586 3H4z"/>
-                                <path d="M6 7h8v2H6V7zm0 4h8v2H6v-2z"/>
-                            </svg>
+                    <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
+                        <span class="flex items-center gap-3">
+                            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500/30 transition-colors">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V7.414a2 2 0 00-.586-1.414l-2.414-2.414A2 2 0 0014.586 3H4z"/>
+                                    <path d="M6 7h8v2H6V7zm0 4h8v2H6v-2z"/>
+                                </svg>
+                            </span>
+                            Pengaturan
                         </span>
-                        Kelola Landing Page
-                    </x-sidebar-nav-link>
+                        <svg class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': open }" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                    <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
+                        <li><x-sidebar-nav-link :href="route('landing-page.manage')" :active="request()->routeIs('landing-page.*')">Kelola Landing Page</x-sidebar-nav-link></li>
+                        <li><x-sidebar-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">Kelola User</x-sidebar-nav-link></li>
+                    </ul>
                 </li>
                 @endif
 

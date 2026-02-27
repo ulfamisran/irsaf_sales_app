@@ -50,5 +50,15 @@ class ProductUnit extends Model
             ? $this->belongsTo(Warehouse::class, 'location_id')
             : $this->belongsTo(Branch::class, 'location_id');
     }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'location_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'location_id');
+    }
 }
 
