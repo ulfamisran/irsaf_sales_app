@@ -60,6 +60,54 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+            <div class="card-modern p-4">
+                <p class="text-xs text-slate-600">{{ __('Total Dana Masuk (Gabungan)') }}</p>
+                <p class="text-lg font-semibold text-emerald-600">{{ number_format($totalSalesCombined ?? 0, 0, ',', '.') }}</p>
+                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
+            </div>
+            <div class="card-modern p-4">
+                <p class="text-xs text-slate-600">{{ __('Total Dana Masuk (Uang)') }}</p>
+                <p class="text-lg font-semibold text-emerald-600">{{ number_format($totalSalesCash ?? 0, 0, ',', '.') }}</p>
+                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
+            </div>
+            <div class="card-modern p-4">
+                <p class="text-xs text-slate-600">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</p>
+                <p class="text-lg font-semibold text-indigo-600">{{ number_format($totalTradeIn ?? 0, 0, ',', '.') }}</p>
+                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
+            </div>
+        </div>
+
+        @if (($paymentMethods ?? collect())->count())
+            <div class="card-modern p-6 mb-6">
+                <p class="text-sm text-slate-600 mb-3 font-semibold">{{ __('Rincian Metode Pembayaran') }}</p>
+                <div class="overflow-x-auto">
+                    @php
+                        $colorSets = [
+                            ['border' => 'border-emerald-200', 'bg' => 'bg-emerald-50', 'text' => 'text-emerald-700'],
+                            ['border' => 'border-indigo-200', 'bg' => 'bg-indigo-50', 'text' => 'text-indigo-700'],
+                            ['border' => 'border-amber-200', 'bg' => 'bg-amber-50', 'text' => 'text-amber-700'],
+                            ['border' => 'border-rose-200', 'bg' => 'bg-rose-50', 'text' => 'text-rose-700'],
+                            ['border' => 'border-sky-200', 'bg' => 'bg-sky-50', 'text' => 'text-sky-700'],
+                            ['border' => 'border-violet-200', 'bg' => 'bg-violet-50', 'text' => 'text-violet-700'],
+                        ];
+                    @endphp
+                    <div class="flex gap-3 min-w-max">
+                        @foreach ($paymentMethods as $pm)
+                            @php
+                                $color = $colorSets[$loop->index % count($colorSets)];
+                            @endphp
+                            @php $pmTotal = (float) data_get($paymentMethodTotals ?? [], $pm->id, 0); @endphp
+                            <div class="rounded-lg border {{ $color['border'] }} {{ $color['bg'] }} p-3 min-w-[180px]">
+                                <p class="text-xs text-slate-500">{{ $pm->display_label }}</p>
+                                <p class="text-lg font-semibold {{ $color['text'] }}">{{ number_format($pmTotal, 0, ',', '.') }}</p>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
@@ -71,6 +119,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pembayaran') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Metode (Bank)') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
@@ -104,6 +153,24 @@
                                     @else
                                         <span class="text-slate-400">-</span>
                                     @endif
+                                </td>
+                                <td class="px-4 py-3 text-slate-700">
+                                    @php
+                                        $bankNames = $sale->payments
+                                            ->map(fn ($p) => trim((string) ($p->paymentMethod?->nama_bank ?? '')))
+                                            ->filter()
+                                            ->unique()
+                                            ->values();
+                                        $fallbackMethods = $sale->payments
+                                            ->map(fn ($p) => trim((string) ($p->paymentMethod?->jenis_pembayaran ?? '')))
+                                            ->filter()
+                                            ->unique()
+                                            ->values();
+                                        $methodLabel = $bankNames->isNotEmpty()
+                                            ? $bankNames->implode(', ')
+                                            : ($fallbackMethods->first() ?: '-');
+                                    @endphp
+                                    {{ $methodLabel }}
                                 </td>
                                 <td class="px-4 py-3">{{ $sale->user?->name }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($sale->total, 0, ',', '.') }}</td>

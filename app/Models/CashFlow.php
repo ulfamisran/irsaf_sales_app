@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Warehouse;
 
 /**
  * @property-read \App\Models\PaymentMethod|null $paymentMethod
@@ -18,12 +19,14 @@ class CashFlow extends Model
 
     public const REFERENCE_SALE = 'sale';
     public const REFERENCE_SERVICE = 'service';
+    public const REFERENCE_RENTAL = 'rental';
     public const REFERENCE_EXPENSE = 'expense';
     public const REFERENCE_TRADE_IN = 'trade_in';
     public const REFERENCE_OTHER = 'lainnya';
 
     protected $fillable = [
         'branch_id',
+        'warehouse_id',
         'type',
         'amount',
         'description',
@@ -54,6 +57,11 @@ class CashFlow extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
     }
 
     public function expenseCategory(): BelongsTo

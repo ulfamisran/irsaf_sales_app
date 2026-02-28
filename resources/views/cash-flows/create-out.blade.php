@@ -12,11 +12,20 @@
         <div class="card-modern overflow-hidden">
             <div class="p-6" x-data="{
                 branchId: '{{ old('branch_id', auth()->user()->isSuperAdmin() ? '' : auth()->user()->branch_id) }}',
+                warehouseId: '{{ old('warehouse_id', '') }}',
                 paymentMethodId: '{{ old('payment_method_id', '') }}',
-                saldoMap: @js($saldoMap),
+                saldoMapBranch: @js($saldoMapBranch),
+                saldoMapWarehouse: @js($saldoMapWarehouse),
                 get saldo() {
-                    if (!this.branchId || !this.paymentMethodId) return null;
-                    const branch = this.saldoMap[this.branchId];
+                    const hasBranch = !!this.branchId;
+                    const hasWarehouse = !!this.warehouseId;
+                    if ((!hasBranch && !hasWarehouse) || !this.paymentMethodId) return null;
+                    if (hasWarehouse) {
+                        const wh = this.saldoMapWarehouse[this.warehouseId];
+                        if (!wh) return null;
+                        return wh[this.paymentMethodId] ?? 0;
+                    }
+                    const branch = this.saldoMapBranch[this.branchId];
                     if (!branch) return null;
                     return branch[this.paymentMethodId] ?? 0;
                 }
@@ -24,7 +33,7 @@
                 <form method="POST" action="{{ route('cash-flows.out.store') }}" class="space-y-4">
                     @csrf
 
-                    @if (auth()->user()->isSuperAdmin())
+                    @if (auth()->user()->isSuperAdmin() || !auth()->user()->branch_id)
                         <div>
                             <x-input-label for="branch_id" :value="__('Cabang')" />
                             <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" x-model="branchId">
@@ -34,6 +43,18 @@
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi gudang') }}</p>
+                        </div>
+                        <div>
+                            <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                            <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" x-model="warehouseId">
+                                <option value="">{{ __('Pilih Gudang') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ old('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi cabang') }}</p>
                         </div>
                     @endif
 

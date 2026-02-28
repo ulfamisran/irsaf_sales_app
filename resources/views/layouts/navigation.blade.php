@@ -109,8 +109,8 @@
                 </li>
 
                 <!-- Penjualan -->
-                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]))
-                <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*') ? 'true' : 'false' }} }" class="pt-2">
+                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::STAFF_GUDANG]))
+                <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -129,6 +129,7 @@
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
                         <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
+                        <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                     </ul>
                 </li>
                 @endif

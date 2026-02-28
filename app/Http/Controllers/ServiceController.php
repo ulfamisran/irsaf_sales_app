@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Services\ServiceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -45,12 +46,32 @@ class ServiceController extends Controller
             $query->where('status', $request->status);
         }
 
+        $totalService = (float) (clone $query)
+            ->where('status', '!=', Service::STATUS_CANCEL)
+            ->sum('service_price');
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+        $paymentMethodTotals = DB::table('service_payments')
+            ->join('services', 'service_payments.service_id', '=', 'services.id')
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('services.entry_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
+            ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
+            ->where('services.status', '!=', Service::STATUS_CANCEL)
+            ->selectRaw('service_payments.payment_method_id, SUM(service_payments.amount) as total')
+            ->groupBy('service_payments.payment_method_id')
+            ->pluck('total', 'service_payments.payment_method_id');
         $services = $query->paginate(20)->withQueryString();
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
 
-        return view('services.index', compact('services', 'branches'));
+        return view('services.index', compact('services', 'branches', 'totalService', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View

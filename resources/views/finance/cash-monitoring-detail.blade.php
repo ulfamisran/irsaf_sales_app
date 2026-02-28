@@ -5,7 +5,7 @@
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">
                 {{ __('Detail Arus Kas') }} - {{ $kasLabel }}
             </h2>
-            <a href="{{ route('finance.cash-monitoring', array_filter(['branch_id' => $branch->id, 'date_from' => $dateFrom ?? null, 'date_to' => $dateTo ?? null])) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+            <a href="{{ route('finance.cash-monitoring', array_filter(['branch_id' => $locationType === 'branch' ? $location->id : null, 'warehouse_id' => $locationType === 'warehouse' ? $location->id : null, 'date_from' => $dateFrom ?? null, 'date_to' => $dateTo ?? null])) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                 </svg>
@@ -18,10 +18,17 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-slate-100">
                 <dl class="flex flex-wrap gap-6">
-                    <div>
-                        <dt class="text-sm text-slate-500">{{ __('Cabang') }}</dt>
-                        <dd class="font-semibold text-slate-800">{{ $branch->name }}</dd>
-                    </div>
+                    @if ($locationType === 'overall')
+                        <div>
+                            <dt class="text-sm text-slate-500">{{ __('Lokasi') }}</dt>
+                            <dd class="font-semibold text-slate-800">{{ __('Gabungan Cabang + Gudang') }}</dd>
+                        </div>
+                    @else
+                        <div>
+                            <dt class="text-sm text-slate-500">{{ $locationType === 'warehouse' ? __('Gudang') : __('Cabang') }}</dt>
+                            <dd class="font-semibold text-slate-800">{{ $location->name }}</dd>
+                        </div>
+                    @endif
                     <div>
                         <dt class="text-sm text-slate-500">{{ __('Kas / Rekening') }}</dt>
                         <dd class="font-semibold text-slate-800">{{ $kasLabel }}</dd>

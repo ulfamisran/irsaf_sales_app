@@ -18,6 +18,15 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
@@ -52,15 +61,43 @@
             </div>
         </div>
 
+        @if (($paymentMethods ?? collect())->count())
+            <div class="card-modern p-6 mb-6">
+                <p class="text-sm text-slate-600 mb-3 font-semibold">{{ __('Rincian Metode Pembayaran') }}</p>
+                @php
+                    $colorSets = [
+                        ['border' => 'border-emerald-200', 'bg' => 'bg-emerald-50', 'text' => 'text-emerald-700'],
+                        ['border' => 'border-indigo-200', 'bg' => 'bg-indigo-50', 'text' => 'text-indigo-700'],
+                        ['border' => 'border-amber-200', 'bg' => 'bg-amber-50', 'text' => 'text-amber-700'],
+                        ['border' => 'border-rose-200', 'bg' => 'bg-rose-50', 'text' => 'text-rose-700'],
+                        ['border' => 'border-sky-200', 'bg' => 'bg-sky-50', 'text' => 'text-sky-700'],
+                        ['border' => 'border-violet-200', 'bg' => 'bg-violet-50', 'text' => 'text-violet-700'],
+                    ];
+                @endphp
+                <div class="overflow-x-auto">
+                    <div class="flex gap-3 min-w-max">
+                        @foreach ($paymentMethods as $pm)
+                            @php
+                                $pmTotal = (float) data_get($paymentMethodTotals ?? [], $pm->id, 0);
+                                $color = $colorSets[$loop->index % count($colorSets)];
+                            @endphp
+                            <div class="rounded-lg border {{ $color['border'] }} {{ $color['bg'] }} p-3 min-w-[180px]">
+                                <p class="text-xs text-slate-500">{{ $pm->display_label }}</p>
+                                <p class="text-lg font-semibold {{ $color['text'] }}">+{{ number_format($pmTotal, 0, ',', '.') }}</p>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead>
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
-                        @if (auth()->user()->isSuperAdmin())
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
-                        @endif
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
@@ -70,9 +107,13 @@
                     @forelse ($incomes as $inc)
                         <tr class="hover:bg-slate-50/50">
                             <td class="px-4 py-3">{{ $inc->transaction_date->format('d/m/Y') }}</td>
-                            @if (auth()->user()->isSuperAdmin())
-                                <td class="px-4 py-3">{{ $inc->branch?->name ?? '-' }}</td>
-                            @endif
+                            <td class="px-4 py-3">
+                                @if ($inc->warehouse_id)
+                                    {{ __('Gudang') }}: {{ $inc->warehouse?->name ?? '-' }}
+                                @else
+                                    {{ __('Cabang') }}: {{ $inc->branch?->name ?? '-' }}
+                                @endif
+                            </td>
                             <td class="px-4 py-3">{{ $inc->description }}</td>
                             <td class="px-4 py-3 text-right font-medium text-emerald-600">
                                 +{{ number_format($inc->amount, 0, ',', '.') }}
@@ -81,7 +122,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ auth()->user()->isSuperAdmin() ? 5 : 4 }}" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
+                            <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

@@ -43,6 +43,14 @@
                                 <textarea id="specs" name="specs" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="3">{{ old('specs') }}</textarea>
                                 <x-input-error :messages="$errors->get('specs')" class="mt-2" />
                             </div>
+                            <div>
+                                <x-input-label for="laptop_type" :value="__('Jenis Laptop')" />
+                                <select id="laptop_type" name="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="baru" {{ old('laptop_type', 'baru') === 'baru' ? 'selected' : '' }}>{{ __('Baru') }}</option>
+                                    <option value="bekas" {{ old('laptop_type') === 'bekas' ? 'selected' : '' }}>{{ __('Bekas') }}</option>
+                                </select>
+                                <x-input-error :messages="$errors->get('laptop_type')" class="mt-2" />
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                             <x-input-label for="purchase_price" :value="__('Purchase Price')" />

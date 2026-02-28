@@ -16,6 +16,7 @@ use App\Services\SaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -29,7 +30,7 @@ class SaleController extends Controller
     {
         $user = $request->user();
 
-        $query = Sale::with(['branch', 'user', 'customer', 'saleDetails'])
+        $query = Sale::with(['branch', 'user', 'customer', 'saleDetails', 'payments.paymentMethod'])
             ->orderByDesc('sale_date')
             ->orderByDesc('id');
 
@@ -48,12 +49,49 @@ class SaleController extends Controller
             $query->whereDate('sale_date', '<=', $request->date_to);
         }
 
+        $totalSales = (float) (clone $query)
+            ->where('status', '!=', Sale::STATUS_CANCEL)
+            ->sum('total');
+        $totalSalesCash = (float) DB::table('sale_payments')
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->sum('sale_payments.amount');
+        $totalTradeIn = (float) DB::table('sale_trade_ins')
+            ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->sum('sale_trade_ins.trade_in_value');
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+        $paymentMethodTotals = DB::table('sale_payments')
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->selectRaw('sale_payments.payment_method_id, SUM(sale_payments.amount) as total')
+            ->groupBy('sale_payments.payment_method_id')
+            ->pluck('total', 'sale_payments.payment_method_id');
         $sales = $query->paginate(20)->withQueryString();
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
 
-        return view('sales.index', compact('sales', 'branches'));
+        $totalSalesCombined = $totalSalesCash + $totalTradeIn;
+
+        return view('sales.index', compact('sales', 'branches', 'totalSales', 'totalTradeIn', 'totalSalesCash', 'totalSalesCombined', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View

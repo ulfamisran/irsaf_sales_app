@@ -14,7 +14,7 @@
                 <form method="POST" action="{{ route('cash-flows.in.store') }}" class="space-y-4">
                     @csrf
 
-                    @if (auth()->user()->isSuperAdmin())
+                    @if (auth()->user()->isSuperAdmin() || !auth()->user()->branch_id)
                         <div>
                             <x-input-label for="branch_id" :value="__('Cabang')" />
                             <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -24,6 +24,18 @@
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi gudang') }}</p>
+                        </div>
+                        <div>
+                            <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                            <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Pilih Gudang') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ old('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi cabang') }}</p>
                         </div>
                     @endif
 

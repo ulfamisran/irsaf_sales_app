@@ -66,6 +66,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('SKU') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Brand') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Series') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Beli') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
@@ -80,6 +81,7 @@
                                 <td class="px-4 py-3">{{ $product->sku }}</td>
                                 <td class="px-4 py-3">{{ $product->brand }}</td>
                                 <td class="px-4 py-3">{{ $product->series }}</td>
+                                <td class="px-4 py-3">{{ $product->laptop_type ? ucfirst($product->laptop_type) : '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->category?->name }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->purchase_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->selling_price, 0, ',', '.') }}</td>
@@ -118,7 +120,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
+                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

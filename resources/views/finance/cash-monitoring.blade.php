@@ -20,6 +20,15 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ (string) $selectedWarehouseId === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
@@ -49,6 +58,9 @@
                 $displayBranches = $selectedBranchId
                     ? $branches->where('id', $selectedBranchId)
                     : $branches;
+                $displayWarehouses = $selectedWarehouseId
+                    ? $warehouses->where('id', $selectedWarehouseId)
+                    : $warehouses;
             @endphp
 
             @php
@@ -86,15 +98,70 @@
                 };
             @endphp
 
+            <div class="card-modern overflow-hidden">
+                <div class="p-4 bg-slate-50 border-b border-slate-100">
+                    <h3 class="font-semibold text-slate-800">{{ __('Kas Gabungan') }}</h3>
+                    <p class="text-xs text-slate-500">{{ __('Semua Cabang + Gudang') }}</p>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
+                        @forelse ($kasKeys as $key)
+                            @php
+                                $amount = (float) data_get($overallTotals ?? [], $key, 0);
+                                $info = $kasLabels[$key] ?? ['label' => $key, 'subtitle' => null];
+                                $color = $getColorForKey($key);
+                            @endphp
+                            <a href="{{ route('finance.cash-monitoring.detail', array_filter(['overall' => 1, 'branch_id' => $selectedBranchId ?? null, 'warehouse_id' => $selectedWarehouseId ?? null, 'kas_key' => $key, 'date_from' => request('date_from'), 'date_to' => request('date_to')])) }}" class="block rounded-2xl {{ $color['bg'] }} p-5 min-h-[120px] hover:opacity-90 hover:scale-[1.02] transition-all duration-200 shadow-sm">
+                                <div class="flex justify-between items-start h-full">
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold {{ $color['text'] }} mb-1">{{ $info['label'] }}</p>
+                                        @if ($info['subtitle'])
+                                            <p class="text-xs {{ $color['text'] }} opacity-75 mb-2">{{ $info['subtitle'] }}</p>
+                                        @endif
+                                        <p class="text-xl font-bold {{ $color['bold'] }}">{{ number_format($amount, 0, ',', '.') }}</p>
+                                    </div>
+                                    <span class="text-xs {{ $color['text'] }} opacity-70 shrink-0">Detail →</span>
+                                </div>
+                            </a>
+                        @empty
+                            <div class="col-span-full text-center py-4 text-slate-500">
+                                {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran.') }}
+                            </div>
+                        @endforelse
+                    </div>
+
+                    <div class="flex flex-wrap gap-6 pt-4 border-t border-slate-200">
+                        <div>
+                            <span class="text-sm text-slate-500">{{ __('Total Pemasukan') }}</span>
+                            <p class="font-semibold text-emerald-600">{{ number_format($overallIn ?? 0, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-slate-500">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</span>
+                            <p class="font-semibold text-indigo-600">{{ number_format($overallTradeIn ?? 0, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-slate-500">{{ __('Total Pengeluaran') }}</span>
+                            <p class="font-semibold text-red-600">-{{ number_format($overallOut ?? 0, 0, ',', '.') }}</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-slate-500">{{ __('Saldo') }}</span>
+                            <p class="font-semibold {{ ($overallSaldo ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($overallSaldo ?? 0, 0, ',', '.') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             @forelse ($displayBranches as $branch)
                 @php
                     $totals = $branchTotals[$branch->id] ?? [];
                     $expense = $branchExpense[$branch->id] ?? 0;
-                    $totalPemasukan = array_sum($totals);
+                    $totalPemasukan = $branchInTotals[$branch->id] ?? 0;
+                    $saldo = $totalPemasukan - $expense;
                 @endphp
                 <div class="card-modern overflow-hidden">
                     <div class="p-4 bg-slate-50 border-b border-slate-100">
                         <h3 class="font-semibold text-slate-800">{{ $branch->name }}</h3>
+                        <p class="text-xs text-slate-500">{{ __('Cabang') }}</p>
                     </div>
                     <div class="p-6">
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
@@ -129,8 +196,16 @@
                                 <p class="font-semibold text-emerald-600">{{ number_format($totalPemasukan, 0, ',', '.') }}</p>
                             </div>
                             <div>
+                                <span class="text-sm text-slate-500">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</span>
+                                <p class="font-semibold text-indigo-600">{{ number_format($branchTradeIn[$branch->id] ?? 0, 0, ',', '.') }}</p>
+                            </div>
+                            <div>
                                 <span class="text-sm text-slate-500">{{ __('Total Pengeluaran') }}</span>
                                 <p class="font-semibold text-red-600">-{{ number_format($expense, 0, ',', '.') }}</p>
+                            </div>
+                            <div>
+                                <span class="text-sm text-slate-500">{{ __('Saldo') }}</span>
+                                <p class="font-semibold {{ $saldo >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($saldo, 0, ',', '.') }}</p>
                             </div>
                         </div>
                     </div>
@@ -140,11 +215,78 @@
                     <p class="text-slate-500">{{ __('Tidak ada data untuk ditampilkan. Pilih cabang atau pastikan ada transaksi.') }}</p>
                 </div>
             @endforelse
+            @if (! $selectedBranchId)
+            @forelse ($displayWarehouses as $warehouse)
+                @php
+                    $totals = $warehouseTotals[$warehouse->id] ?? [];
+                    $expense = $warehouseExpense[$warehouse->id] ?? 0;
+                    $totalPemasukan = $warehouseInTotals[$warehouse->id] ?? 0;
+                    $saldo = $totalPemasukan - $expense;
+                @endphp
+                <div class="card-modern overflow-hidden">
+                    <div class="p-4 bg-slate-50 border-b border-slate-100">
+                        <h3 class="font-semibold text-slate-800">{{ $warehouse->name }}</h3>
+                        <p class="text-xs text-slate-500">{{ __('Gudang') }}</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
+                            @forelse ($kasKeys as $key)
+                                @php
+                                    $amount = $totals[$key] ?? 0;
+                                    $info = $kasLabels[$key] ?? ['label' => $key, 'subtitle' => null];
+                                    $color = $getColorForKey($key);
+                                @endphp
+                                <a href="{{ route('finance.cash-monitoring.detail', array_filter(['warehouse_id' => $warehouse->id, 'kas_key' => $key, 'date_from' => request('date_from'), 'date_to' => request('date_to')])) }}" class="block rounded-2xl {{ $color['bg'] }} p-5 min-h-[120px] hover:opacity-90 hover:scale-[1.02] transition-all duration-200 shadow-sm">
+                                    <div class="flex justify-between items-start h-full">
+                                        <div class="flex-1">
+                                            <p class="text-sm font-semibold {{ $color['text'] }} mb-1">{{ $info['label'] }}</p>
+                                            @if ($info['subtitle'])
+                                                <p class="text-xs {{ $color['text'] }} opacity-75 mb-2">{{ $info['subtitle'] }}</p>
+                                            @endif
+                                            <p class="text-xl font-bold {{ $color['bold'] }}">{{ number_format($amount, 0, ',', '.') }}</p>
+                                        </div>
+                                        <span class="text-xs {{ $color['text'] }} opacity-70 shrink-0">Detail →</span>
+                                    </div>
+                                </a>
+                            @empty
+                                <div class="col-span-full text-center py-4 text-slate-500">
+                                    {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran.') }}
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <div class="flex flex-wrap gap-6 pt-4 border-t border-slate-200">
+                            <div>
+                                <span class="text-sm text-slate-500">{{ __('Total Pemasukan') }}</span>
+                                <p class="font-semibold text-emerald-600">{{ number_format($totalPemasukan, 0, ',', '.') }}</p>
+                            </div>
+                            <div>
+                                <span class="text-sm text-slate-500">{{ __('Total Pengeluaran') }}</span>
+                                <p class="font-semibold text-red-600">-{{ number_format($expense, 0, ',', '.') }}</p>
+                            </div>
+                            <div>
+                                <span class="text-sm text-slate-500">{{ __('Saldo') }}</span>
+                                <p class="font-semibold {{ $saldo >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($saldo, 0, ',', '.') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @empty
+                <div class="card-modern p-8 text-center">
+                    <p class="text-slate-500">{{ __('Tidak ada data gudang untuk ditampilkan.') }}</p>
+                </div>
+            @endforelse
+            @endif
         </div>
 
         @if ($selectedBranchId && $branches->isEmpty())
             <div class="card-modern p-8 text-center">
                 <p class="text-slate-500">{{ __('Cabang tidak ditemukan.') }}</p>
+            </div>
+        @endif
+        @if ($selectedWarehouseId && $warehouses->isEmpty())
+            <div class="card-modern p-8 text-center">
+                <p class="text-slate-500">{{ __('Gudang tidak ditemukan.') }}</p>
             </div>
         @endif
     </div>

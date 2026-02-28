@@ -16,6 +16,7 @@ class ProductUnit extends Model
      */
     public const STATUS_KEEP = 'keep';
     public const STATUS_SOLD = 'sold';
+    public const STATUS_IN_RENT = 'in_rent';
 
     protected $fillable = [
         'product_id',

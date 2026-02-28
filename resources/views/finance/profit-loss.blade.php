@@ -20,6 +20,15 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ (string) $selectedWarehouseId === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
@@ -47,7 +56,7 @@
         <div class="space-y-4">
             <div class="card-modern p-6">
                 <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Ringkasan') }}</h3>
-                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <dl class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
                         <dt class="text-slate-500">{{ __('Periode') }}</dt>
                         <dd class="font-semibold text-slate-800">{{ \Carbon\Carbon::parse($dateFrom)->format('d/m/Y') }} - {{ \Carbon\Carbon::parse($dateTo)->format('d/m/Y') }}</dd>
@@ -57,6 +66,10 @@
                         <dd class="font-semibold {{ $netProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">
                             {{ number_format($netProfit, 0, ',', '.') }}
                         </dd>
+                    </div>
+                    <div>
+                        <dt class="text-slate-500">{{ __('Total Biaya (Barang / Tukar Tambah)') }}</dt>
+                        <dd class="font-semibold text-indigo-600">{{ number_format($totalTradeIn ?? 0, 0, ',', '.') }}</dd>
                     </div>
                 </dl>
             </div>
@@ -103,6 +116,23 @@
                 </div>
             </div>
 
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card-modern p-6">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Penyewaan Laptop') }}</h3>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">{{ __('Total Pendapatan Sewa') }}</span>
+                        <span class="font-semibold text-emerald-600">+{{ number_format($totalRentalIncome ?? 0, 0, ',', '.') }}</span>
+                    </div>
+                </div>
+                <div class="card-modern p-6">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pemasukan Lainnya') }}</h3>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">{{ __('Total Pemasukan Lainnya') }}</span>
+                        <span class="font-semibold text-emerald-600">+{{ number_format($totalOtherIncome, 0, ',', '.') }}</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="space-y-4">
                 <div class="card-modern p-6">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran (Semua Jenis)') }}</h3>
@@ -113,24 +143,28 @@
                 </div>
 
                 <div class="card-modern p-6">
-                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Pengeluaran per Jenis') }}</h3>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Pengeluaran') }}</h3>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead>
                             <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Pengeluaran') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                                 <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
                             </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
-                            @forelse ($expenseByCategory as $row)
+                            @forelse ($expenseDetails as $row)
                                 <tr>
-                                    <td class="px-4 py-2">{{ $row['name'] }}</td>
-                                    <td class="px-4 py-2 text-right text-red-600">-{{ number_format($row['total'], 0, ',', '.') }}</td>
+                                    <td class="px-4 py-2">{{ $row->transaction_date?->format('d/m/Y') ?? '-' }}</td>
+                                    <td class="px-4 py-2">{{ $row->expenseCategory?->name ?? '-' }}</td>
+                                    <td class="px-4 py-2">{{ $row->description ?? '-' }}</td>
+                                    <td class="px-4 py-2 text-right text-red-600">-{{ number_format($row->amount, 0, ',', '.') }}</td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="2" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada data pengeluaran untuk periode ini.') }}</td>
+                                    <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada data pengeluaran untuk periode ini.') }}</td>
                                 </tr>
                             @endforelse
                             </tbody>

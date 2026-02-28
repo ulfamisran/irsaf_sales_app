@@ -412,8 +412,7 @@ class SaleService
                 ]);
             }
 
-            // Proses tukar tambah: buat produk baru dari input manual, tambah ke stok cabang, dana keluar TT
-            $ttCategory = ExpenseCategory::where('code', 'TT')->where('is_active', true)->first();
+            // Proses tukar tambah: buat produk baru dari input manual, tambah ke stok cabang
             foreach ($tradeIns as $tradeIn) {
                 $hpp = (float) $tradeIn->trade_in_value;
 
@@ -441,21 +440,6 @@ class SaleService
                     [$tradeIn->serial_number],
                     $saleDate
                 );
-
-                // Dana keluar TT
-                if ($ttCategory) {
-                    CashFlow::create([
-                        'branch_id' => $branch->id,
-                        'type' => CashFlow::TYPE_OUT,
-                        'amount' => $hpp,
-                        'description' => __('Tukar Tambah') . ' ' . $sale->invoice_number . ' - ' . ($tradeIn->brand ?? '') . ' ' . $tradeIn->serial_number,
-                        'reference_type' => CashFlow::REFERENCE_TRADE_IN,
-                        'reference_id' => $tradeIn->id,
-                        'expense_category_id' => $ttCategory->id,
-                        'transaction_date' => $saleDate,
-                        'user_id' => $userId ?? auth()->id(),
-                    ]);
-                }
             }
 
             $sale->update([

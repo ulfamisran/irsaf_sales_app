@@ -106,6 +106,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'payment_method_id' => $sp->payment_method_id,
                     'transaction_date' => $entryDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
@@ -209,6 +210,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'payment_method_id' => $sp->payment_method_id,
                     'transaction_date' => $entryDate,
                     'user_id' => auth()->id(),
                 ]);
@@ -294,6 +296,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $txDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);

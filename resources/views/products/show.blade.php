@@ -22,6 +22,10 @@
                         <p class="font-medium text-slate-800">{{ $product->category?->name }}</p>
                     </div>
                     <div>
+                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Jenis Laptop') }}</p>
+                        <p class="font-medium text-slate-800">{{ $product->laptop_type ? ucfirst($product->laptop_type) : '-' }}</p>
+                    </div>
+                    <div>
                         <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Harga Beli') }}</p>
                         <p class="font-medium text-slate-800">{{ number_format($product->purchase_price, 0, ',', '.') }}</p>
                     </div>

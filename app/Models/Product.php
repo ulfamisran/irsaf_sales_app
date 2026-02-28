@@ -18,6 +18,7 @@ class Product extends Model
         'brand',
         'series',
         'specs',
+        'laptop_type',
         'purchase_price',
         'selling_price',
     ];

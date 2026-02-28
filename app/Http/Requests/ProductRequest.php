@@ -32,6 +32,7 @@ class ProductRequest extends FormRequest
             'brand' => ['required', 'string', 'max:255'],
             'series' => ['nullable', 'string', 'max:255'],
             'specs' => ['nullable', 'string'],
+            'laptop_type' => ['required', 'in:baru,bekas'],
             'purchase_price' => ['required', 'numeric', 'min:0'],
             'selling_price' => ['required', 'numeric', 'min:0'],
         ];

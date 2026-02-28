@@ -1,9 +1,9 @@
 <x-app-layout>
-    <x-slot name="title">{{ __('Service Laptop') }}</x-slot>
+    <x-slot name="title">{{ __('Penyewaan') }}</x-slot>
     <x-slot name="header">
         <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Service Laptop') }}</h2>
-            <x-icon-btn-add :href="route('services.create')" :label="__('Service Baru')" />
+            <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Penyewaan') }}</h2>
+            <x-icon-btn-add :href="route('rentals.create')" :label="__('Sewa Baru')" />
         </div>
     </x-slot>
 
@@ -27,23 +27,22 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('services.index') }}" class="flex flex-wrap gap-3 items-end">
+                <form method="GET" action="{{ route('rentals.index') }}" class="flex flex-wrap gap-3 items-end">
                     <div class="min-w-[180px]">
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                        <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                        <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
-                            @foreach ($branches as $b)
-                                <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                            @foreach ($warehouses as $w)
+                                <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
-                        <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Pengembalian') }}</label>
+                        <select name="return_status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
-                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
-                            <option value="completed" {{ request('status') === 'completed' ? 'selected' : '' }}>{{ __('Selesai') }}</option>
-                            <option value="cancel" {{ request('status') === 'cancel' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
+                            <option value="belum_kembali" {{ request('return_status') === 'belum_kembali' ? 'selected' : '' }}>{{ __('Belum Kembali') }}</option>
+                            <option value="sudah_kembali" {{ request('return_status') === 'sudah_kembali' ? 'selected' : '' }}>{{ __('Sudah Kembali') }}</option>
                         </select>
                     </div>
                     <div>
@@ -58,7 +57,7 @@
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             {{ __('Filter') }}
                         </button>
-                        <a href="{{ route('services.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+                        <a href="{{ route('rentals.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
                     </div>
@@ -68,9 +67,9 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div class="card-modern p-6">
-                <p class="text-sm text-slate-600">{{ __('Total Pendapatan Service') }}</p>
-                <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalService ?? 0, 0, ',', '.') }}</p>
-                <!-- <p class="text-xs text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
+                <p class="text-sm text-slate-600">{{ __('Total Pendapatan Sewa') }}</p>
+                <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalRental ?? 0, 0, ',', '.') }}</p>
+                <p class="text-xs text-slate-500 mt-1">{{ __('Mengikuti filter gudang & tanggal di atas') }}</p>
             </div>
         </div>
 
@@ -110,63 +109,58 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pelanggan') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Laptop') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Masuk') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pembayaran') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Gudang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Penyewa') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Ambil') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Kembali') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pengembalian') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
-                        @forelse ($services as $svc)
+                        @forelse ($rentals as $rental)
                             <tr class="hover:bg-slate-50/50">
-                                <td class="px-4 py-3">{{ $svc->invoice_number }}</td>
-                                <td class="px-4 py-3">{{ $svc->branch?->name }}</td>
-                                <td class="px-4 py-3">{{ $svc->customer?->name ?? '-' }}</td>
-                                <td class="px-4 py-3">{{ Str::limit($svc->laptop_type, 25) }}</td>
-                                <td class="px-4 py-3">{{ $svc->entry_date->format('d/m/Y') }}</td>
+                                <td class="px-4 py-3">{{ $rental->invoice_number }}</td>
+                                <td class="px-4 py-3">{{ $rental->warehouse?->name }}</td>
+                                <td class="px-4 py-3">{{ $rental->customer?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">{{ $rental->pickup_date?->format('d/m/Y') }}</td>
+                                <td class="px-4 py-3">{{ $rental->return_date?->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">
                                     @php
-                                        $statusClass = match($svc->status) {
-                                            'completed' => 'bg-emerald-100 text-emerald-800',
-                                            'cancel' => 'bg-red-100 text-red-800',
-                                            default => 'bg-blue-100 text-blue-800',
-                                        };
+                                        $returnClass = $rental->return_status === 'sudah_kembali'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : 'bg-amber-100 text-amber-800';
                                     @endphp
-                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $statusClass }}">
-                                        {{ $svc->status === 'cancel' ? __('Dibatalkan') : ($svc->status === 'completed' ? __('Selesai') : __('Open')) }}
+                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $returnClass }}">
+                                        {{ $rental->return_status === 'sudah_kembali' ? __('Sudah Kembali') : __('Belum Kembali') }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">
-                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $svc->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
-                                        {{ $svc->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
+                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $rental->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
+                                        {{ $rental->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-3 text-right">{{ number_format($svc->service_price, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($rental->total, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('services.invoice', $svc) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900" title="{{ __('Invoice') }}">
+                                        <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900" title="{{ __('Invoice') }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
                                             {{ __('Invoice') }}
                                         </a>
-                                        @if ($svc->status === \App\Models\Service::STATUS_OPEN)
-                                            <x-icon-btn-edit :href="route('services.edit', $svc)" />
-                                        @endif
-                                        <x-icon-btn-view :href="route('services.show', $svc)" />
+                                        <x-icon-btn-view :href="route('rentals.show', $rental)" />
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data service.') }}</td>
+                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penyewaan.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
-                <div class="mt-4">{{ $services->links() }}</div>
+                <div class="mt-4">{{ $rentals->links() }}</div>
             </div>
         </div>
     </div>

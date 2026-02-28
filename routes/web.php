@@ -13,6 +13,7 @@ use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\RentalController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
@@ -197,6 +198,25 @@ Route::middleware('auth')->group(function () {
     Route::resource('sales', SaleController::class)
         ->middleware('role:admin_cabang,kasir')
         ->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+
+    Route::get('rentals/available-serials', [RentalController::class, 'availableSerials'])
+        ->middleware('role:staff_gudang,kasir')
+        ->name('rentals.available-serials');
+    Route::get('rentals/available-products', [RentalController::class, 'availableProducts'])
+        ->middleware('role:staff_gudang,kasir')
+        ->name('rentals.available-products');
+    Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
+        ->middleware('role:staff_gudang,kasir')
+        ->name('rentals.invoice');
+    Route::post('rentals/{rental}/add-payment', [RentalController::class, 'addPayment'])
+        ->middleware('role:staff_gudang,kasir')
+        ->name('rentals.add-payment');
+    Route::post('rentals/{rental}/mark-returned', [RentalController::class, 'markReturned'])
+        ->middleware('role:staff_gudang,kasir')
+        ->name('rentals.mark-returned');
+    Route::resource('rentals', RentalController::class)
+        ->middleware('role:staff_gudang,kasir')
+        ->only(['index', 'create', 'store', 'show']);
 
     Route::get('services/{service}/invoice', [ServiceController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir')

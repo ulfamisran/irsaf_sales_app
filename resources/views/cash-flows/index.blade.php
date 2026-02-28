@@ -18,6 +18,15 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe') }}</label>
@@ -53,16 +62,50 @@
             </div>
         </div>
 
+        @php
+            $totalCashIn = (float) ($summary['IN'] ?? 0);
+            $totalTradeInValue = (float) ($totalTradeIn ?? 0);
+            $totalInCombined = $totalCashIn + $totalTradeInValue;
+        @endphp
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div class="card-modern p-6">
-                <p class="text-sm text-slate-600">{{ __('Total Masuk') }}</p>
-                <p class="text-xl font-semibold text-emerald-600">{{ number_format($summary['IN'] ?? 0, 0, ',', '.') }}</p>
+            <div class="card-modern p-6 flex flex-col gap-4">
+                <div class="flex items-center gap-4">
+                <span class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v2m14 0h2a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-2m12-6H5m6 3a2 2 0 100 4 2 2 0 000-4z"/>
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-sm text-slate-600">{{ __('Total Dana Masuk (Gabungan)') }}</p>
+                    <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalInCombined, 0, ',', '.') }}</p>
+                    <p class="text-xs text-slate-500 mt-1">{{ __('Gabungan dana masuk + nilai barang tukar tambah') }}</p>
+                </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+                        <p class="text-xs text-emerald-700">{{ __('Dana Masuk (Uang)') }}</p>
+                        <p class="text-lg font-semibold text-emerald-700">{{ number_format($totalCashIn, 0, ',', '.') }}</p>
+                    </div>
+                    <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                        <p class="text-xs text-indigo-700">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</p>
+                        <p class="text-lg font-semibold text-indigo-700">{{ number_format($totalTradeInValue, 0, ',', '.') }}</p>
+                    </div>
+                </div>
             </div>
-            <div class="card-modern p-6">
-                <p class="text-sm text-slate-600">{{ __('Total Keluar') }}</p>
-                <p class="text-xl font-semibold text-red-600">{{ number_format($summary['OUT'] ?? 0, 0, ',', '.') }}</p>
+            <div class="card-modern p-6 flex items-center gap-4 self-start h-fit">
+                <span class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 text-red-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v2m14 0h2a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-2m12-6H5m8 3h-2"/>
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-sm text-slate-600">{{ __('Total Dana Keluar') }}</p>
+                    <p class="text-xl font-semibold text-red-600">{{ number_format($summary['OUT'] ?? 0, 0, ',', '.') }}</p>
+                </div>
             </div>
         </div>
+
 
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
@@ -71,9 +114,7 @@
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tipe') }}</th>
-                            @if (auth()->user()->isSuperAdmin())
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
-                            @endif
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Pengeluaran') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Referensi') }}</th>
@@ -90,9 +131,13 @@
                                         {{ $cf->type }}
                                     </span>
                                 </td>
-                                @if (auth()->user()->isSuperAdmin())
-                                    <td class="px-4 py-3">{{ $cf->branch?->name ?? '-' }}</td>
-                                @endif
+                                <td class="px-4 py-3">
+                                    @if ($cf->warehouse_id)
+                                        {{ __('Gudang') }}: {{ $cf->warehouse?->name ?? '-' }}
+                                    @else
+                                        {{ __('Cabang') }}: {{ $cf->branch?->name ?? '-' }}
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">
                                     @if ($cf->type === 'OUT')
                                         {{ $cf->expenseCategory?->name ?? '-' }}
@@ -109,7 +154,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="{{ auth()->user()->isSuperAdmin() ? 7 : 6 }}" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
+                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

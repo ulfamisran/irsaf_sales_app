@@ -8,9 +8,11 @@ use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\ExpenseCategory;
 use App\Models\PaymentMethod;
+use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class CashFlowController extends Controller
@@ -19,18 +21,31 @@ class CashFlowController extends Controller
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch', 'expenseCategory'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory'])
             ->where('type', CashFlow::TYPE_OUT)
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
+        $query->where(function ($q) {
+            $q->whereNull('reference_type')
+                ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                ->orWhereIn('reference_id', function ($sq) {
+                    $sq->select('id')
+                        ->from('rentals')
+                        ->where('status', '!=', 'cancel');
+                });
+        });
 
         if (! $user->isSuperAdmin()) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
             }
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        } else {
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
         }
 
         if ($request->filled('expense_category_id')) {
@@ -48,33 +63,58 @@ class CashFlowController extends Controller
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
 
         $totalOut = (float) (clone $query)->sum('amount');
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+        $paymentMethodTotals = (clone $query)
+            ->reorder()
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
+            ->pluck('total', 'payment_method_id');
 
-        return view('cash-flows.out-index', compact('expenses', 'branches', 'expenseCategories', 'totalOut'));
+        return view('cash-flows.out-index', compact('expenses', 'branches', 'warehouses', 'expenseCategories', 'totalOut', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function inIndex(Request $request): View
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse'])
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_OTHER)
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
+        $query->where(function ($q) {
+            $q->whereNull('reference_type')
+                ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                ->orWhereIn('reference_id', function ($sq) {
+                    $sq->select('id')
+                        ->from('rentals')
+                        ->where('status', '!=', 'cancel');
+                });
+        });
 
         if (! $user->isSuperAdmin()) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
             }
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        } else {
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
         }
 
         if ($request->filled('date_from')) {
@@ -89,27 +129,52 @@ class CashFlowController extends Controller
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
         $totalIn = (float) (clone $query)->sum('amount');
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+        $paymentMethodTotals = (clone $query)
+            ->reorder()
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
+            ->pluck('total', 'payment_method_id');
 
-        return view('cash-flows.in-index', compact('incomes', 'branches', 'totalIn'));
+        return view('cash-flows.in-index', compact('incomes', 'branches', 'warehouses', 'totalIn', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function index(Request $request): View
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse'])
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
+        $query->where(function ($q) {
+            $q->whereNull('reference_type')
+                ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                ->orWhereIn('reference_id', function ($sq) {
+                    $sq->select('id')
+                        ->from('rentals')
+                        ->where('status', '!=', 'cancel');
+                });
+        });
 
         if (! $user->isSuperAdmin()) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
             }
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        } else {
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
         }
 
         if ($request->filled('type')) {
@@ -124,19 +189,33 @@ class CashFlowController extends Controller
 
         $cashFlows = $query->paginate(20)->withQueryString();
 
-        $summary = CashFlow::selectRaw('type, SUM(amount) as total')
-            ->when(! $user->isSuperAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
+        $summaryBase = CashFlow::query()
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('branch_id', $user->branch_id))
             ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('warehouse_id'), fn ($q) => $q->where('warehouse_id', $request->warehouse_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('transaction_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('transaction_date', '<=', $request->date_to))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('transaction_date', '<=', $request->date_to));
+
+        $summary = (clone $summaryBase)
+            ->selectRaw('type, SUM(amount) as total')
             ->groupBy('type')
             ->pluck('total', 'type');
+
+        $totalTradeIn = (float) DB::table('sale_trade_ins')
+            ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+            ->where('sales.status', \App\Models\Sale::STATUS_RELEASED)
+            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+            ->sum('sale_trade_ins.trade_in_value');
 
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
-        return view('cash-flows.index', compact('cashFlows', 'summary', 'branches'));
+        return view('cash-flows.index', compact('cashFlows', 'summary', 'branches', 'warehouses', 'totalTradeIn'));
     }
 
     public function createOut(Request $request): View
@@ -145,6 +224,7 @@ class CashFlowController extends Controller
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
@@ -157,13 +237,15 @@ class CashFlowController extends Controller
             ->get();
 
         if (! $user->isSuperAdmin() && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
+            // allow staff gudang without branch
         }
 
         $branchIds = $branches->pluck('id')->toArray();
-        $saldoMap = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+        $warehouseIds = $warehouses->pluck('id')->toArray();
+        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+        $saldoMapWarehouse = (new KasBalanceService)->getSaldoPerWarehouseAndPm($warehouseIds);
 
-        return view('cash-flows.create-out', compact('branches', 'expenseCategories', 'paymentMethods', 'saldoMap'));
+        return view('cash-flows.create-out', compact('branches', 'warehouses', 'expenseCategories', 'paymentMethods', 'saldoMapBranch', 'saldoMapWarehouse'));
     }
 
     public function createIn(Request $request): View
@@ -173,9 +255,10 @@ class CashFlowController extends Controller
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
         if (! $user->isSuperAdmin() && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
+            // allow staff gudang without branch
         }
 
         $paymentMethods = PaymentMethod::where('is_active', true)
@@ -184,7 +267,7 @@ class CashFlowController extends Controller
             ->orderBy('no_rekening')
             ->get();
 
-        return view('cash-flows.create-in', compact('branches', 'paymentMethods'));
+        return view('cash-flows.create-in', compact('branches', 'warehouses', 'paymentMethods'));
     }
 
     public function storeOut(CashOutRequest $request): RedirectResponse
@@ -195,12 +278,19 @@ class CashFlowController extends Controller
         $branchId = $user->isSuperAdmin()
             ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
             : (int) $user->branch_id;
+        $warehouseId = $user->isSuperAdmin()
+            ? (isset($validated['warehouse_id']) ? (int) $validated['warehouse_id'] : null)
+            : null;
 
-        if (! $branchId) {
-            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
+        if (! $branchId && ! $warehouseId) {
+            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang/Gudang wajib dipilih.')]);
         }
 
-        $saldo = (new KasBalanceService)->getSaldo($branchId, (int) $validated['payment_method_id']);
+        $saldo = (new KasBalanceService)->getSaldoForLocation(
+            $warehouseId ? 'warehouse' : 'branch',
+            $warehouseId ?: $branchId,
+            (int) $validated['payment_method_id']
+        );
         $amount = (float) $validated['amount'];
         if ($amount > $saldo) {
             return redirect()->back()->withInput()->withErrors([
@@ -212,6 +302,7 @@ class CashFlowController extends Controller
 
         CashFlow::create([
             'branch_id' => $branchId,
+            'warehouse_id' => $warehouseId,
             'type' => CashFlow::TYPE_OUT,
             'amount' => $validated['amount'],
             'description' => $validated['description'] ?? null,
@@ -234,13 +325,17 @@ class CashFlowController extends Controller
         $branchId = $user->isSuperAdmin()
             ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
             : (int) $user->branch_id;
+        $warehouseId = $user->isSuperAdmin()
+            ? (isset($validated['warehouse_id']) ? (int) $validated['warehouse_id'] : null)
+            : null;
 
-        if (! $branchId) {
-            abort(403, __('Branch is required.'));
+        if (! $branchId && ! $warehouseId) {
+            abort(403, __('Branch/Warehouse is required.'));
         }
 
         CashFlow::create([
             'branch_id' => $branchId,
+            'warehouse_id' => $warehouseId,
             'type' => CashFlow::TYPE_IN,
             'amount' => $validated['amount'],
             'description' => $validated['description'] ?? null,

@@ -14,7 +14,8 @@ class CashOutRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['nullable', 'exists:branches,id'],
+            'branch_id' => ['nullable', 'exists:branches,id', 'required_without:warehouse_id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id', 'required_without:branch_id'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
             'transaction_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
