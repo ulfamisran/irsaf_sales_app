@@ -424,6 +424,7 @@ class SaleService
                     'brand' => $tradeIn->brand ?? '',
                     'series' => $tradeIn->series ?? '',
                     'specs' => $tradeIn->specs ?? '',
+                    'laptop_type' => 'bekas',
                     'purchase_price' => $hpp,
                     'selling_price' => $hpp,
                 ]);
@@ -512,6 +513,36 @@ class SaleService
             ];
         }
 
+        if (! empty($result)) {
+            $serialKeys = [];
+            $duplicates = [];
+            foreach ($result as $row) {
+                $serialKey = strtoupper((string) $row['serial_number']);
+                if (isset($serialKeys[$serialKey])) {
+                    $duplicates[] = $row['serial_number'];
+                } else {
+                    $serialKeys[$serialKey] = true;
+                }
+            }
+            if (! empty($duplicates)) {
+                throw new InvalidArgumentException(
+                    __('Nomor serial tukar tambah tidak boleh duplikat: :serials', [
+                        'serials' => implode(', ', array_values(array_unique($duplicates))),
+                    ])
+                );
+            }
+
+            $serials = array_map(fn ($row) => (string) $row['serial_number'], $result);
+            $exists = ProductUnit::whereIn('serial_number', $serials)
+                ->pluck('serial_number')
+                ->all();
+            if (! empty($exists)) {
+                throw new InvalidArgumentException(
+                    __('Nomor serial tukar tambah sudah terdaftar: :serials', ['serials' => implode(', ', $exists)])
+                );
+            }
+        }
+
         return $result;
     }
 
@@ -542,22 +573,92 @@ class SaleService
      * Data penjualan tetap tersimpan.
      * Jika unit serial sudah sold, tetap batalkan invoice tanpa mengubah status unit.
      */
-    public function cancelSale(Sale $sale): Sale
+    public function cancelSale(Sale $sale, int $userId, string $reason): Sale
     {
-        if ($sale->status !== Sale::STATUS_OPEN) {
-            throw new InvalidArgumentException(__('Hanya penjualan OPEN yang bisa dibatalkan.'));
+        if (! in_array($sale->status, [Sale::STATUS_OPEN, Sale::STATUS_RELEASED], true)) {
+            throw new InvalidArgumentException(__('Hanya penjualan OPEN atau RELEASED yang bisa dibatalkan.'));
         }
 
         return DB::transaction(function () use ($sale) {
-            try {
-                $this->unreserveSaleUnits($sale, strict: false);
-            } catch (InvalidArgumentException $e) {
-                // Jika unit sudah sold atau error lain, tetap batalkan invoice tanpa mengubah unit
+            if ($sale->status === Sale::STATUS_OPEN) {
+                try {
+                    $this->unreserveSaleUnits($sale, strict: false);
+                } catch (InvalidArgumentException $e) {
+                    // Abaikan jika unit tidak dapat dikembalikan
+                }
             }
-            $sale->update(['status' => Sale::STATUS_CANCEL]);
+
+            if ($sale->status === Sale::STATUS_RELEASED) {
+                $details = SaleDetail::where('sale_id', $sale->id)->get();
+                foreach ($details as $detail) {
+                    $productId = (int) $detail->product_id;
+                    $product = Product::find($productId);
+                    if (! $product) {
+                        continue;
+                    }
+                    $serialNumbers = $this->parseSerialNumbersText($detail->serial_numbers);
+                    $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
+                    if ($isSerialTracked && ! empty($serialNumbers)) {
+                        ProductUnit::where('product_id', $productId)
+                            ->where('location_type', Stock::LOCATION_BRANCH)
+                            ->where('location_id', (int) $sale->branch_id)
+                            ->whereIn('serial_number', $serialNumbers)
+                            ->update([
+                                'status' => ProductUnit::STATUS_IN_STOCK,
+                                'sold_at' => null,
+                            ]);
+                        $this->recalculateBranchStock($productId, (int) $sale->branch_id);
+                    } else {
+                        $stock = Stock::firstOrCreate(
+                            [
+                                'product_id' => $productId,
+                                'location_type' => Stock::LOCATION_BRANCH,
+                                'location_id' => (int) $sale->branch_id,
+                            ],
+                            ['quantity' => 0]
+                        );
+                        $stock->increment('quantity', (int) $detail->quantity);
+                    }
+                }
+            }
+
+            CashFlow::where('reference_type', CashFlow::REFERENCE_SALE)
+                ->where('reference_id', $sale->id)
+                ->delete();
+            SalePayment::where('sale_id', $sale->id)->delete();
+
+            $sale->update([
+                'status' => Sale::STATUS_CANCEL,
+                'released_at' => null,
+                'total_paid' => 0,
+                'cancel_date' => now()->toDateString(),
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
 
             return $sale->fresh();
         });
+    }
+
+    private function recalculateBranchStock(int $productId, int $branchId): void
+    {
+        $isSerialTracked = ProductUnit::where('product_id', $productId)->exists();
+        if (! $isSerialTracked) {
+            return;
+        }
+        $qty = ProductUnit::where('product_id', $productId)
+            ->where('location_type', Stock::LOCATION_BRANCH)
+            ->where('location_id', $branchId)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->count();
+        Stock::updateOrCreate(
+            [
+                'product_id' => $productId,
+                'location_type' => Stock::LOCATION_BRANCH,
+                'location_id' => $branchId,
+            ],
+            ['quantity' => $qty]
+        );
     }
 
     /**

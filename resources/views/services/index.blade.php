@@ -145,16 +145,13 @@
                                         {{ $svc->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-3 text-right">{{ number_format($svc->service_price, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($svc->total_service_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
                                         <a href="{{ route('services.invoice', $svc) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900" title="{{ __('Invoice') }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
                                             {{ __('Invoice') }}
                                         </a>
-                                        @if ($svc->status === \App\Models\Service::STATUS_OPEN)
-                                            <x-icon-btn-edit :href="route('services.edit', $svc)" />
-                                        @endif
                                         <x-icon-btn-view :href="route('services.show', $svc)" />
                                     </div>
                                 </td>

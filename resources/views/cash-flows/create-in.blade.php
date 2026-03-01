@@ -40,6 +40,17 @@
                     @endif
 
                     <div>
+                        <x-input-label for="income_category_id" :value="__('Kategori Pemasukan')" />
+                        <select id="income_category_id" name="income_category_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                            <option value="">{{ __('Pilih Kategori Pemasukan') }}</option>
+                            @foreach ($incomeCategories as $cat)
+                                <option value="{{ $cat->id }}" {{ old('income_category_id') == $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                            @endforeach
+                        </select>
+                        <x-input-error :messages="$errors->get('income_category_id')" class="mt-2" />
+                    </div>
+
+                    <div>
                         <x-input-label for="payment_method_id" :value="__('Masuk ke Kas (Metode Pembayaran)')" />
                         <select id="payment_method_id" name="payment_method_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                             <option value="">{{ __('Pilih Kas / Rekening Tujuan') }}</option>

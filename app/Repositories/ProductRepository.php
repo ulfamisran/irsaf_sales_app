@@ -22,7 +22,7 @@ class ProductRepository
     {
         $query = $this->model
             ->select('products.*')
-            ->with('category')
+            ->with(['category', 'user'])
             ->orderBy('sku');
 
         if (! empty($filters['search'])) {

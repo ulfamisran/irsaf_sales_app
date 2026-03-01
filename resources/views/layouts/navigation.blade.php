@@ -32,6 +32,14 @@
         </div>
 
         <!-- Navigation menu -->
+        @php
+            $user = auth()->user();
+            $isSuperAdmin = $user?->isSuperAdmin();
+            $isAdminCabang = $user?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]);
+            $isKasir = $user?->hasAnyRole([\App\Models\Role::KASIR]);
+            $isStaffGudang = $user?->hasAnyRole([\App\Models\Role::STAFF_GUDANG]);
+        @endphp
+
         <nav class="flex-1 overflow-y-auto px-4 py-5">
             <ul class="space-y-1">
                 <!-- Dashboard -->
@@ -47,7 +55,8 @@
                 </li>
 
                 <!-- Data Master -->
-                <li x-data="{ open: {{ request()->routeIs('branches.*', 'categories.*', 'products.*', 'warehouses.*', 'customers.*', 'payment-methods.*') ? 'true' : 'false' }} }" class="pt-2">
+                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang || $isKasir)
+                <li x-data="{ open: {{ request()->routeIs('branches.*', 'categories.*', 'products.*', 'warehouses.*', 'customers.*', 'payment-methods.*', 'expense-categories.*', 'income-categories.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Master</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -64,23 +73,31 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::STAFF_GUDANG]))
+                        @if ($isSuperAdmin || $isStaffGudang)
                             <li><x-sidebar-nav-link :href="route('warehouses.index')" :active="request()->routeIs('warehouses.*')">Gudang</x-sidebar-nav-link></li>
                         @endif
 
-                        @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
+                        @if ($isSuperAdmin || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('branches.index')" :active="request()->routeIs('branches.*')">Cabang</x-sidebar-nav-link></li>
                         @endif
 
-                        <li><x-sidebar-nav-link :href="route('categories.index')" :active="request()->routeIs('categories.*')">Kategori</x-sidebar-nav-link></li>
-                        <li><x-sidebar-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
+                            <li><x-sidebar-nav-link :href="route('categories.index')" :active="request()->routeIs('categories.*')">Kategori</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-sidebar-nav-link></li>
+                        @endif
+
                         <li><x-sidebar-nav-link :href="route('customers.index')" :active="request()->routeIs('customers.*')">Pelanggan</x-sidebar-nav-link></li>
-                        <li><x-sidebar-nav-link :href="route('payment-methods.index')" :active="request()->routeIs('payment-methods.*')">Metode Pembayaran</x-sidebar-nav-link></li>
-                        <li><x-sidebar-nav-link :href="route('expense-categories.index')" :active="request()->routeIs('expense-categories.*')">Jenis Pengeluaran</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isAdminCabang)
+                            <li><x-sidebar-nav-link :href="route('payment-methods.index')" :active="request()->routeIs('payment-methods.*')">Metode Pembayaran</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('expense-categories.index')" :active="request()->routeIs('expense-categories.*')">Jenis Pengeluaran</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('income-categories.index')" :active="request()->routeIs('income-categories.*')">Kategori Pemasukan</x-sidebar-nav-link></li>
+                        @endif
                     </ul>
                 </li>
+                @endif
 
                 <!-- Stok -->
+                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
                 <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'stock-mutations.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -97,19 +114,23 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::STAFF_GUDANG]))
+                        @if ($isSuperAdmin || $isStaffGudang || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('incoming-goods.index')" :active="request()->routeIs('incoming-goods.*')">Barang Masuk</x-sidebar-nav-link></li>
+                        @endif
+
+                        @if ($isSuperAdmin || $isStaffGudang)
                             <li><x-sidebar-nav-link :href="route('stock-mutations.index')" :active="request()->routeIs('stock-mutations.*')">Distribusi Stok</x-sidebar-nav-link></li>
                         @endif
 
-                        @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::STAFF_GUDANG, \App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]))
+                        @if ($isSuperAdmin || $isStaffGudang || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('stock-inout.index')" :active="request()->routeIs('stock-inout.*')">Mutasi Stok (IN/OUT)</x-sidebar-nav-link></li>
                         @endif
                     </ul>
                 </li>
+                @endif
 
                 <!-- Penjualan -->
-                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::STAFF_GUDANG]))
+                @if ($isSuperAdmin || $isAdminCabang || $isKasir || $isStaffGudang)
                 <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -129,13 +150,15 @@
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
                         <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
-                        <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isStaffGudang)
+                            <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
+                        @endif
                     </ul>
                 </li>
                 @endif
 
                 <!-- Kas (Pengeluaran & Pemasukan Lainnya) -->
-                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]))
+                @if ($isSuperAdmin || $isAdminCabang)
                 <li x-data="{ open: {{ request()->routeIs('cash-flows.out.*', 'cash-flows.in.*', 'expense-categories.*') ? 'true' : 'false' }} }" class="pt-2">
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                             <span class="flex items-center gap-3">
@@ -159,7 +182,7 @@
                 @endif
 
                 <!-- Finance -->
-                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]))
+                @if ($isSuperAdmin || $isAdminCabang)
                 <li x-data="{ open: {{ request()->routeIs('cash-flows.*', 'finance.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Finance</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -184,7 +207,7 @@
                 @endif
 
                 <!-- Laporan -->
-                @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::STAFF_GUDANG]))
+                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
                 <li x-data="{ open: {{ request()->routeIs('reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Analitik</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">

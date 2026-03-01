@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class StockMutationController extends Controller
 {
@@ -189,7 +190,7 @@ class StockMutationController extends Controller
             $out[] = $p;
         }
 
-        return array_values(array_unique($out));
+        return $this->ensureUniqueSerials($out);
     }
 
     /**
@@ -207,7 +208,7 @@ class StockMutationController extends Controller
                 }
                 $out[] = $sn;
             }
-            return array_values(array_unique($out));
+            return $this->ensureUniqueSerials($out);
         }
 
         if (is_string($input)) {
@@ -216,5 +217,23 @@ class StockMutationController extends Controller
         }
 
         return [];
+    }
+
+    /**
+     * @param  array<int, string>  $serials
+     * @return array<int, string>
+     */
+    private function ensureUniqueSerials(array $serials): array
+    {
+        $serials = array_values($serials);
+        $counts = array_count_values($serials);
+        $duplicates = array_keys(array_filter($counts, fn ($count) => $count > 1));
+        if (! empty($duplicates)) {
+            throw new InvalidArgumentException(
+                __('Nomor serial tidak boleh duplikat: :serials', ['serials' => implode(', ', $duplicates)])
+            );
+        }
+
+        return $serials;
     }
 }

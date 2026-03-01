@@ -29,6 +29,17 @@
                         </div>
                     @endif
                     <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Pemasukan') }}</label>
+                        <select name="income_category_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach ($incomeCategories as $cat)
+                                <option value="{{ $cat->id }}" {{ request('income_category_id') == $cat->id ? 'selected' : '' }}>
+                                    {{ $cat->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
@@ -98,6 +109,7 @@
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
@@ -114,6 +126,7 @@
                                     {{ __('Cabang') }}: {{ $inc->branch?->name ?? '-' }}
                                 @endif
                             </td>
+                            <td class="px-4 py-3">{{ $inc->incomeCategory?->name ?? '-' }}</td>
                             <td class="px-4 py-3">{{ $inc->description }}</td>
                             <td class="px-4 py-3 text-right font-medium text-emerald-600">
                                 +{{ number_format($inc->amount, 0, ',', '.') }}
@@ -122,7 +135,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
+                            <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

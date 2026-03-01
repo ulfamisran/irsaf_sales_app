@@ -80,18 +80,20 @@
                                 <x-input-error :messages="$errors->get('damage_description')" class="mt-2" />
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <x-input-label for="service_cost" :value="__('Biaya Service (HPP)')" />
-                                    <x-text-input id="service_cost" class="block mt-1 w-full" type="text" name="service_cost" data-rupiah="true" :value="old('service_cost', 0)" required />
-                                    <p class="mt-1 text-xs text-slate-500">{{ __('Biaya/biaya parts untuk perhitungan laba') }}</p>
-                                    <x-input-error :messages="$errors->get('service_cost')" class="mt-2" />
+                            <div id="materials-section" class="border rounded-lg p-4 bg-slate-50">
+                                <p class="font-semibold text-slate-800">{{ __('Bahan/Material Service') }}</p>
+                                <p class="text-xs text-slate-500 mt-1">{{ __('Isi material yang diganti/dibeli (opsional).') }}</p>
+                                <div class="mt-3 flex justify-between items-center">
+                                    <button type="button" id="add-material" class="inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
                                 </div>
-                                <div>
-                                    <x-input-label for="service_price" :value="__('Harga Service')" />
-                                    <x-text-input id="service_price" class="block mt-1 w-full" type="text" name="service_price" data-rupiah="true" :value="old('service_price', 0)" required />
-                                    <x-input-error :messages="$errors->get('service_price')" class="mt-2" />
-                                </div>
+                                <div id="material-rows" class="mt-3 space-y-2"></div>
+                                <x-input-error :messages="$errors->get('materials')" class="mt-2" />
+                            </div>
+
+                            <div>
+                                <x-input-label for="service_fee" :value="__('Biaya Jasa Service')" />
+                                <x-text-input id="service_fee" class="block mt-1 w-full" type="text" name="service_fee" data-rupiah="true" :value="old('service_fee', 0)" required />
+                                <x-input-error :messages="$errors->get('service_fee')" class="mt-2" />
                             </div>
 
                             <div>
@@ -101,7 +103,7 @@
 
                             <div id="payments-section" class="border rounded-lg p-4 bg-slate-50">
                                 <p class="font-semibold text-slate-800">{{ __('Pembayaran DP (Wajib)') }}</p>
-                                <p class="text-xs text-amber-700 mt-1">{{ __('Service wajib membayar DP minimal. Boleh kurang dari harga service.') }}</p>
+                                <p class="text-xs text-amber-700 mt-1">{{ __('Service wajib membayar DP minimal. Boleh kurang dari total service.') }}</p>
                                 <div class="mt-3 flex justify-between items-center">
                                     <button type="button" id="add-payment" class="inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
                                 </div>
@@ -126,14 +128,30 @@
 
     @php
         $createPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
+        $saldoMapBranch = $saldoMapBranch ?? [];
     @endphp
     <script>
         const paymentMethods = @json($createPaymentMethods);
+        const saldoMapBranch = @json($saldoMapBranch);
         const paymentRows = document.getElementById('payment-rows');
         let paymentIndex = 0;
 
         function paymentOptionsHtml() {
             return '<option value="">Pilih metode</option>' + paymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+        }
+        function currentBranchId() {
+            const branchSelect = document.getElementById('branch_id');
+            if (branchSelect && branchSelect.value) return String(branchSelect.value);
+            if (branchSelect && branchSelect.options.length === 1) return String(branchSelect.options[0].value);
+            return '';
+        }
+        function materialPaymentOptionsHtml() {
+            const branchId = currentBranchId();
+            return '<option value="">Sumber dana</option>' + paymentMethods.map(m => {
+                const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
+                const disabled = branchId === '' || saldo <= 0;
+                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label}</option>`;
+            }).join('');
         }
 
         function addPaymentRow(pref = {}) {
@@ -171,9 +189,32 @@
             const raw = String(val ?? '').replace(/[^\d]/g, '');
             return raw ? parseFloat(raw) : 0;
         }
+        function toQty(val) {
+            const num = parseFloat(String(val ?? '').replace(',', '.'));
+            return Number.isFinite(num) ? num : 0;
+        }
+
+        function totalMaterialsPrice() {
+            let total = 0;
+            document.querySelectorAll('#material-rows input[name*="[quantity]"]').forEach((qtyInput) => {
+                const row = qtyInput.closest('.grid');
+                const nameInput = row?.querySelector('input[name*="[name]"]');
+                const priceInput = row?.querySelector('input[name*="[price]"]');
+                const pmSelect = row?.querySelector('select[name*="[payment_method_id]"]');
+                const nameVal = String(nameInput?.value || '').trim();
+                const pmVal = String(pmSelect?.value || '').trim();
+                if (!nameVal) return;
+                if (!pmVal) return;
+                const qty = toQty(qtyInput.value || '0');
+                const price = toNumber(priceInput?.value || '0');
+                if (qty > 0 && price > 0) total += qty * price;
+            });
+            return total;
+        }
 
         function refreshPaymentSum() {
-            const price = toNumber(document.getElementById('service_price')?.value || '0') || 0;
+            const fee = toNumber(document.getElementById('service_fee')?.value || '0') || 0;
+            const totalPrice = fee + totalMaterialsPrice();
             let sum = 0;
             document.querySelectorAll('#payment-rows input[name*="[amount]"]').forEach(inp => {
                 const v = toNumber(inp.value || '0');
@@ -182,11 +223,57 @@
             const sumEl = document.getElementById('paymentSumText');
             const diffEl = document.getElementById('paymentDiffText');
             if (sumEl) sumEl.textContent = Number(sum).toLocaleString('id-ID');
-            if (diffEl) diffEl.textContent = Number(price - sum).toLocaleString('id-ID');
+            if (diffEl) diffEl.textContent = Number(totalPrice - sum).toLocaleString('id-ID');
         }
 
         document.getElementById('add-payment')?.addEventListener('click', () => addPaymentRow());
-        document.getElementById('service_price')?.addEventListener('input', refreshPaymentSum);
+        document.getElementById('service_fee')?.addEventListener('input', refreshPaymentSum);
+
+        const materialRows = document.getElementById('material-rows');
+        let materialIndex = 0;
+        function addMaterialRow(pref = {}) {
+            if (!materialRows) return;
+            const idx = materialIndex++;
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-1 md:grid-cols-6 gap-2 items-end';
+            div.innerHTML = `
+                <div class="md:col-span-2">
+                    <input type="text" name="materials[${idx}][name]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nama material" required>
+                </div>
+                <div>
+                    <input type="number" name="materials[${idx}][quantity]" step="0.01" min="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required>
+                </div>
+                <div>
+                    <select name="materials[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                        ${materialPaymentOptionsHtml()}
+                    </select>
+                </div>
+                <div>
+                    <input type="text" name="materials[${idx}][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Harga" required>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" name="materials[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan">
+                    <button type="button" class="remove-material px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
+                </div>
+            `;
+            materialRows.appendChild(div);
+            if (pref.name) div.querySelector('input[name*="[name]"]').value = String(pref.name);
+            if (pref.quantity) div.querySelector('input[name*="[quantity]"]').value = String(pref.quantity);
+            if (pref.payment_method_id) div.querySelector('select[name*="[payment_method_id]"]').value = String(pref.payment_method_id);
+            if (pref.price) div.querySelector('input[name*="[price]"]').value = String(pref.price);
+            if (pref.notes) div.querySelector('input[name*="[notes]"]').value = String(pref.notes || '');
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+            div.querySelectorAll('input').forEach(el => el.addEventListener('input', refreshPaymentSum));
+            div.querySelector('.remove-material')?.addEventListener('click', () => { div.remove(); refreshPaymentSum(); });
+        }
+
+        function refreshMaterialPaymentOptions() {
+            document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(select => {
+                const current = select.value;
+                select.innerHTML = materialPaymentOptionsHtml();
+                if (current) select.value = current;
+            });
+        }
 
         const oldPayments = @json(old('payments', []));
         if (Array.isArray(oldPayments) && oldPayments.length > 0) {
@@ -195,6 +282,15 @@
             addPaymentRow();
         }
         refreshPaymentSum();
+
+        const oldMaterials = @json(old('materials', []));
+        if (Array.isArray(oldMaterials) && oldMaterials.length > 0) {
+            oldMaterials.forEach(m => addMaterialRow(m));
+        }
+        document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());
+        refreshPaymentSum();
+        document.getElementById('branch_id')?.addEventListener('change', refreshMaterialPaymentOptions);
+        refreshMaterialPaymentOptions();
 
         const customerSelect = document.getElementById('customer_id');
         const newCustomerFields = document.getElementById('new-customer-fields');

@@ -216,7 +216,7 @@
 </head>
 <body class="bg-slate-100">
     @php
-        $grandTotal = (float) $service->service_price;
+        $grandTotal = (float) $service->total_service_price;
         $totalPaid = (float) ($service->total_paid ?? $service->payments?->sum('amount') ?? 0);
         $change = max(0, $totalPaid - $grandTotal);
         $isPaid = $service->isPaidOff();
@@ -304,7 +304,7 @@
                     <tr>
                         <th style="width:40px;">No</th>
                         <th>Deskripsi</th>
-                        <th style="width:120px;">Harga Service</th>
+                        <th style="width:120px;">Total Service</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -319,7 +319,7 @@
                                 <div style="font-size:10px;margin-top:4px;">Kerusakan: {{ $service->damage_description }}</div>
                             @endif
                         </td>
-                        <td class="num">{{ number_format($service->service_price, 0, ',', '.') }}</td>
+                        <td class="num">{{ number_format($grandTotal, 0, ',', '.') }}</td>
                     </tr>
                 </tbody>
             </table>

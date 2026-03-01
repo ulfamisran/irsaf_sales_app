@@ -11,6 +11,7 @@ use App\Models\ProductUnit;
 use App\Models\Rental;
 use App\Models\Stock;
 use App\Models\Warehouse;
+use App\Models\AuditLog;
 use App\Services\RentalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -58,7 +59,7 @@ class RentalController extends Controller
         }
 
         $totalRental = (float) (clone $query)
-            ->where('status', '!=', Rental::STATUS_CANCEL)
+            ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
             ->sum('total');
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -78,7 +79,7 @@ class RentalController extends Controller
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('rentals.pickup_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('rentals.pickup_date', '<=', $request->date_to))
             ->when($request->filled('return_status'), fn ($q) => $q->where('rentals.return_status', $request->return_status))
-            ->where('rentals.status', '!=', Rental::STATUS_CANCEL)
+            ->whereIn('rentals.status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
             ->selectRaw('rental_payments.payment_method_id, SUM(rental_payments.amount) as total')
             ->groupBy('rental_payments.payment_method_id')
             ->pluck('total', 'rental_payments.payment_method_id');
@@ -166,6 +167,72 @@ class RentalController extends Controller
         return view('rentals.show', compact('rental', 'paymentMethods'));
     }
 
+    public function edit(Rental $rental): View
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($rental->status !== Rental::STATUS_OPEN) {
+            abort(403, __('Penyewaan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
+        }
+
+        $rental->load(['items.product', 'customer', 'payments.paymentMethod']);
+        $warehouses = Warehouse::orderBy('name')->get();
+        $customers = Customer::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['id', 'name', 'phone']);
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('id')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+
+        return view('rentals.edit', compact('rental', 'warehouses', 'customers', 'paymentMethods'));
+    }
+
+    public function update(RentalRequest $request, Rental $rental): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($rental->status !== Rental::STATUS_OPEN) {
+            return back()->with('error', __('Penyewaan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
+        }
+
+        try {
+            $customerId = $this->resolveCustomerId($request);
+            $rental = $this->rentalService->update(
+                $rental,
+                (int) $request->warehouse_id,
+                $customerId,
+                $request->pickup_date,
+                $request->return_date,
+                $request->input('items', []),
+                (float) $request->input('tax_amount', 0),
+                (float) $request->input('penalty_amount', 0),
+                $request->input('payments', []),
+                $request->description,
+                $user->id
+            );
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'rental.update',
+                'reference_type' => 'rental',
+                'reference_id' => $rental->id,
+                'description' => 'Update penyewaan ' . $rental->invoice_number,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('rentals.show', $rental)->with('success', __('Penyewaan berhasil diperbarui.'));
+    }
+
     public function addPayment(Request $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
@@ -216,6 +283,39 @@ class RentalController extends Controller
         return redirect()->route('rentals.show', $rental)->with('success', __('Penyewaan ditandai kembali.'));
     }
 
+    public function cancel(Request $request, Rental $rental): RedirectResponse
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
+        if (! in_array($rental->status, [Rental::STATUS_OPEN, Rental::STATUS_RELEASED], true)) {
+            return back()->with('error', __('Penyewaan tidak dapat dibatalkan.'));
+        }
+
+        try {
+            $validated = $request->validate([
+                'cancel_reason' => ['required', 'string', 'max:255'],
+                'confirm_released' => ['nullable', 'boolean'],
+            ]);
+            if ($rental->status === Rental::STATUS_RELEASED && empty($validated['confirm_released'])) {
+                return back()->with('error', __('Konfirmasi tambahan wajib untuk membatalkan transaksi released.'));
+            }
+            $this->rentalService->cancel($rental, $user->id, $validated['cancel_reason']);
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'rental.cancel',
+                'reference_type' => 'rental',
+                'reference_id' => $rental->id,
+                'description' => 'Cancel penyewaan ' . $rental->invoice_number . '. Alasan: ' . $validated['cancel_reason'],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('rentals.show', $rental)->with('success', __('Penyewaan berhasil dibatalkan.'));
+    }
+
     public function invoice(Rental $rental): View
     {
         $user = auth()->user();
@@ -231,8 +331,22 @@ class RentalController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $warehouseId = (int) $request->get('warehouse_id');
+        $rentalId = (int) $request->get('rental_id');
         if ($warehouseId <= 0) {
             return response()->json(['products' => []]);
+        }
+
+        $productIds = ProductUnit::query()
+            ->where('location_type', Stock::LOCATION_WAREHOUSE)
+            ->where('location_id', $warehouseId)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->pluck('product_id')
+            ->all();
+        if ($rentalId > 0) {
+            $rentalProductIds = \App\Models\RentalItem::where('rental_id', $rentalId)
+                ->pluck('product_id')
+                ->all();
+            $productIds = array_values(array_unique(array_merge($productIds, $rentalProductIds)));
         }
 
         $products = Product::query()
@@ -243,13 +357,7 @@ class RentalController extends Controller
                 $q->where('categories.code', 'LAP')
                     ->orWhere('categories.name', 'Laptop');
             })
-            ->whereIn('products.id', function ($q) use ($warehouseId) {
-                $q->select('product_id')
-                    ->from('product_units')
-                    ->where('location_type', Stock::LOCATION_WAREHOUSE)
-                    ->where('location_id', $warehouseId)
-                    ->where('status', ProductUnit::STATUS_IN_STOCK);
-            })
+            ->whereIn('products.id', $productIds)
             ->orderBy('products.sku')
             ->get();
 
@@ -267,6 +375,7 @@ class RentalController extends Controller
     {
         $warehouseId = (int) $request->get('warehouse_id');
         $productId = (int) $request->get('product_id');
+        $rentalId = (int) $request->get('rental_id');
         if ($warehouseId <= 0 || $productId <= 0) {
             return response()->json(['serial_numbers' => []]);
         }
@@ -279,6 +388,13 @@ class RentalController extends Controller
             ->orderBy('serial_number')
             ->pluck('serial_number')
             ->all();
+        if ($rentalId > 0) {
+            $currentSerials = \App\Models\RentalItem::where('rental_id', $rentalId)
+                ->where('product_id', $productId)
+                ->pluck('serial_number')
+                ->all();
+            $serials = array_values(array_unique(array_merge($serials, $currentSerials)));
+        }
 
         return response()->json([
             'serial_numbers' => $serials,

@@ -12,6 +12,7 @@ use App\Models\ProductUnit;
 use App\Models\Stock;
 use App\Models\Sale;
 use App\Models\SalePayment;
+use App\Models\AuditLog;
 use App\Services\SaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -50,7 +51,7 @@ class SaleController extends Controller
         }
 
         $totalSales = (float) (clone $query)
-            ->where('status', '!=', Sale::STATUS_CANCEL)
+            ->whereIn('status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('total');
         $totalSalesCash = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
@@ -58,7 +59,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('sale_payments.amount');
         $totalTradeIn = (float) DB::table('sale_trade_ins')
             ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
@@ -66,7 +67,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('sale_trade_ins.trade_in_value');
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -80,7 +81,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->selectRaw('sale_payments.payment_method_id, SUM(sale_payments.amount) as total')
             ->groupBy('sale_payments.payment_method_id')
             ->pluck('total', 'sale_payments.payment_method_id');
@@ -240,6 +241,9 @@ class SaleController extends Controller
     public function edit(Sale $sale): View
     {
         $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
@@ -307,6 +311,9 @@ class SaleController extends Controller
     public function update(SaleRequest $request, Sale $sale): RedirectResponse
     {
         $user = $request->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
@@ -335,6 +342,13 @@ class SaleController extends Controller
                 $payments,
                 $tradeIns
             );
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'sale.update',
+                'reference_type' => 'sale',
+                'reference_id' => $sale->id,
+                'description' => 'Update penjualan ' . $sale->invoice_number,
+            ]);
         } catch (\InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -342,15 +356,36 @@ class SaleController extends Controller
         return redirect()->route('sales.show', $sale)->with('success', __('Draft penjualan berhasil diperbarui.'));
     }
 
-    public function cancel(Sale $sale): RedirectResponse
+    public function cancel(Request $request, Sale $sale): RedirectResponse
     {
         $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
+        if (! in_array($sale->status, [Sale::STATUS_OPEN, Sale::STATUS_RELEASED], true)) {
+            return back()->with('error', __('Penjualan tidak dapat dibatalkan.'));
+        }
+
+        $validated = $request->validate([
+            'cancel_reason' => ['required', 'string', 'max:255'],
+            'confirm_released' => ['nullable', 'boolean'],
+        ]);
+        if ($sale->status === Sale::STATUS_RELEASED && empty($validated['confirm_released'])) {
+            return back()->with('error', __('Konfirmasi tambahan wajib untuk membatalkan transaksi released.'));
+        }
 
         try {
-            $this->saleService->cancelSale($sale);
+            $this->saleService->cancelSale($sale, $user->id, $validated['cancel_reason']);
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'sale.cancel',
+                'reference_type' => 'sale',
+                'reference_id' => $sale->id,
+                'description' => 'Cancel penjualan ' . $sale->invoice_number . '. Alasan: ' . $validated['cancel_reason'],
+            ]);
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }

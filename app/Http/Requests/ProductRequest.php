@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ProductRequest extends FormRequest
@@ -26,13 +27,16 @@ class ProductRequest extends FormRequest
             ? 'unique:products,sku,' . $productId
             : 'unique:products,sku';
 
+        $user = $this->user();
+        $isBranchAdmin = $user && $user->hasAnyRole([Role::ADMIN_CABANG]);
+
         return [
             'category_id' => ['required', 'exists:categories,id'],
             'sku' => ['required', 'string', 'max:255', $uniqueSku],
             'brand' => ['required', 'string', 'max:255'],
             'series' => ['nullable', 'string', 'max:255'],
             'specs' => ['nullable', 'string'],
-            'laptop_type' => ['required', 'in:baru,bekas'],
+            'laptop_type' => $isBranchAdmin ? ['required', 'in:baru'] : ['required', 'in:baru,bekas'],
             'purchase_price' => ['required', 'numeric', 'min:0'],
             'selling_price' => ['required', 'numeric', 'min:0'],
         ];

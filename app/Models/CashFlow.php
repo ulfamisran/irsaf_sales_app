@@ -33,6 +33,7 @@ class CashFlow extends Model
         'reference_type',
         'reference_id',
         'expense_category_id',
+        'income_category_id',
         'payment_method_id',
         'transaction_date',
         'user_id',
@@ -67,6 +68,11 @@ class CashFlow extends Model
     public function expenseCategory(): BelongsTo
     {
         return $this->belongsTo(ExpenseCategory::class);
+    }
+
+    public function incomeCategory(): BelongsTo
+    {
+        return $this->belongsTo(IncomeCategory::class);
     }
 
     public function paymentMethod(): BelongsTo

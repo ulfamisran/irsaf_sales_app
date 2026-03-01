@@ -23,8 +23,7 @@ class ServiceRequest extends FormRequest
             'laptop_type' => ['required', 'string', 'max:100'],
             'laptop_detail' => ['nullable', 'string'],
             'damage_description' => ['nullable', 'string'],
-            'service_cost' => ['required', 'numeric', 'min:0'],
-            'service_price' => ['required', 'numeric', 'min:0'],
+            'service_fee' => ['required', 'numeric', 'min:0'],
             'entry_date' => ['required', 'date'],
             'description' => ['nullable', 'string'],
 
@@ -32,6 +31,13 @@ class ServiceRequest extends FormRequest
             'payments.*.payment_method_id' => ['required', 'exists:payment_methods,id'],
             'payments.*.amount' => ['required', 'numeric', 'min:0.01'],
             'payments.*.notes' => ['nullable', 'string'],
+
+            'materials' => ['nullable', 'array'],
+            'materials.*.name' => ['nullable', 'string', 'max:150'],
+            'materials.*.quantity' => ['nullable', 'numeric', 'min:0.01', 'required_with:materials.*.name'],
+            'materials.*.payment_method_id' => ['nullable', 'exists:payment_methods,id', 'required_with:materials.*.name'],
+            'materials.*.price' => ['nullable', 'numeric', 'min:0', 'required_with:materials.*.name'],
+            'materials.*.notes' => ['nullable', 'string'],
         ];
     }
 }

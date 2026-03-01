@@ -16,6 +16,7 @@ class ManualIncomeRequest extends FormRequest
         return [
             'branch_id' => ['nullable', 'exists:branches,id', 'required_without:warehouse_id'],
             'warehouse_id' => ['nullable', 'exists:warehouses,id', 'required_without:branch_id'],
+            'income_category_id' => ['required', 'exists:income_categories,id'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
             'transaction_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],

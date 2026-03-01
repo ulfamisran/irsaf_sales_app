@@ -17,6 +17,10 @@
                         @csrf
                         <div class="space-y-4">
                             <div>
+                                <x-input-label for="created_by" :value="__('User')" />
+                                <x-text-input id="created_by" class="block mt-1 w-full bg-slate-100" type="text" :value="auth()->user()?->name" disabled />
+                            </div>
+                            <div>
                                 <x-input-label for="product_id" :value="__('Product')" />
                                 <select id="product_id" name="product_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                     <option value="">{{ __('Select Product') }}</option>
@@ -28,16 +32,23 @@
                                 </select>
                                 <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
                             </div>
-                            <div>
-                                <x-input-label for="warehouse_id" :value="__('Warehouse')" />
-                                <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    <option value="">{{ __('Select Warehouse') }}</option>
-                                    @foreach ($warehouses as $warehouse)
-                                        <option value="{{ $warehouse->id }}" {{ old('warehouse_id') == $warehouse->id ? 'selected' : '' }}>{{ $warehouse->name }}</option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
-                            </div>
+                            @if ($isBranchUser)
+                                <div>
+                                    <x-input-label for="branch_name" :value="__('Cabang')" />
+                                    <x-text-input id="branch_name" class="block mt-1 w-full bg-slate-100" type="text" :value="$branch?->name" disabled />
+                                </div>
+                            @else
+                                <div>
+                                    <x-input-label for="warehouse_id" :value="__('Warehouse')" />
+                                    <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="">{{ __('Select Warehouse') }}</option>
+                                        @foreach ($warehouses as $warehouse)
+                                            <option value="{{ $warehouse->id }}" {{ old('warehouse_id') == $warehouse->id ? 'selected' : '' }}>{{ $warehouse->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                </div>
+                            @endif
                             <div>
                                 <x-input-label for="quantity" :value="__('Quantity')" />
                                 <x-text-input id="quantity" class="block mt-1 w-full" type="number" name="quantity" min="1" :value="old('quantity')" />

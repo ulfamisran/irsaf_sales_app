@@ -51,19 +51,17 @@ class StockInOutController extends Controller
         $dateFrom = $validated['date_from'] ?? null;
         $dateTo = $validated['date_to'] ?? null;
 
-        // --- IN: Incoming goods (warehouse only)
-        $incomingByProduct = collect();
-        if ($effectiveLocationType !== Stock::LOCATION_BRANCH) {
-            $incomingQuery = DB::table('incoming_goods')
-                ->selectRaw('product_id, SUM(quantity) as qty')
-                ->when($productId, fn ($q) => $q->where('product_id', $productId))
-                ->when($effectiveLocationType === Stock::LOCATION_WAREHOUSE && $effectiveLocationId, fn ($q) => $q->where('warehouse_id', $effectiveLocationId))
-                ->when($dateFrom, fn ($q) => $q->whereDate('received_date', '>=', $dateFrom))
-                ->when($dateTo, fn ($q) => $q->whereDate('received_date', '<=', $dateTo))
-                ->groupBy('product_id');
+        // --- IN: Incoming goods (warehouse/branch)
+        $incomingQuery = DB::table('incoming_goods')
+            ->selectRaw('product_id, SUM(quantity) as qty')
+            ->when($productId, fn ($q) => $q->where('product_id', $productId))
+            ->when($dateFrom, fn ($q) => $q->whereDate('received_date', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('received_date', '<=', $dateTo))
+            ->when($effectiveLocationType === Stock::LOCATION_WAREHOUSE && $effectiveLocationId, fn ($q) => $q->where('warehouse_id', $effectiveLocationId))
+            ->when($effectiveLocationType === Stock::LOCATION_BRANCH && $effectiveLocationId, fn ($q) => $q->where('branch_id', $effectiveLocationId))
+            ->groupBy('product_id');
 
-            $incomingByProduct = $incomingQuery->pluck('qty', 'product_id');
-        }
+        $incomingByProduct = $incomingQuery->pluck('qty', 'product_id');
 
         // --- OUT: Sales (branch only, from sale_details)
         $salesByProduct = collect();

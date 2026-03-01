@@ -46,8 +46,7 @@ class FinanceController extends Controller
         }
 
         $salesQuery = Sale::query()
-            ->where('status', Sale::STATUS_RELEASED)
-            ->whereBetween('sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+            ->where('status', Sale::STATUS_RELEASED);
 
         if ($branchId) {
             $salesQuery->where('branch_id', $branchId);
@@ -61,15 +60,13 @@ class FinanceController extends Controller
         $totalSales = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
             ->where('sales.status', Sale::STATUS_RELEASED)
-            ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
             ->sum('sale_payments.amount');
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;
 
         $servicesQuery = Service::query()
-            ->where('status', Service::STATUS_COMPLETED)
-            ->whereBetween('entry_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+            ->whereIn('status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED]);
 
         if ($branchId) {
             $servicesQuery->where('branch_id', $branchId);
@@ -81,23 +78,21 @@ class FinanceController extends Controller
         $services = $servicesQuery->get();
 
         $totalServiceRevenue = (float) $services->sum('service_price');
-        $totalServiceCost = (float) $services->sum('service_cost');
-        $totalServiceProfit = $totalServiceRevenue - $totalServiceCost;
+        $totalServiceProfit = $totalServiceRevenue;
+        $totalServiceCost = 0.0;
 
         $totalTradeIn = 0.0;
         if (! $warehouseId) {
             $totalTradeIn = (float) DB::table('sale_trade_ins')
                 ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
                 ->where('sales.status', Sale::STATUS_RELEASED)
-                ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
                 ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
                 ->sum('sale_trade_ins.trade_in_value');
         }
 
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->where('reference_type', CashFlow::REFERENCE_OTHER)
-            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+            ->where('reference_type', CashFlow::REFERENCE_OTHER);
 
         if ($branchId) {
             $incomeOtherQuery->where('branch_id', $branchId);
@@ -109,8 +104,7 @@ class FinanceController extends Controller
         $totalOtherIncome = (float) $incomeOtherQuery->sum('amount');
 
         $expenseQuery = CashFlow::query()
-            ->where('type', CashFlow::TYPE_OUT)
-            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+            ->where('type', CashFlow::TYPE_OUT);
 
         if ($branchId) {
             $expenseQuery->where('branch_id', $branchId);
@@ -122,21 +116,21 @@ class FinanceController extends Controller
         $totalExpense = (float) $expenseQuery->sum('amount');
 
         $rentalQuery = Rental::query()
-            ->where('status', '!=', Rental::STATUS_CANCEL)
-            ->whereBetween('pickup_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+            ->where('status', '!=', Rental::STATUS_CANCEL);
         if ($warehouseId) {
             $rentalQuery->where('warehouse_id', $warehouseId);
         }
         if ($branchId) {
             $rentalQuery->where('branch_id', $branchId);
         }
-        $totalRentalIncome = (float) $rentalQuery->sum('total');
+        $totalRentalIncome = (float) $rentalQuery
+            ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
+            ->sum('total');
 
         $netProfit = ($totalSalesProfit + $totalServiceProfit + $totalRentalIncome + $totalOtherIncome) - $totalExpense;
 
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
-            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->orderByDesc('transaction_date')

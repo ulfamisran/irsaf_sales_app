@@ -10,6 +10,13 @@
                 <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Invoice') }}
                 </a>
+                @if (auth()->user()?->isSuperAdmin() && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
+                    @if ($rental->status === \App\Models\Rental::STATUS_OPEN)
+                        <a href="{{ route('rentals.edit', $rental) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
+                            {{ __('Edit') }}
+                        </a>
+                    @endif
+                @endif
                 <x-icon-btn-back :href="route('rentals.index')" :label="__('Kembali')" />
             </div>
         </div>
@@ -156,6 +163,27 @@
                         </div>
                     </form>
                 </div>
+            </div>
+        @endif
+
+        @if (auth()->user()?->isSuperAdmin() && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
+            <div class="mt-10 border border-red-200 rounded-lg p-4 bg-red-50/40">
+                <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
+                <form method="POST" action="{{ route('rentals.cancel', $rental) }}" onsubmit="return confirm('{{ $rental->status === \App\Models\Rental::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penyewaan ini?') : __('Batalkan penyewaan ini?') }}')">
+                    @csrf
+                    <div class="flex flex-col gap-2 mb-3">
+                        <textarea name="cancel_reason" class="w-full rounded-md border-gray-300" rows="2" placeholder="{{ __('Alasan pembatalan') }}" required></textarea>
+                        @if ($rental->status === \App\Models\Rental::STATUS_RELEASED)
+                            <label class="flex items-center gap-2 text-sm text-slate-600">
+                                <input type="checkbox" name="confirm_released" value="1" class="rounded">
+                                <span>{{ __('Saya yakin membatalkan transaksi released') }}</span>
+                            </label>
+                        @endif
+                    </div>
+                    <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">
+                        {{ __('Batalkan') }}
+                    </button>
+                </form>
             </div>
         @endif
     </div>

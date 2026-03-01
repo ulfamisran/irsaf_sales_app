@@ -39,6 +39,9 @@ class Rental extends Model
         'return_status',
         'status',
         'description',
+        'cancel_date',
+        'cancel_user_id',
+        'cancel_reason',
     ];
 
     protected function casts(): array
@@ -51,6 +54,7 @@ class Rental extends Model
             'penalty_amount' => 'decimal:2',
             'total' => 'decimal:2',
             'total_paid' => 'decimal:2',
+            'cancel_date' => 'date',
         ];
     }
 

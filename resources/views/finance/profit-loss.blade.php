@@ -32,11 +32,11 @@
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
-                        <input type="date" name="date_from" value="{{ request('date_from', $dateFrom) }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
-                        <input type="date" name="date_to" value="{{ request('date_to', $dateTo) }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
@@ -59,7 +59,7 @@
                 <dl class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
                         <dt class="text-slate-500">{{ __('Periode') }}</dt>
-                        <dd class="font-semibold text-slate-800">{{ \Carbon\Carbon::parse($dateFrom)->format('d/m/Y') }} - {{ \Carbon\Carbon::parse($dateTo)->format('d/m/Y') }}</dd>
+                        <dd class="font-semibold text-slate-800">{{ __('Semua periode (tidak difilter tanggal)') }}</dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">{{ __('Laba Bersih') }}</dt>

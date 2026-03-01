@@ -38,15 +38,22 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="min-w-[180px]">
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                        <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            @foreach ($warehouses as $w)
-                                <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    @if (! $isBranchUser)
+                        <div class="min-w-[180px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @else
+                        <div class="min-w-[180px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
+                            <input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 shadow-sm" value="{{ $branch?->name }}" readonly />
+                        </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -77,7 +84,7 @@
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Produk') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Gudang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Qty') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
@@ -88,7 +95,13 @@
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3">{{ $r->received_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $r->product?->sku }} - {{ $r->product?->brand }}</td>
-                                <td class="px-4 py-3">{{ $r->warehouse?->name }}</td>
+                                <td class="px-4 py-3">
+                                    @if ($r->branch_id)
+                                        {{ __('Cabang') }}: {{ $r->branch?->name ?? ('#' . $r->branch_id) }}
+                                    @else
+                                        {{ __('Gudang') }}: {{ $r->warehouse?->name ?? '-' }}
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-sm text-slate-600">
                                     {{ $r->notes ? \Illuminate\Support\Str::limit(str_replace("\n", ', ', $r->notes), 40) : '-' }}
                                 </td>

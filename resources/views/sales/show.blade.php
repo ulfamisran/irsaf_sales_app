@@ -9,19 +9,13 @@
                 <a href="{{ route('sales.invoice', $sale) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Print Invoice') }}
                 </a>
-                @if ($sale->status === \App\Models\Sale::STATUS_OPEN)
-                    <a href="{{ route('sales.edit', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                        {{ __('Edit') }}
-                    </a>
-                    <form method="POST" action="{{ route('sales.cancel', $sale) }}" onsubmit="return confirm('{{ __('Batalkan penjualan ini? Unit akan kembali IN STOCK. Data tetap tersimpan dengan status Dibatalkan.') }}')">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">
-                            {{ __('Batalkan') }}
-                        </button>
-                    </form>
+                @if (auth()->user()?->isSuperAdmin())
+                        <a href="{{ route('sales.edit', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            {{ __('Edit') }}
+                        </a>
                 @endif
                 <x-icon-btn-back :href="route('sales.index')" :label="__('Kembali ke Penjualan')" />
             </div>
@@ -277,6 +271,27 @@
                                 addReleasePaymentRow({ amount: totalSale });
                             }
                         </script>
+                    @endif
+
+                    @if (auth()->user()?->isSuperAdmin() && in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, \App\Models\Sale::STATUS_RELEASED], true))
+                        <div class="mt-20 border border-red-200 rounded-lg p-4 bg-red-50/40">
+                            <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
+                            <form method="POST" action="{{ route('sales.cancel', $sale) }}" onsubmit="return confirm('{{ $sale->status === \App\Models\Sale::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penjualan ini?') : __('Batalkan penjualan ini? Unit akan kembali IN STOCK. Data tetap tersimpan dengan status Dibatalkan.') }}')">
+                                @csrf
+                                <div class="flex flex-col gap-2 mb-3">
+                                    <textarea name="cancel_reason" class="w-full rounded-md border-gray-300" rows="2" placeholder="{{ __('Alasan pembatalan') }}" required></textarea>
+                                    @if ($sale->status === \App\Models\Sale::STATUS_RELEASED)
+                                        <label class="flex items-center gap-2 text-sm text-slate-600">
+                                            <input type="checkbox" name="confirm_released" value="1" class="rounded">
+                                            <span>{{ __('Saya yakin membatalkan transaksi released') }}</span>
+                                        </label>
+                                    @endif
+                                </div>
+                                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">
+                                    {{ __('Batalkan') }}
+                                </button>
+                            </form>
+                        </div>
                     @endif
                 </div>
             </div>

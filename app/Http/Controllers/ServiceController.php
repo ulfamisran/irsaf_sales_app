@@ -5,9 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ServiceRequest;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\ExpenseCategory;
+use App\Models\CashFlow;
 use App\Models\PaymentMethod;
 use App\Models\Service;
+use App\Models\ServiceMaterial;
+use App\Models\AuditLog;
 use App\Services\ServiceService;
+use App\Services\KasBalanceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,8 +52,10 @@ class ServiceController extends Controller
         }
 
         $totalService = (float) (clone $query)
-            ->where('status', '!=', Service::STATUS_CANCEL)
-            ->sum('service_price');
+            ->whereIn('status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
+            ->with('serviceMaterials')
+            ->get()
+            ->sum(fn (Service $service) => (float) $service->total_service_price);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->orderBy('jenis_pembayaran')
@@ -62,7 +69,7 @@ class ServiceController extends Controller
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('services.entry_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
             ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
-            ->where('services.status', '!=', Service::STATUS_CANCEL)
+            ->whereIn('services.status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
             ->selectRaw('service_payments.payment_method_id, SUM(service_payments.amount) as total')
             ->groupBy('service_payments.payment_method_id')
             ->pluck('total', 'service_payments.payment_method_id');
@@ -98,7 +105,10 @@ class ServiceController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        return view('services.create', compact('branches', 'customers', 'paymentMethods'));
+        $branchIds = $branches->pluck('id')->toArray();
+        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+
+        return view('services.create', compact('branches', 'customers', 'paymentMethods', 'saldoMapBranch'));
     }
 
     public function store(ServiceRequest $request): RedirectResponse
@@ -115,19 +125,31 @@ class ServiceController extends Controller
 
             $customerId = $this->resolveCustomerId($request);
 
+            $materialsInput = $request->input('materials', []);
+            if (is_array($materialsInput) && ! empty($materialsInput)) {
+                $this->ensureMaterialSaldo($branchId, $materialsInput);
+            }
+            $materialsTotal = $this->sumMaterialsTotalPrice($materialsInput);
+
             $service = $this->serviceService->create(
                 $branchId,
                 $customerId,
                 $request->laptop_type,
                 $request->laptop_detail,
                 $request->damage_description,
-                (float) $request->service_cost,
-                (float) $request->service_price,
+                0.0,
+                (float) $request->service_fee,
                 $request->entry_date,
                 $request->input('payments', []),
                 $request->description,
-                $user->id
+                $user->id,
+                $materialsTotal
             );
+
+            if (is_array($materialsInput) && ! empty($materialsInput)) {
+                $this->storeMaterials($service, $materialsInput, replace: true, userId: $user->id);
+                $this->refreshPaymentStatus($service);
+            }
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -142,7 +164,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod']);
+        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials']);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -151,12 +173,17 @@ class ServiceController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        return view('services.show', compact('service', 'paymentMethods'));
+        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm([$service->branch_id]);
+
+        return view('services.show', compact('service', 'paymentMethods', 'saldoMapBranch'));
     }
 
     public function edit(Service $service): View
     {
         $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
@@ -181,14 +208,20 @@ class ServiceController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        $service->load(['customer', 'payments.paymentMethod']);
+        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials']);
 
-        return view('services.edit', compact('service', 'branches', 'customers', 'paymentMethods'));
+        $branchIds = $branches->pluck('id')->toArray();
+        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+
+        return view('services.edit', compact('service', 'branches', 'customers', 'paymentMethods', 'saldoMapBranch'));
     }
 
     public function update(ServiceRequest $request, Service $service): RedirectResponse
     {
         $user = $request->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
@@ -196,18 +229,37 @@ class ServiceController extends Controller
         try {
             $customerId = $this->resolveCustomerId($request);
 
+            $materialsInput = $request->input('materials', null);
+            $materialsTotal = is_array($materialsInput) ? $this->sumMaterialsTotalPrice($materialsInput) : null;
+            if (is_array($materialsInput) && ! empty($materialsInput)) {
+                $this->ensureMaterialSaldo((int) $service->branch_id, $materialsInput);
+            }
+
             $this->serviceService->update(
                 $service,
                 $customerId,
                 $request->laptop_type,
                 $request->laptop_detail,
                 $request->damage_description,
-                (float) $request->service_cost,
-                (float) $request->service_price,
+                0.0,
+                (float) $request->service_fee,
                 $request->entry_date,
                 $request->input('payments', []),
-                $request->description
+                $request->description,
+                $materialsTotal
             );
+
+            if (is_array($materialsInput)) {
+                $this->storeMaterials($service, $materialsInput, replace: true, userId: $user->id);
+                $this->refreshPaymentStatus($service);
+            }
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'service.update',
+                'reference_type' => 'service',
+                'reference_id' => $service->id,
+                'description' => 'Update service ' . $service->invoice_number,
+            ]);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -246,6 +298,87 @@ class ServiceController extends Controller
         }
 
         return redirect()->route('services.show', $service)->with('success', __('Pembayaran berhasil ditambahkan.'));
+    }
+
+    public function addMaterials(Request $request, Service $service): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($service->status !== Service::STATUS_OPEN) {
+            abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
+        }
+
+        $validated = $request->validate([
+            'materials' => ['required', 'array', 'min:1'],
+            'materials.*.name' => ['required', 'string', 'max:150'],
+            'materials.*.quantity' => ['required', 'numeric', 'min:0.01'],
+            'materials.*.payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'materials.*.price' => ['required', 'numeric', 'min:0'],
+            'materials.*.notes' => ['nullable', 'string'],
+        ]);
+
+        try {
+            $this->ensureMaterialSaldo((int) $service->branch_id, $validated['materials']);
+
+            foreach ($validated['materials'] as $mat) {
+                $qty = round((float) ($mat['quantity'] ?? 0), 2);
+                if ($qty <= 0) {
+                    continue;
+                }
+                $material = ServiceMaterial::create([
+                    'service_id' => $service->id,
+                    'payment_method_id' => (int) ($mat['payment_method_id'] ?? 0),
+                    'name' => trim((string) ($mat['name'] ?? '')),
+                    'quantity' => $qty,
+                    'hpp' => 0,
+                    'price' => round((float) ($mat['price'] ?? 0), 2),
+                    'notes' => $mat['notes'] ?? null,
+                ]);
+                $this->createMaterialCashOut($service, $material, (int) ($mat['payment_method_id'] ?? 0), $user->id);
+            }
+        } catch (InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        $service->refresh();
+        $totalPrice = (float) $service->total_service_price;
+        $paid = (float) $service->total_paid;
+        $service->update([
+            'payment_status' => $paid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
+        ]);
+
+        return redirect()->route('services.show', $service)->with('success', __('Material service berhasil disimpan.'));
+    }
+
+    public function deleteMaterial(Service $service, ServiceMaterial $material): RedirectResponse
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($service->status !== Service::STATUS_OPEN) {
+            abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
+        }
+        if ($material->service_id !== $service->id) {
+            abort(404);
+        }
+
+        CashFlow::where('reference_type', CashFlow::REFERENCE_EXPENSE)
+            ->where('reference_id', $material->id)
+            ->where('expense_category_id', $this->getSparepartExpenseCategoryId())
+            ->delete();
+        $material->delete();
+
+        $service->refresh();
+        $totalPrice = (float) $service->total_service_price;
+        $paid = (float) $service->total_paid;
+        $service->update([
+            'payment_status' => $paid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
+        ]);
+
+        return redirect()->route('services.show', $service)->with('success', __('Material service berhasil dihapus.'));
     }
 
     public function complete(Request $request, Service $service): RedirectResponse
@@ -289,15 +422,36 @@ class ServiceController extends Controller
         return redirect()->route('services.show', $service)->with('success', __('Status pengambilan berhasil diperbarui.'));
     }
 
-    public function cancel(Service $service): RedirectResponse
+    public function cancel(Request $request, Service $service): RedirectResponse
     {
         $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            abort(403, __('Unauthorized.'));
+        }
         if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
+        if (! in_array($service->status, [Service::STATUS_OPEN, Service::STATUS_COMPLETED], true)) {
+            return back()->with('error', __('Service tidak dapat dibatalkan.'));
+        }
+
+        $validated = $request->validate([
+            'cancel_reason' => ['required', 'string', 'max:255'],
+            'confirm_released' => ['nullable', 'boolean'],
+        ]);
+        if ($service->status === Service::STATUS_COMPLETED && empty($validated['confirm_released'])) {
+            return back()->with('error', __('Konfirmasi tambahan wajib untuk membatalkan transaksi released.'));
+        }
 
         try {
-            $this->serviceService->cancel($service);
+            $this->serviceService->cancel($service, $user->id, $validated['cancel_reason']);
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'service.cancel',
+                'reference_type' => 'service',
+                'reference_id' => $service->id,
+                'description' => 'Cancel service ' . $service->invoice_number . '. Alasan: ' . $validated['cancel_reason'],
+            ]);
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -312,7 +466,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod']);
+        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials']);
 
         return view('services.invoice', compact('service'));
     }
@@ -336,5 +490,140 @@ class ServiceController extends Controller
         ]);
 
         return (int) $customer->id;
+    }
+
+    /**
+     * @param  array<int, array{name?: string, quantity?: float, hpp?: float, price?: float, notes?: string|null}>  $materials
+     */
+    private function storeMaterials(Service $service, array $materials, bool $replace = false, ?int $userId = null): void
+    {
+        if ($replace) {
+            $oldMaterialIds = ServiceMaterial::where('service_id', $service->id)->pluck('id')->toArray();
+            if (! empty($oldMaterialIds)) {
+                CashFlow::where('reference_type', CashFlow::REFERENCE_EXPENSE)
+                    ->whereIn('reference_id', $oldMaterialIds)
+                    ->where('expense_category_id', $this->getSparepartExpenseCategoryId())
+                    ->delete();
+            }
+            ServiceMaterial::where('service_id', $service->id)->delete();
+        }
+
+        foreach ($materials as $mat) {
+            $name = trim((string) ($mat['name'] ?? ''));
+            $qty = round((float) ($mat['quantity'] ?? 0), 2);
+            if ($name === '' || $qty <= 0) {
+                continue;
+            }
+            $paymentMethodId = (int) ($mat['payment_method_id'] ?? 0);
+            $material = ServiceMaterial::create([
+                'service_id' => $service->id,
+                'payment_method_id' => $paymentMethodId,
+                'name' => $name,
+                'quantity' => $qty,
+                'hpp' => 0,
+                'price' => round((float) ($mat['price'] ?? 0), 2),
+                'notes' => $mat['notes'] ?? null,
+            ]);
+            $this->createMaterialCashOut($service, $material, $paymentMethodId, $userId ?? auth()->id());
+        }
+    }
+
+    /**
+     * @param  array<int, array{name?: string, quantity?: float, price?: float}>  $materials
+     */
+    private function sumMaterialsTotalPrice(array $materials): float
+    {
+        $sum = 0.0;
+        foreach ($materials as $mat) {
+            $name = trim((string) ($mat['name'] ?? ''));
+            $qty = (float) ($mat['quantity'] ?? 0);
+            $price = (float) ($mat['price'] ?? 0);
+            if ($name !== '' && $qty > 0 && $price >= 0) {
+                $sum += $qty * $price;
+            }
+        }
+
+        return round($sum, 2);
+    }
+
+    private function getSparepartExpenseCategoryId(): int
+    {
+        $category = ExpenseCategory::firstOrCreate(
+            ['code' => 'SP-SVC'],
+            [
+                'name' => 'Pembelian Sparepart User (SERVICE)',
+                'code' => 'SP-SVC',
+                'description' => 'Pengeluaran pembelian sparepart untuk service pelanggan',
+                'is_active' => true,
+            ]
+        );
+
+        return (int) $category->id;
+    }
+
+    /**
+     * @param  array<int, array{name?: string, payment_method_id?: int, quantity?: float, price?: float}>  $materials
+     */
+    private function ensureMaterialSaldo(int $branchId, array $materials): void
+    {
+        $totals = [];
+        foreach ($materials as $mat) {
+            $name = trim((string) ($mat['name'] ?? ''));
+            $pmId = (int) ($mat['payment_method_id'] ?? 0);
+            $qty = (float) ($mat['quantity'] ?? 0);
+            $price = (float) ($mat['price'] ?? 0);
+            if ($name === '' || $pmId <= 0 || $qty <= 0 || $price < 0) {
+                continue;
+            }
+            $totals[$pmId] = ($totals[$pmId] ?? 0) + ($qty * $price);
+        }
+        if (empty($totals)) {
+            return;
+        }
+
+        $kasService = new KasBalanceService();
+        foreach ($totals as $pmId => $total) {
+            $saldo = $kasService->getSaldoForLocation('branch', $branchId, (int) $pmId);
+            if ($saldo <= 0) {
+                throw new InvalidArgumentException(__('Sumber dana tidak tersedia (saldo 0).'));
+            }
+            if ($total > $saldo) {
+                throw new InvalidArgumentException(__('Saldo tidak mencukupi untuk pembelian material. Saldo tersedia: Rp :saldo', [
+                    'saldo' => number_format($saldo, 0, ',', '.'),
+                ]));
+            }
+        }
+    }
+
+    private function createMaterialCashOut(Service $service, ServiceMaterial $material, int $paymentMethodId, int $userId): void
+    {
+        $amount = round((float) $material->quantity * (float) $material->price, 2);
+        if ($amount <= 0) {
+            return;
+        }
+
+        CashFlow::create([
+            'branch_id' => $service->branch_id,
+            'warehouse_id' => null,
+            'type' => CashFlow::TYPE_OUT,
+            'amount' => $amount,
+            'description' => 'Pembelian Sparepart User (SERVICE) - ' . $service->invoice_number . ' - ' . $material->name,
+            'reference_type' => CashFlow::REFERENCE_EXPENSE,
+            'reference_id' => $material->id,
+            'expense_category_id' => $this->getSparepartExpenseCategoryId(),
+            'payment_method_id' => $paymentMethodId,
+            'transaction_date' => now()->toDateString(),
+            'user_id' => $userId,
+        ]);
+    }
+
+    private function refreshPaymentStatus(Service $service): void
+    {
+        $service->refresh();
+        $totalPrice = (float) $service->total_service_price;
+        $paid = (float) $service->total_paid;
+        $service->update([
+            'payment_status' => $paid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
+        ]);
     }
 }

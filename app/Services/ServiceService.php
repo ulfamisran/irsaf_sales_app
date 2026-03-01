@@ -25,7 +25,8 @@ class ServiceService
         string $entryDate,
         array $payments,
         ?string $description = null,
-        ?int $userId = null
+        ?int $userId = null,
+        float $materialsTotalPrice = 0.0
     ): Service {
         if (empty($payments)) {
             throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
@@ -35,11 +36,12 @@ class ServiceService
         if ($paymentSum < 0.01) {
             throw new InvalidArgumentException(__('DP minimal Rp 0,01.'));
         }
-        if ($paymentSum > $servicePrice + 0.02) {
+        $totalPrice = $servicePrice + max(0, $materialsTotalPrice);
+        if ($paymentSum > $totalPrice + 0.02) {
             throw new InvalidArgumentException(
-                __('Total pembayaran (:sum) tidak boleh melebihi harga service (:total).', [
+                __('Total pembayaran (:sum) tidak boleh melebihi total service (:total).', [
                     'sum' => number_format($paymentSum, 2, ',', '.'),
-                    'total' => number_format($servicePrice, 2, ',', '.'),
+                    'total' => number_format($totalPrice, 2, ',', '.'),
                 ])
             );
         }
@@ -57,11 +59,12 @@ class ServiceService
             $entryDate,
             $payments,
             $paymentSum,
+            $totalPrice,
             $description,
             $userId
         ) {
             $invoiceNumber = $this->generateInvoiceNumber();
-            $isPaidOff = $paymentSum >= $servicePrice - 0.02;
+            $isPaidOff = $paymentSum >= $totalPrice - 0.02;
 
             $service = Service::create([
                 'invoice_number' => $invoiceNumber,
@@ -129,7 +132,8 @@ class ServiceService
         float $servicePrice,
         string $entryDate,
         array $payments,
-        ?string $description = null
+        ?string $description = null,
+        ?float $materialsTotalPrice = null
     ): Service {
         if ($service->status !== Service::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Service sudah completed atau dibatalkan.'));
@@ -143,12 +147,16 @@ class ServiceService
         if ($paymentSum < 0.01) {
             throw new InvalidArgumentException(__('DP minimal Rp 0,01.'));
         }
-        if ($paymentSum > $servicePrice + 0.02) {
-            throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi harga service.'));
+        $materialTotal = $materialsTotalPrice !== null
+            ? (float) $materialsTotalPrice
+            : (float) $service->materials_total_price;
+        $totalPrice = $servicePrice + $materialTotal;
+        if ($paymentSum > $totalPrice + 0.02) {
+            throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi total service.'));
         }
 
         $branch = Branch::findOrFail($service->branch_id);
-        $isPaidOff = $paymentSum >= $servicePrice - 0.02;
+        $isPaidOff = $paymentSum >= $totalPrice - 0.02;
 
         return DB::transaction(function () use (
             $service,
@@ -245,13 +253,13 @@ class ServiceService
         }
 
         $branch = Branch::findOrFail($service->branch_id);
-        $totalPrice = (float) $service->service_price;
+        $totalPrice = (float) $service->total_service_price;
         $currentPaid = (float) $service->total_paid;
         $totalPaid = $currentPaid + $newSum;
 
         if ($totalPaid > $totalPrice + 0.02) {
             throw new InvalidArgumentException(
-                __('Total pembayaran tidak boleh melebihi harga service.')
+                __('Total pembayaran tidak boleh melebihi total service.')
             );
         }
 
@@ -359,10 +367,10 @@ class ServiceService
     /**
      * Cancel service.
      */
-    public function cancel(Service $service): Service
+    public function cancel(Service $service, int $userId, string $reason): Service
     {
-        if ($service->status !== Service::STATUS_OPEN) {
-            throw new InvalidArgumentException(__('Hanya service open yang bisa dibatalkan.'));
+        if (! in_array($service->status, [Service::STATUS_OPEN, Service::STATUS_COMPLETED], true)) {
+            throw new InvalidArgumentException(__('Hanya service open atau selesai yang bisa dibatalkan.'));
         }
 
         return DB::transaction(function () use ($service) {
@@ -371,7 +379,12 @@ class ServiceService
                 ->delete();
 
             ServicePayment::where('service_id', $service->id)->delete();
-            $service->update(['status' => Service::STATUS_CANCEL]);
+            $service->update([
+                'status' => Service::STATUS_CANCEL,
+                'cancel_date' => now()->toDateString(),
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
 
             return $service->fresh();
         });

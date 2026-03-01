@@ -7,6 +7,7 @@ use App\Http\Requests\ManualIncomeRequest;
 use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\ExpenseCategory;
+use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
@@ -89,7 +90,7 @@ class CashFlowController extends Controller
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch', 'warehouse'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'incomeCategory'])
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_OTHER)
             ->orderByDesc('transaction_date')
@@ -123,6 +124,9 @@ class CashFlowController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('transaction_date', '<=', $request->date_to);
         }
+        if ($request->filled('income_category_id')) {
+            $query->where('income_category_id', $request->income_category_id);
+        }
 
         $incomes = $query->paginate(20)->withQueryString();
 
@@ -144,14 +148,16 @@ class CashFlowController extends Controller
             ->groupBy('payment_method_id')
             ->pluck('total', 'payment_method_id');
 
-        return view('cash-flows.in-index', compact('incomes', 'branches', 'warehouses', 'totalIn', 'paymentMethods', 'paymentMethodTotals'));
+        $incomeCategories = IncomeCategory::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+
+        return view('cash-flows.in-index', compact('incomes', 'branches', 'warehouses', 'totalIn', 'paymentMethods', 'paymentMethodTotals', 'incomeCategories'));
     }
 
     public function index(Request $request): View
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch', 'warehouse'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'incomeCategory'])
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
         $query->where(function ($q) {
@@ -267,7 +273,9 @@ class CashFlowController extends Controller
             ->orderBy('no_rekening')
             ->get();
 
-        return view('cash-flows.create-in', compact('branches', 'warehouses', 'paymentMethods'));
+        $incomeCategories = IncomeCategory::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+
+        return view('cash-flows.create-in', compact('branches', 'warehouses', 'paymentMethods', 'incomeCategories'));
     }
 
     public function storeOut(CashOutRequest $request): RedirectResponse
@@ -342,6 +350,7 @@ class CashFlowController extends Controller
             'reference_type' => CashFlow::REFERENCE_OTHER,
             'reference_id' => null,
             'expense_category_id' => null,
+            'income_category_id' => (int) $validated['income_category_id'],
             'payment_method_id' => (int) $validated['payment_method_id'],
             'transaction_date' => $validated['transaction_date'],
             'user_id' => $user->id,

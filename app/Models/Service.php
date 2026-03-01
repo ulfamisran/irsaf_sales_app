@@ -38,6 +38,9 @@ class Service extends Model
         'payment_status',
         'status',
         'description',
+        'cancel_date',
+        'cancel_user_id',
+        'cancel_reason',
     ];
 
     protected function casts(): array
@@ -48,6 +51,7 @@ class Service extends Model
             'total_paid' => 'decimal:2',
             'entry_date' => 'date',
             'exit_date' => 'date',
+            'cancel_date' => 'date',
         ];
     }
 
@@ -71,9 +75,46 @@ class Service extends Model
         return $this->hasMany(ServicePayment::class);
     }
 
+    public function serviceMaterials(): HasMany
+    {
+        return $this->hasMany(ServiceMaterial::class);
+    }
+
+    public function getMaterialsTotalPriceAttribute(): float
+    {
+        if ($this->relationLoaded('serviceMaterials')) {
+            return (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->price * (float) $m->quantity);
+        }
+
+        return (float) $this->serviceMaterials()
+            ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
+            ->value('total');
+    }
+
+    public function getMaterialsTotalCostAttribute(): float
+    {
+        if ($this->relationLoaded('serviceMaterials')) {
+            return (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->hpp * (float) $m->quantity);
+        }
+
+        return (float) $this->serviceMaterials()
+            ->selectRaw('COALESCE(SUM(quantity * hpp), 0) as total')
+            ->value('total');
+    }
+
+    public function getTotalServicePriceAttribute(): float
+    {
+        return (float) $this->service_price + (float) $this->materials_total_price;
+    }
+
+    public function getTotalServiceCostAttribute(): float
+    {
+        return (float) $this->service_cost + (float) $this->materials_total_cost;
+    }
+
     public function isPaidOff(): bool
     {
-        $total = (float) $this->service_price;
+        $total = (float) $this->total_service_price;
         if ($total <= 0) {
             return true;
         }

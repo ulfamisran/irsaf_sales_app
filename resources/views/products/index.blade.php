@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Produk') }}</h2>
-            @if (auth()->user()->isSuperAdmin())
+            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
                 <x-icon-btn-add :href="route('products.create')" :label="__('Tambah Produk')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -68,6 +68,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Series') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Beli') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Gudang') }}</th>
@@ -83,6 +84,7 @@
                                 <td class="px-4 py-3">{{ $product->series }}</td>
                                 <td class="px-4 py-3">{{ $product->laptop_type ? ucfirst($product->laptop_type) : '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->category?->name }}</td>
+                                <td class="px-4 py-3">{{ $product->user?->name ?? '-' }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->purchase_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->selling_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-medium">{{ (int) ($product->warehouse_stock ?? 0) }}</td>
@@ -120,7 +122,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
+                                <td colspan="11" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

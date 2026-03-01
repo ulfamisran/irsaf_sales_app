@@ -28,6 +28,9 @@ class Sale extends Model
         'sale_date',
         'status',
         'released_at',
+        'cancel_date',
+        'cancel_user_id',
+        'cancel_reason',
     ];
 
     protected function casts(): array
@@ -39,6 +42,7 @@ class Sale extends Model
             'tax_amount' => 'decimal:2',
             'sale_date' => 'date',
             'released_at' => 'datetime',
+            'cancel_date' => 'date',
         ];
     }
 

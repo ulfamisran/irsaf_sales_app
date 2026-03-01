@@ -33,6 +33,10 @@
                         <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Harga Jual') }}</p>
                         <p class="font-medium text-slate-800">{{ number_format($product->selling_price, 0, ',', '.') }}</p>
                     </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('User') }}</p>
+                        <p class="font-medium text-slate-800">{{ $product->user?->name ?? '-' }}</p>
+                    </div>
                 </div>
                 @if ($product->specs)
                     <div class="mt-4">
@@ -100,6 +104,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sold') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -124,10 +129,11 @@
                                 </td>
                                 <td class="px-4 py-3">{{ $u->received_date?->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $u->sold_at?->format('d/m/Y H:i') }}</td>
+                                <td class="px-4 py-3">{{ $u->user?->name ?? '-' }}</td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada unit/serial untuk produk ini.') }}</td>
+                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada unit/serial untuk produk ini.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

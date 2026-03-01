@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Warehouse;
+use App\Models\AuditLog;
 use App\Repositories\CategoryRepository;
 use App\Repositories\ProductRepository;
 use Illuminate\Http\RedirectResponse;
@@ -50,7 +51,17 @@ class ProductController extends Controller
      */
     public function store(ProductRequest $request): RedirectResponse
     {
-        $this->productRepository->create($request->validated());
+        $data = $request->validated();
+        $data['user_id'] = $request->user()?->id;
+        $product = $this->productRepository->create($data);
+        $userId = $request->user()?->id;
+        AuditLog::create([
+            'user_id' => $userId,
+            'action' => 'product.create',
+            'reference_type' => 'product',
+            'reference_id' => $product?->id,
+            'description' => 'Create product ' . ($product?->sku ?? ''),
+        ]);
         return redirect()->route('products.index')->with('success', __('Product created successfully.'));
     }
 
@@ -86,9 +97,9 @@ class ProductController extends Controller
      */
     public function show(Request $request, Product $product): View
     {
-        $product->load('category');
+        $product->load(['category', 'user']);
 
-        $query = ProductUnit::with(['warehouse', 'branch'])
+        $query = ProductUnit::with(['warehouse', 'branch', 'user'])
             ->where('product_id', $product->id)
             ->orderByDesc('id');
 

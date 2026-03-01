@@ -232,6 +232,186 @@ class RentalService
     }
 
     /**
+     * Update an OPEN rental.
+     *
+     * @param  array<int, array{product_id:int, serial_number:string, rental_price:float}>  $items
+     * @param  array<int, array{payment_method_id:int, amount:float, notes?:string|null}>  $payments
+     */
+    public function update(
+        Rental $rental,
+        int $warehouseId,
+        ?int $customerId,
+        string $pickupDate,
+        string $returnDate,
+        array $items,
+        float $taxAmount,
+        float $penaltyAmount,
+        array $payments,
+        ?string $description = null,
+        ?int $userId = null
+    ): Rental {
+        if ($rental->status !== Rental::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Hanya penyewaan OPEN yang bisa diedit.'));
+        }
+        if (empty($items)) {
+            throw new InvalidArgumentException(__('Penyewaan wajib berisi item.'));
+        }
+        if (empty($payments)) {
+            throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
+        }
+
+        $branch = Branch::findOrFail($rental->branch_id);
+        $warehouse = Warehouse::findOrFail($warehouseId);
+
+        $days = $this->calculateDays($pickupDate, $returnDate);
+        if ($days <= 0) {
+            throw new InvalidArgumentException(__('Jumlah hari sewa tidak valid.'));
+        }
+
+        [$details, $subTotal] = $this->buildItems($items, $days, $warehouse->id);
+        $taxAmount = max(0, round($this->parseMoney($taxAmount), 2));
+        $penaltyAmount = max(0, round($this->parseMoney($penaltyAmount), 2));
+        $grandTotal = max(0, round($subTotal + $taxAmount + $penaltyAmount, 2));
+
+        $paymentSum = $this->sumPayments($payments);
+        if ($paymentSum < 0.01) {
+            throw new InvalidArgumentException(__('DP minimal Rp 0,01.'));
+        }
+        if ($paymentSum > $grandTotal + 0.02) {
+            throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi total sewa.'));
+        }
+
+        return DB::transaction(function () use (
+            $rental,
+            $branch,
+            $warehouse,
+            $customerId,
+            $pickupDate,
+            $returnDate,
+            $days,
+            $details,
+            $subTotal,
+            $taxAmount,
+            $penaltyAmount,
+            $grandTotal,
+            $payments,
+            $paymentSum,
+            $description,
+            $userId
+        ) {
+            // Return previous units to stock
+            $oldItems = RentalItem::where('rental_id', $rental->id)->get();
+            foreach ($oldItems as $item) {
+                $this->markUnitReturned((int) $item->product_id, (int) $rental->warehouse_id, (string) $item->serial_number);
+            }
+
+            RentalItem::where('rental_id', $rental->id)->delete();
+            RentalPayment::where('rental_id', $rental->id)->delete();
+            CashFlow::where('reference_type', CashFlow::REFERENCE_RENTAL)
+                ->where('reference_id', $rental->id)
+                ->delete();
+
+            $rental->update([
+                'warehouse_id' => $warehouse->id,
+                'customer_id' => $customerId,
+                'pickup_date' => $pickupDate,
+                'return_date' => $returnDate,
+                'total_days' => $days,
+                'subtotal' => $subTotal,
+                'tax_amount' => $taxAmount,
+                'penalty_amount' => $penaltyAmount,
+                'total' => $grandTotal,
+                'total_paid' => $paymentSum,
+                'payment_status' => $paymentSum >= $grandTotal - 0.02 ? Rental::PAYMENT_LUNAS : Rental::PAYMENT_BELUM_LUNAS,
+                'description' => $description,
+            ]);
+
+            foreach ($details as $detail) {
+                RentalItem::create([
+                    'rental_id' => $rental->id,
+                    'product_id' => $detail['product_id'],
+                    'serial_number' => $detail['serial_number'],
+                    'rental_price' => $detail['rental_price'],
+                    'days' => $detail['days'],
+                    'total' => $detail['total'],
+                ]);
+                $this->markUnitRented(
+                    $detail['product_id'],
+                    $warehouse->id,
+                    $detail['serial_number']
+                );
+            }
+
+            foreach ($payments as $p) {
+                $amt = round($this->parseMoney($p['amount'] ?? 0), 2);
+                if ($amt <= 0) {
+                    continue;
+                }
+                RentalPayment::create([
+                    'rental_id' => $rental->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
+                ]);
+            }
+
+            foreach (RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get() as $rp) {
+                $pm = $rp->paymentMethod;
+                $pmLabel = $pm ? $pm->display_label : __('Payment');
+                CashFlow::create([
+                    'branch_id' => null,
+                    'warehouse_id' => $warehouse->id,
+                    'type' => CashFlow::TYPE_IN,
+                    'amount' => $rp->amount,
+                    'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                    'reference_type' => CashFlow::REFERENCE_RENTAL,
+                    'reference_id' => $rental->id,
+                    'payment_method_id' => $rp->payment_method_id,
+                    'transaction_date' => $pickupDate,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
+
+            return $rental->fresh()->load(['items.product', 'payments.paymentMethod', 'branch', 'warehouse', 'customer', 'user']);
+        });
+    }
+
+    /**
+     * Cancel an OPEN or RELEASED rental.
+     */
+    public function cancel(Rental $rental, int $userId, string $reason): Rental
+    {
+        if (! in_array($rental->status, [Rental::STATUS_OPEN, Rental::STATUS_RELEASED], true)) {
+            throw new InvalidArgumentException(__('Hanya penyewaan OPEN atau RELEASED yang bisa dibatalkan.'));
+        }
+
+        return DB::transaction(function () use ($rental) {
+            if ($rental->status === Rental::STATUS_OPEN) {
+                $items = RentalItem::where('rental_id', $rental->id)->get();
+                foreach ($items as $item) {
+                    $this->markUnitReturned((int) $item->product_id, (int) $rental->warehouse_id, (string) $item->serial_number);
+                }
+            }
+
+            RentalPayment::where('rental_id', $rental->id)->delete();
+            CashFlow::where('reference_type', CashFlow::REFERENCE_RENTAL)
+                ->where('reference_id', $rental->id)
+                ->delete();
+
+            $rental->update([
+                'status' => Rental::STATUS_CANCEL,
+                'payment_status' => Rental::PAYMENT_BELUM_LUNAS,
+                'total_paid' => 0,
+                'cancel_date' => now()->toDateString(),
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+
+            return $rental->fresh();
+        });
+    }
+
+    /**
      * Mark rental as returned and return units to warehouse stock.
      * Pelunasan wajib jika belum lunas.
      */

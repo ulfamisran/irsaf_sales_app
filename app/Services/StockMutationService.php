@@ -506,7 +506,7 @@ class StockMutationService
 
         $receivedDate = $receivedDate ?: Carbon::now()->toDateString();
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId) {
             $exists = ProductUnit::whereIn('serial_number', $serialNumbers)
                 ->pluck('serial_number')
                 ->all();
@@ -519,6 +519,7 @@ class StockMutationService
             foreach ($serialNumbers as $sn) {
                 ProductUnit::create([
                     'product_id' => $product->id,
+                    'user_id' => $userId,
                     'serial_number' => $sn,
                     'location_type' => $locationType,
                     'location_id' => $locationId,
