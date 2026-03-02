@@ -66,7 +66,8 @@ class FinanceController extends Controller
         $totalSalesProfit = $totalSales - $totalSalesHpp;
 
         $servicesQuery = Service::query()
-            ->whereIn('status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED]);
+            ->with('serviceMaterials')
+            ->whereIn('status', [Service::STATUS_COMPLETED]);
 
         if ($branchId) {
             $servicesQuery->where('branch_id', $branchId);
@@ -75,11 +76,18 @@ class FinanceController extends Controller
             $servicesQuery->whereRaw('1 = 0');
         }
 
-        $services = $servicesQuery->get();
+        $services = $servicesQuery
+            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
+                $q->whereBetween(
+                    DB::raw('COALESCE(services.exit_date, services.entry_date)'),
+                    [$dateFrom->toDateString(), $dateTo->toDateString()]
+                );
+            })
+            ->get();
 
-        $totalServiceRevenue = (float) $services->sum('service_price');
-        $totalServiceProfit = $totalServiceRevenue;
-        $totalServiceCost = 0.0;
+        $totalServiceRevenue = (float) $services->sum->total_service_price;
+        $totalServiceCost = (float) $services->sum->total_service_cost;
+        $totalServiceProfit = $totalServiceRevenue - $totalServiceCost;
 
         $totalTradeIn = 0.0;
         if (! $warehouseId) {
@@ -238,10 +246,6 @@ class FinanceController extends Controller
             ->where('cash_flows.type', CashFlow::TYPE_OUT)
             ->where(function ($q) {
                 $q->whereNull('cash_flows.reference_type')
-                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE]);
-            })
-            ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
                     ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
                     ->orWhereIn('cash_flows.reference_id', function ($sq) {
                         $sq->select('id')
@@ -377,10 +381,6 @@ class FinanceController extends Controller
         $warehouseExpense = [];
         $cashFlowOutTotals = DB::table('cash_flows')
             ->where('type', CashFlow::TYPE_OUT)
-            ->where(function ($q) {
-                $q->whereNull('reference_type')
-                    ->orWhereNotIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE]);
-            })
             ->where(function ($q) {
                 $q->whereNull('reference_type')
                     ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
@@ -577,7 +577,11 @@ class FinanceController extends Controller
             })
             ->where(function ($q) {
                 $q->whereNull('reference_type')
-                    ->orWhereNotIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE]);
+                    ->orWhereNotIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
+                    ->orWhere(function ($sq) {
+                        $sq->whereIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
+                            ->where('type', CashFlow::TYPE_OUT);
+                    });
             })
             ->where(function ($q) {
                 $q->whereNull('reference_type')

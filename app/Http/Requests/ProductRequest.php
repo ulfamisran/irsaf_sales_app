@@ -22,19 +22,18 @@ class ProductRequest extends FormRequest
      */
     public function rules(): array
     {
-        $productId = $this->route('product');
-        $uniqueSku = $productId
-            ? 'unique:products,sku,' . $productId
-            : 'unique:products,sku';
-
         $user = $this->user();
         $isBranchAdmin = $user && $user->hasAnyRole([Role::ADMIN_CABANG]);
 
         return [
             'category_id' => ['required', 'exists:categories,id'],
-            'sku' => ['required', 'string', 'max:255', $uniqueSku],
+            'distributor_id' => ['required', 'exists:distributors,id'],
             'brand' => ['required', 'string', 'max:255'],
             'series' => ['nullable', 'string', 'max:255'],
+            'processor' => ['nullable', 'string', 'max:255'],
+            'ram' => ['nullable', 'string', 'max:255'],
+            'storage' => ['nullable', 'string', 'max:255'],
+            'color' => ['nullable', 'string', 'max:255'],
             'specs' => ['nullable', 'string'],
             'laptop_type' => $isBranchAdmin ? ['required', 'in:baru'] : ['required', 'in:baru,bekas'],
             'purchase_price' => ['required', 'numeric', 'min:0'],

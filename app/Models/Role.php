@@ -17,6 +17,7 @@ class Role extends Model
     ];
 
     public const SUPER_ADMIN = 'super_admin';
+    public const ADMIN_PUSAT = 'admin_pusat';
     public const ADMIN_CABANG = 'admin_cabang';
     public const STAFF_GUDANG = 'staff_gudang';
     public const KASIR = 'kasir';

@@ -25,11 +25,11 @@ class IncomingGoodsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdmin() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
@@ -75,35 +75,56 @@ class IncomingGoodsController extends Controller
         return view('incoming-goods.index', compact('records', 'products', 'categories', 'warehouses', 'isBranchUser', 'branch'));
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdmin() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
 
-        $products = Product::orderBy('sku')
-            ->when($isBranchUser, fn ($q) => $q->where('laptop_type', 'baru'))
-            ->get();
+        $productsQuery = Product::orderBy('sku')
+            ->when($isBranchUser, fn ($q) => $q->where('laptop_type', 'baru'));
+        $selectedProduct = null;
+        if ($request->filled('product_id')) {
+            $selectedProduct = (clone $productsQuery)->whereKey($request->product_id)->first();
+            if (! $selectedProduct) {
+                abort(404, __('Product not found.'));
+            }
+            if (! $selectedProduct->is_active) {
+                abort(403, __('Produk nonaktif tidak bisa ditambah unit.'));
+            }
+            $products = collect([$selectedProduct]);
+        } else {
+            $products = $productsQuery->get();
+        }
         $warehouses = Warehouse::orderBy('name')->get();
+        $selectedWarehouse = null;
+        if ($request->filled('warehouse_id')) {
+            $selectedWarehouse = $warehouses->firstWhere('id', (int) $request->warehouse_id);
+            if (! $selectedWarehouse) {
+                abort(404, __('Warehouse not found.'));
+            }
+        } elseif ($warehouses->count() === 1) {
+            $selectedWarehouse = $warehouses->first();
+        }
         $branch = $isBranchUser ? Branch::find($user->branch_id) : null;
 
-        return view('incoming-goods.create', compact('products', 'warehouses', 'isBranchUser', 'branch'));
+        return view('incoming-goods.create', compact('products', 'warehouses', 'isBranchUser', 'branch', 'selectedProduct', 'selectedWarehouse'));
     }
 
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdmin() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }

@@ -42,7 +42,7 @@ class StockInOutController extends Controller
         $effectiveLocationType = $validated['location_type'] ?? null;
         $effectiveLocationId = isset($validated['location_id']) ? (int) $validated['location_id'] : null;
 
-        if (! $user->isSuperAdmin() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
             $effectiveLocationType = Stock::LOCATION_BRANCH;
             $effectiveLocationId = (int) $user->branch_id;
         }

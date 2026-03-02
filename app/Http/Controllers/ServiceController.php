@@ -51,11 +51,13 @@ class ServiceController extends Controller
             $query->where('status', $request->status);
         }
 
-        $totalService = (float) (clone $query)
+        $serviceTotals = (clone $query)
             ->whereIn('status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
             ->with('serviceMaterials')
-            ->get()
-            ->sum(fn (Service $service) => (float) $service->total_service_price);
+            ->get();
+        $totalService = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->total_service_price);
+        $totalMaterialExpense = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->materials_total_price);
+        $totalServiceNet = $totalService - $totalMaterialExpense;
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->orderBy('jenis_pembayaran')
@@ -78,7 +80,7 @@ class ServiceController extends Controller
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
 
-        return view('services.index', compact('services', 'branches', 'totalService', 'paymentMethods', 'paymentMethodTotals'));
+        return view('services.index', compact('services', 'branches', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View

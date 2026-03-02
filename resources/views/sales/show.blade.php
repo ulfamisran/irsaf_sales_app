@@ -60,6 +60,25 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    @if ($sale->status === \App\Models\Sale::STATUS_CANCEL)
+                        <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
+                            <p class="text-sm font-semibold text-rose-700">{{ __('Informasi Pembatalan') }}</p>
+                            <div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-700">
+                                <div>
+                                    <p class="text-xs text-slate-500">{{ __('Tanggal Batal') }}</p>
+                                    <p class="font-medium">{{ $sale->cancel_date?->format('d/m/Y') ?? '-' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-500">{{ __('Dibatalkan Oleh') }}</p>
+                                    <p class="font-medium">{{ $sale->cancelUser?->name ?? '-' }}</p>
+                                </div>
+                                <div class="md:col-span-1">
+                                    <p class="text-xs text-slate-500">{{ __('Alasan Batal') }}</p>
+                                    <p class="font-medium whitespace-pre-line">{{ $sale->cancel_reason ?? '-' }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
                             <p class="text-sm text-gray-500">{{ __('Branch') }}</p>
@@ -71,7 +90,7 @@
                                 <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $sale->status === 'released' ? 'bg-emerald-100 text-emerald-800' : ($sale->status === 'cancel' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800') }}">
                                     {{ $sale->status === 'cancel' ? __('Dibatalkan') : $sale->status }}
                                 </span>
-                                @if ($sale->status === 'released')
+                                @if (in_array($sale->status, ['released', 'cancel'], true))
                                     <span class="ml-1 px-2 py-1 rounded-lg text-xs font-medium {{ $sale->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
                                         {{ $sale->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
                                     </span>
@@ -147,7 +166,7 @@
                     </table>
 
                     @if ($sale->status === 'released' || $sale->status === 'open')
-                        <div class="mt-6">
+                        <div class="mt-6 mb-8">
                             <p class="text-sm font-semibold text-gray-800">{{ __('Pembayaran') }}</p>
                             @if ($sale->status === 'released' && !$sale->isPaidOff())
                                 <p class="text-xs text-amber-700 mt-1">{{ __('Belum lunas') }} - {{ __('Sisa') }}: {{ number_format((float)$sale->total - (float)$sale->total_paid, 0, ',', '.') }}</p>
@@ -171,6 +190,38 @@
                                         <span class="font-medium">{{ number_format($ti->trade_in_value, 0, ',', '.') }}</span>
                                     </div>
                                 @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    @if ($sale->tradeIns && $sale->tradeIns->isNotEmpty())
+                        <div class="mt-6">
+                            <p class="text-sm font-semibold text-gray-800">{{ __('Barang Tukar Tambah') }}</p>
+                            <div class="mt-2 overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('SKU') }}</th>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Brand') }}</th>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Series') }}</th>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Specs') }}</th>
+                                            <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Nilai') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        @foreach ($sale->tradeIns as $ti)
+                                            <tr>
+                                                <td class="px-3 py-2">{{ $ti->sku }}</td>
+                                                <td class="px-3 py-2">{{ $ti->brand ?? '-' }}</td>
+                                                <td class="px-3 py-2">{{ $ti->series ?? '-' }}</td>
+                                                <td class="px-3 py-2 font-mono text-xs">{{ $ti->serial_number ?? '-' }}</td>
+                                                <td class="px-3 py-2 text-xs text-slate-600">{{ $ti->specs ?? '-' }}</td>
+                                                <td class="px-3 py-2 text-right">{{ number_format($ti->trade_in_value, 0, ',', '.') }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     @endif

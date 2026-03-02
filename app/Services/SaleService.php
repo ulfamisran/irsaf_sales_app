@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\ExpenseCategory;
+use App\Models\Distributor;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Sale;
@@ -28,7 +29,7 @@ class SaleService
      *
      * @param  array<int, array{product_id: int, quantity: int, price: float, serial_numbers?: array<int,string>}>  $items
      * @param  array<int, array{payment_method_id: int, amount: float, notes?: string|null}>  $payments  Uang muka (boleh kurang dari total)
-     * @param  array<int, array{sku: string, serial_number: string, brand: string, series?: string, specs?: string, category_id: int, trade_in_value: float}>  $tradeIns  Tukar tambah (laptop bekas)
+     * @param  array<int, array{sku: string, serial_number: string, brand: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id: int, trade_in_value: float}>  $tradeIns  Tukar tambah (laptop bekas)
      */
     public function createDraftSale(
         int $branchId,
@@ -182,7 +183,7 @@ class SaleService
      * Update an OPEN sale draft.
      *
      * @param  array<int, array{payment_method_id: int, amount: float, notes?: string|null}>  $payments
-     * @param  array<int, array{sku: string, serial_number: string, brand: string, series?: string, specs?: string, category_id: int, trade_in_value: float}>  $tradeIns
+     * @param  array<int, array{sku: string, serial_number: string, brand: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id: int, trade_in_value: float}>  $tradeIns
      */
     public function updateDraftSale(
         Sale $sale,
@@ -412,34 +413,53 @@ class SaleService
                 ]);
             }
 
-            // Proses tukar tambah: buat produk baru dari input manual, tambah ke stok cabang
+            // Proses tukar tambah: buat produk & unit baru, default nonaktif
             foreach ($tradeIns as $tradeIn) {
                 $hpp = (float) $tradeIn->trade_in_value;
+                $tradeInDistributor = Distributor::firstOrCreate(
+                    ['name' => 'TUKAR TAMBAH'],
+                    ['address' => null, 'phone' => null]
+                );
 
                 // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
                 $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
                 $newProduct = Product::create([
                     'category_id' => $tradeIn->category_id,
+                    'distributor_id' => $tradeInDistributor->id,
+                    'user_id' => $userId,
                     'sku' => $sku,
                     'brand' => $tradeIn->brand ?? '',
                     'series' => $tradeIn->series ?? '',
+                    'processor' => $tradeIn->processor ?? '',
+                    'ram' => $tradeIn->ram ?? '',
+                    'storage' => $tradeIn->storage ?? '',
+                    'color' => $tradeIn->color ?? '',
                     'specs' => $tradeIn->specs ?? '',
                     'laptop_type' => 'bekas',
                     'purchase_price' => $hpp,
                     'selling_price' => $hpp,
+                    'is_active' => false,
                 ]);
 
                 $tradeIn->update(['product_id' => $newProduct->id]);
 
-                // Tambah unit ke stok cabang (serial-based)
-                $this->stockMutationService->addStock(
-                    $newProduct,
-                    Stock::LOCATION_BRANCH,
-                    (int) $branch->id,
-                    1,
-                    $userId,
-                    [$tradeIn->serial_number],
-                    $saleDate
+                // Tambah unit ke cabang sebagai unit nonaktif (tidak dihitung stok)
+                ProductUnit::create([
+                    'product_id' => $newProduct->id,
+                    'user_id' => $userId,
+                    'serial_number' => $tradeIn->serial_number,
+                    'location_type' => Stock::LOCATION_BRANCH,
+                    'location_id' => (int) $branch->id,
+                    'status' => ProductUnit::STATUS_INACTIVE,
+                    'received_date' => $saleDate,
+                ]);
+                Stock::updateOrCreate(
+                    [
+                        'product_id' => $newProduct->id,
+                        'location_type' => Stock::LOCATION_BRANCH,
+                        'location_id' => (int) $branch->id,
+                    ],
+                    ['quantity' => 0]
                 );
             }
 
@@ -487,8 +507,8 @@ class SaleService
     }
 
     /**
-     * @param  array<int, array{sku?: string, serial_number?: string, brand?: string, series?: string, specs?: string, category_id?: int, trade_in_value?: float}>  $tradeIns
-     * @return array<int, array{sku: string, serial_number: string, brand: string, series?: string, specs?: string, category_id: int, trade_in_value: float}>
+     * @param  array<int, array{sku?: string, serial_number?: string, brand?: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id?: int, trade_in_value?: float}>  $tradeIns
+     * @return array<int, array{sku: string, serial_number: string, brand: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id: int, trade_in_value: float}>
      */
     private function buildTradeIns(array $tradeIns): array
     {
@@ -507,6 +527,10 @@ class SaleService
                 'serial_number' => $serial,
                 'brand' => $brand,
                 'series' => $ti['series'] ?? null,
+                'processor' => $ti['processor'] ?? null,
+                'ram' => $ti['ram'] ?? null,
+                'storage' => $ti['storage'] ?? null,
+                'color' => $ti['color'] ?? null,
                 'specs' => $ti['specs'] ?? null,
                 'category_id' => $categoryId,
                 'trade_in_value' => round($value, 2),
@@ -579,7 +603,7 @@ class SaleService
             throw new InvalidArgumentException(__('Hanya penjualan OPEN atau RELEASED yang bisa dibatalkan.'));
         }
 
-        return DB::transaction(function () use ($sale) {
+        return DB::transaction(function () use ($sale, $userId, $reason) {
             if ($sale->status === Sale::STATUS_OPEN) {
                 try {
                     $this->unreserveSaleUnits($sale, strict: false);
@@ -622,15 +646,43 @@ class SaleService
                 }
             }
 
-            CashFlow::where('reference_type', CashFlow::REFERENCE_SALE)
-                ->where('reference_id', $sale->id)
-                ->delete();
+            $refundDate = now()->toDateString();
+            $payments = SalePayment::with('paymentMethod')->where('sale_id', $sale->id)->get();
+            foreach ($payments as $sp) {
+                $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
+                CashFlow::create([
+                    'branch_id' => $sale->branch_id,
+                    'type' => CashFlow::TYPE_OUT,
+                    'amount' => $sp->amount,
+                    'description' => __('Cancel Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
+                    'reference_type' => CashFlow::REFERENCE_SALE,
+                    'reference_id' => $sale->id,
+                    'payment_method_id' => $sp->payment_method_id,
+                    'transaction_date' => $refundDate,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
             SalePayment::where('sale_id', $sale->id)->delete();
+
+            // Tukar tambah dibatalkan: nonaktifkan produk & set unit status cancel
+            $tradeIns = SaleTradeIn::where('sale_id', $sale->id)->get();
+            foreach ($tradeIns as $ti) {
+                if (! $ti->product_id) {
+                    continue;
+                }
+                Product::where('id', $ti->product_id)->update(['is_active' => false]);
+                ProductUnit::where('product_id', $ti->product_id)
+                    ->when($ti->serial_number, fn ($q) => $q->where('serial_number', $ti->serial_number))
+                    ->update(['status' => ProductUnit::STATUS_CANCEL]);
+                Stock::where('product_id', $ti->product_id)
+                    ->where('location_type', Stock::LOCATION_BRANCH)
+                    ->where('location_id', (int) $sale->branch_id)
+                    ->update(['quantity' => 0]);
+            }
 
             $sale->update([
                 'status' => Sale::STATUS_CANCEL,
                 'released_at' => null,
-                'total_paid' => 0,
                 'cancel_date' => now()->toDateString(),
                 'cancel_user_id' => $userId,
                 'cancel_reason' => $reason,

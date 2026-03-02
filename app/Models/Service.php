@@ -65,6 +65,11 @@ class Service extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function cancelUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancel_user_id');
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

@@ -63,10 +63,44 @@ class User extends Authenticatable
     {
         return $this->roles()
             ->where(function ($query) {
+                $query->whereIn('name', [Role::SUPER_ADMIN, Role::ADMIN_PUSAT, 'super admin', 'Super Admin', 'admin pusat', 'Admin Pusat'])
+                    ->orWhereIn('display_name', ['Super Admin', 'super admin', 'super_admin', 'Admin Pusat', 'admin pusat', 'admin_pusat']);
+            })
+            ->exists();
+    }
+
+    /**
+     * Check if user is strictly super admin.
+     */
+    public function isStrictSuperAdmin(): bool
+    {
+        return $this->roles()
+            ->where(function ($query) {
                 $query->whereIn('name', [Role::SUPER_ADMIN, 'super admin', 'Super Admin'])
                     ->orWhereIn('display_name', ['Super Admin', 'super admin', 'super_admin']);
             })
             ->exists();
+    }
+
+    /**
+     * Check if user is admin pusat.
+     */
+    public function isAdminPusat(): bool
+    {
+        return $this->roles()
+            ->where(function ($query) {
+                $query->whereIn('name', [Role::ADMIN_PUSAT, 'admin pusat', 'Admin Pusat'])
+                    ->orWhereIn('display_name', ['Admin Pusat', 'admin pusat', 'admin_pusat']);
+            })
+            ->exists();
+    }
+
+    /**
+     * Check if user is super admin or admin pusat.
+     */
+    public function isSuperAdminOrAdminPusat(): bool
+    {
+        return $this->isSuperAdmin() || $this->isAdminPusat();
     }
 
     /**

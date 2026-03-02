@@ -19,6 +19,11 @@ class RoleSeeder extends Seeder
                 'description' => 'Full system access',
             ],
             [
+                'name' => Role::ADMIN_PUSAT,
+                'display_name' => 'Admin Pusat',
+                'description' => 'Central admin access without settings menu',
+            ],
+            [
                 'name' => Role::ADMIN_CABANG,
                 'display_name' => 'Admin Cabang',
                 'description' => 'Branch administrator',

@@ -50,15 +50,16 @@
         }
         .inv-company{
             display:flex;
-            gap: 10px;
+            flex-direction: column;
+            gap: 0;
             align-items:flex-start;
             min-width: 55%;
         }
         .inv-logo{
-            width: 54px;
-            height: 54px;
-            border: 2px solid #000;
-            background: #facc15;
+            width: auto;
+            height: auto;
+            border: 0;
+            background: transparent;
             display:flex;
             align-items:center;
             justify-content:center;
@@ -67,7 +68,7 @@
             color:#000;
             flex: 0 0 auto;
         }
-        .inv-logo img{ max-width: 100%; max-height: 100%; display:block; }
+        .inv-logo img{ max-width: 100%; max-height: 42px; display:block; }
         .inv-co-name{ font-weight: 800; font-size: 15px; line-height: 1.1; }
         .inv-co-line{ font-size: 11px; color: var(--ink); line-height: 1.15; }
         .inv-co-muted{ font-size: 11px; color: var(--muted); line-height: 1.15; }
@@ -246,8 +247,14 @@
 
         $terbilang = trim(irsaf_terbilang((int) round($grandTotal)));
 
-        $logoPath = public_path('images/invoice-logo.png');
-        $hasLogo = file_exists($logoPath);
+        $logoPath = public_path('images/logo.png');
+        $fallbackLogoPath = public_path('images/invoice-logo.png');
+        $logoUrl = null;
+        if (file_exists($logoPath)) {
+            $logoUrl = asset('images/logo.png');
+        } elseif (file_exists($fallbackLogoPath)) {
+            $logoUrl = asset('images/invoice-logo.png');
+        }
     @endphp
     <div class="no-print max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
         <a href="{{ route('sales.show', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300">
@@ -263,8 +270,8 @@
             <div class="inv-top">
                 <div class="inv-company">
                     <div class="inv-logo" aria-label="Logo">
-                        @if ($hasLogo)
-                            <img src="{{ asset('images/invoice-logo.png') }}" alt="Logo">
+                        @if ($logoUrl)
+                            <img src="{{ $logoUrl }}" alt="{{ config('app.name', 'Logo') }}">
                         @else
                             IT
                         @endif

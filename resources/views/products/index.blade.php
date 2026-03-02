@@ -60,37 +60,51 @@
 
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead>
                         <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('SKU') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Brand') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Series') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Beli') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Gudang') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Cabang') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($products as $product)
                             <tr class="hover:bg-slate-50/50">
+                                <td class="px-4 py-3 text-slate-600">{{ $products->firstItem() + $loop->index }}</td>
                                 <td class="px-4 py-3">{{ $product->sku }}</td>
                                 <td class="px-4 py-3">{{ $product->brand }}</td>
                                 <td class="px-4 py-3">{{ $product->series }}</td>
                                 <td class="px-4 py-3">{{ $product->laptop_type ? ucfirst($product->laptop_type) : '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->category?->name }}</td>
+                                <td class="px-4 py-3">{{ $product->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->user?->name ?? '-' }}</td>
-                                <td class="px-4 py-3 text-right">{{ number_format($product->purchase_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->selling_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-medium">{{ (int) ($product->warehouse_stock ?? 0) }}</td>
                                 <td class="px-4 py-3 text-right font-medium">{{ (int) ($product->branch_stock ?? 0) }}</td>
+                                <td class="px-4 py-3">
+                                    @if ($product->is_active)
+                                        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                            {{ __('Aktif') }}
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                                            {{ __('Nonaktif') }}
+                                        </span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-right">
-                                    <div class="flex items-center justify-end gap-2">
+                                    <div class="flex flex-col items-end gap-2">
                                         @php
                                             $isAks = in_array(strtoupper($product->category?->name ?? ''), ['AKS'])
                                                 || in_array(strtoupper($product->category?->code ?? ''), ['AKS']);
@@ -99,30 +113,30 @@
                                             <x-icon-btn-view :href="route('products.show', $product)" :label="__('Unit')" />
                                         @endif
                                         @if (auth()->user()->isSuperAdmin())
-                                            <x-icon-btn-edit :href="route('products.edit', $product)" />
-                                            <form action="{{ route('products.destroy', $product) }}" method="POST" class="inline">
+                                            <form action="{{ route('products.toggle-active', $product) }}" method="POST" class="inline">
                                                 @csrf
-                                                @method('DELETE')
-                                                <x-icon-btn-delete />
+                                                @method('PATCH')
+                                                <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors {{ $product->is_active ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' }}">
+                                                    {{ $product->is_active ? __('Nonaktifkan') : __('Aktifkan') }}
+                                                </button>
                                             </form>
+                                        @endif
+                                        @if ($product->is_active)
+                                            <a href="{{ route('incoming-goods.create', ['product_id' => $product->id]) }}"
+                                               class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
+                                                {{ __('Tambah Unit') }}
+                                            </a>
                                         @else
-                                            <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path d="M17.414 2.586a2 2 0 010 2.828l-9.9 9.9a1 1 0 01-.353.222l-4 1.333a1 1 0 01-1.263-1.263l1.333-4a1 1 0 01.222-.353l9.9-9.9a2 2 0 012.828 0z"/>
-                                                </svg>
-                                            </button>
-                                            <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M6 7a1 1 0 011-1h6a1 1 0 011 1v9a2 2 0 01-2 2H8a2 2 0 01-2-2V7zm2-3a1 1 0 00-1 1v1h6V5a1 1 0 00-1-1H8z" clip-rule="evenodd"/>
-                                                </svg>
-                                            </button>
+                                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-400">
+                                                {{ __('Tambah Unit') }}
+                                            </span>
                                         @endif
                                     </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="11" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
+                                <td colspan="14" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

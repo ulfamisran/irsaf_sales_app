@@ -21,9 +21,7 @@
         <!-- Logo -->
         <div class="px-5 pb-5 border-b border-white/10">
             <a href="{{ route('dashboard') }}" class="flex items-center gap-3 group">
-                <div class="p-2 rounded-xl bg-indigo-500/20 group-hover:bg-indigo-500/30 transition-colors">
-                    <x-application-logo class="block h-8 w-auto fill-current text-indigo-400" />
-                </div>
+                <x-application-logo class="block h-8 w-auto fill-current text-indigo-400" />
                 <div>
                     <span class="text-lg font-bold text-white tracking-tight">{{ config('app.name', 'IRSAF') }}</span>
                     <p class="text-xs text-gray-500">Manajemen Toko</p>
@@ -56,7 +54,7 @@
 
                 <!-- Data Master -->
                 @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang || $isKasir)
-                <li x-data="{ open: {{ request()->routeIs('branches.*', 'categories.*', 'products.*', 'warehouses.*', 'customers.*', 'payment-methods.*', 'expense-categories.*', 'income-categories.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('branches.*', 'categories.*', 'distributors.*', 'products.*', 'warehouses.*', 'customers.*', 'payment-methods.*', 'expense-categories.*', 'income-categories.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Master</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -83,6 +81,7 @@
 
                         @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
                             <li><x-sidebar-nav-link :href="route('categories.index')" :active="request()->routeIs('categories.*')">Kategori</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('distributors.index')" :active="request()->routeIs('distributors.*')">Distributor</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-sidebar-nav-link></li>
                         @endif
 
@@ -98,7 +97,7 @@
 
                 <!-- Stok -->
                 @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
-                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'stock-mutations.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -123,6 +122,7 @@
                         @endif
 
                         @if ($isSuperAdmin || $isStaffGudang || $isAdminCabang)
+                            <li><x-sidebar-nav-link :href="route('stock-units.index')" :active="request()->routeIs('stock-units.*')">Daftar Unit</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('stock-inout.index')" :active="request()->routeIs('stock-inout.*')">Mutasi Stok (IN/OUT)</x-sidebar-nav-link></li>
                         @endif
                     </ul>
@@ -230,7 +230,7 @@
                 @endif
 
                 <!-- Pengaturan -->
-                @if (auth()->user()->isSuperAdmin())
+                @if (auth()->user()->isStrictSuperAdmin())
                 <li x-data="{ open: {{ request()->routeIs('landing-page.*', 'users.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pengaturan</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">

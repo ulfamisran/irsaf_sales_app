@@ -1,0 +1,370 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Models\ProductUnit;
+use App\Models\Branch;
+use App\Models\Role;
+use App\Models\Sale;
+use App\Models\SaleDetail;
+use App\Models\Stock;
+use App\Models\Warehouse;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\View\View;
+
+class StockUnitController extends Controller
+{
+    /**
+     * Display a listing of product units (serials).
+     */
+    public function index(Request $request): View
+    {
+        $user = $request->user();
+
+        $listBase = ProductUnit::query();
+        $countBase = ProductUnit::query();
+
+        $this->applyFilters($request, $user, $listBase, $countBase);
+
+        $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
+        $productsPage = Product::query()
+            ->whereIn('id', $productIdsQuery)
+            ->orderBy('sku')
+            ->paginate(15)
+            ->withQueryString();
+
+        $productIds = $productsPage->getCollection()->pluck('id')->all();
+        $unitsByProduct = collect();
+        $soldInfoBySerial = [];
+        if (! empty($productIds)) {
+            $units = (clone $listBase)
+                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->whereIn('product_id', $productIds)
+                ->orderBy('product_id')
+                ->orderByDesc('id')
+                ->get();
+            $unitsByProduct = $units->groupBy('product_id');
+
+            $saleDetails = SaleDetail::with(['sale:id,invoice_number,sale_date,status'])
+                ->whereIn('product_id', $productIds)
+                ->whereNotNull('serial_numbers')
+                ->whereHas('sale', fn ($q) => $q->where('status', Sale::STATUS_RELEASED))
+                ->get(['id', 'sale_id', 'product_id', 'serial_numbers']);
+            foreach ($saleDetails as $detail) {
+                $serials = preg_split('/[\r\n,]+/', (string) $detail->serial_numbers) ?: [];
+                foreach ($serials as $serial) {
+                    $serial = trim($serial);
+                    if ($serial === '' || isset($soldInfoBySerial[$serial])) {
+                        continue;
+                    }
+                    $sale = $detail->sale;
+                    $soldInfoBySerial[$serial] = [
+                        'invoice_number' => $sale?->invoice_number,
+                        'sale_date' => $sale?->sale_date,
+                    ];
+                }
+            }
+        }
+
+        $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+
+        $statusOptions = [
+            ProductUnit::STATUS_IN_STOCK => __('In Stock'),
+            ProductUnit::STATUS_KEEP => __('Reserved'),
+            ProductUnit::STATUS_SOLD => __('Sold'),
+            ProductUnit::STATUS_IN_RENT => __('In Rent'),
+            ProductUnit::STATUS_INACTIVE => __('Inactive'),
+            ProductUnit::STATUS_CANCEL => __('Cancel'),
+        ];
+
+        $inStockCounts = (clone $countBase)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->selectRaw('product_id, COUNT(*) as total')
+            ->groupBy('product_id')
+            ->pluck('total', 'product_id');
+
+        return view('stock-units.index', compact(
+            'productsPage',
+            'unitsByProduct',
+            'products',
+            'statusOptions',
+            'branches',
+            'warehouses',
+            'inStockCounts',
+            'soldInfoBySerial'
+        ));
+    }
+
+    /**
+     * Display unit detail and sale info (if sold).
+     */
+    public function show(Request $request, ProductUnit $unit): View
+    {
+        $user = $request->user();
+        $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user']);
+
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+            if (! $user->branch_id) {
+                abort(403, __('User branch not set.'));
+            }
+            if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        $saleInfo = null;
+        $details = SaleDetail::with(['sale.customer', 'sale.branch', 'sale.user'])
+            ->where('product_id', $unit->product_id)
+            ->whereNotNull('serial_numbers')
+            ->whereHas('sale', fn ($q) => $q->where('status', Sale::STATUS_RELEASED))
+            ->get(['sale_id', 'serial_numbers']);
+        foreach ($details as $detail) {
+            $serials = preg_split('/[\r\n,]+/', (string) $detail->serial_numbers) ?: [];
+            if (in_array($unit->serial_number, array_map('trim', $serials), true)) {
+                $saleInfo = $detail->sale;
+                break;
+            }
+        }
+
+        return view('stock-units.show', compact('unit', 'saleInfo'));
+    }
+
+    /**
+     * Export unit list to Excel-compatible format (HTML table).
+     */
+    public function export(Request $request): Response
+    {
+        $user = $request->user();
+
+        $listBase = ProductUnit::query();
+        $countBase = ProductUnit::query();
+
+        $this->applyFilters($request, $user, $listBase, $countBase);
+
+        $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
+        $products = Product::query()
+            ->whereIn('id', $productIdsQuery)
+            ->orderBy('sku')
+            ->get(['id', 'sku', 'brand', 'series']);
+
+        $productIds = $products->pluck('id')->all();
+        $unitsByProduct = collect();
+        $soldInfoBySerial = [];
+        if (! empty($productIds)) {
+            $units = (clone $listBase)
+                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->whereIn('product_id', $productIds)
+                ->orderBy('product_id')
+                ->orderByDesc('id')
+                ->get();
+            $unitsByProduct = $units->groupBy('product_id');
+
+            $saleDetails = SaleDetail::with(['sale:id,invoice_number,sale_date,status'])
+                ->whereIn('product_id', $productIds)
+                ->whereNotNull('serial_numbers')
+                ->whereHas('sale', fn ($q) => $q->where('status', Sale::STATUS_RELEASED))
+                ->get(['id', 'sale_id', 'product_id', 'serial_numbers']);
+            foreach ($saleDetails as $detail) {
+                $serials = preg_split('/[\r\n,]+/', (string) $detail->serial_numbers) ?: [];
+                foreach ($serials as $serial) {
+                    $serial = trim($serial);
+                    if ($serial === '' || isset($soldInfoBySerial[$serial])) {
+                        continue;
+                    }
+                    $sale = $detail->sale;
+                    $soldInfoBySerial[$serial] = [
+                        'invoice_number' => $sale?->invoice_number,
+                        'sale_date' => $sale?->sale_date,
+                    ];
+                }
+            }
+        }
+
+        $statusOptions = [
+            ProductUnit::STATUS_IN_STOCK => __('In Stock'),
+            ProductUnit::STATUS_KEEP => __('Reserved'),
+            ProductUnit::STATUS_SOLD => __('Sold'),
+            ProductUnit::STATUS_IN_RENT => __('In Rent'),
+            ProductUnit::STATUS_INACTIVE => __('Inactive'),
+            ProductUnit::STATUS_CANCEL => __('Cancel'),
+        ];
+
+        $inStockCounts = (clone $countBase)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->selectRaw('product_id, COUNT(*) as total')
+            ->groupBy('product_id')
+            ->pluck('total', 'product_id');
+
+        $filename = 'stock-units-' . now()->format('Ymd-His') . '.xls';
+        $html = view('stock-units.export', compact(
+            'products',
+            'unitsByProduct',
+            'statusOptions',
+            'inStockCounts',
+            'soldInfoBySerial'
+        ))->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    /**
+     * Export unit list to PDF (landscape).
+     */
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+
+        $listBase = ProductUnit::query();
+        $countBase = ProductUnit::query();
+
+        $this->applyFilters($request, $user, $listBase, $countBase);
+
+        $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
+        $products = Product::query()
+            ->whereIn('id', $productIdsQuery)
+            ->orderBy('sku')
+            ->get(['id', 'sku', 'brand', 'series']);
+
+        $productIds = $products->pluck('id')->all();
+        $unitsByProduct = collect();
+        $soldInfoBySerial = [];
+        if (! empty($productIds)) {
+            $units = (clone $listBase)
+                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->whereIn('product_id', $productIds)
+                ->orderBy('product_id')
+                ->orderByDesc('id')
+                ->get();
+            $unitsByProduct = $units->groupBy('product_id');
+
+            $saleDetails = SaleDetail::with(['sale:id,invoice_number,sale_date,status'])
+                ->whereIn('product_id', $productIds)
+                ->whereNotNull('serial_numbers')
+                ->whereHas('sale', fn ($q) => $q->where('status', Sale::STATUS_RELEASED))
+                ->get(['id', 'sale_id', 'product_id', 'serial_numbers']);
+            foreach ($saleDetails as $detail) {
+                $serials = preg_split('/[\r\n,]+/', (string) $detail->serial_numbers) ?: [];
+                foreach ($serials as $serial) {
+                    $serial = trim($serial);
+                    if ($serial === '' || isset($soldInfoBySerial[$serial])) {
+                        continue;
+                    }
+                    $sale = $detail->sale;
+                    $soldInfoBySerial[$serial] = [
+                        'invoice_number' => $sale?->invoice_number,
+                        'sale_date' => $sale?->sale_date,
+                    ];
+                }
+            }
+        }
+
+        $statusOptions = [
+            ProductUnit::STATUS_IN_STOCK => __('In Stock'),
+            ProductUnit::STATUS_KEEP => __('Reserved'),
+            ProductUnit::STATUS_SOLD => __('Sold'),
+            ProductUnit::STATUS_IN_RENT => __('In Rent'),
+        ];
+
+        $inStockCounts = (clone $countBase)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->selectRaw('product_id, COUNT(*) as total')
+            ->groupBy('product_id')
+            ->pluck('total', 'product_id');
+
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $locationType = (string) $request->get('location_type', '');
+        $locationId = (int) $request->get('location_id', 0);
+        $locationLabel = __('Semua');
+        if ($locationType === 'branch') {
+            $name = $branches->firstWhere('id', $locationId)?->name;
+            $locationLabel = $name ? __('Cabang') . ': ' . $name : __('Cabang');
+        } elseif ($locationType === 'warehouse') {
+            $name = $warehouses->firstWhere('id', $locationId)?->name;
+            $locationLabel = $name ? __('Gudang') . ': ' . $name : __('Gudang');
+        } elseif ($locationId) {
+            $name = $branches->firstWhere('id', $locationId)?->name;
+            if ($name) {
+                $locationLabel = __('Cabang') . ': ' . $name;
+            } else {
+                $name = $warehouses->firstWhere('id', $locationId)?->name;
+                if ($name) {
+                    $locationLabel = __('Gudang') . ': ' . $name;
+                }
+            }
+        }
+
+        $statusFilter = (string) $request->get('status', '');
+        $statusLabel = $statusFilter && isset($statusOptions[$statusFilter])
+            ? $statusOptions[$statusFilter]
+            : __('Semua');
+
+        $pdf = Pdf::loadView('stock-units.pdf', compact(
+            'products',
+            'unitsByProduct',
+            'statusOptions',
+            'inStockCounts',
+            'soldInfoBySerial',
+            'locationLabel',
+            'statusLabel'
+        ))->setPaper('a4', 'landscape');
+
+        return $pdf->download('monitoring-stok-' . now()->format('Ymd-His') . '.pdf');
+    }
+
+    private function applyFilters(Request $request, $user, $listBase, $countBase): void
+    {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+            if (! $user->branch_id) {
+                abort(403, __('User branch not set.'));
+            }
+            $listBase->where('location_type', Stock::LOCATION_BRANCH)
+                ->where('location_id', (int) $user->branch_id);
+            $countBase->where('location_type', Stock::LOCATION_BRANCH)
+                ->where('location_id', (int) $user->branch_id);
+        }
+
+        if ($request->filled('product_id')) {
+            $listBase->where('product_id', (int) $request->product_id);
+            $countBase->where('product_id', (int) $request->product_id);
+        }
+        if ($request->filled('status')) {
+            $listBase->where('status', (string) $request->status);
+        }
+        if ($request->filled('location_type')) {
+            $listBase->where('location_type', (string) $request->location_type);
+            $countBase->where('location_type', (string) $request->location_type);
+        }
+        if ($request->filled('location_id')) {
+            $listBase->where('location_id', (int) $request->location_id);
+            $countBase->where('location_id', (int) $request->location_id);
+        }
+        if ($request->filled('search')) {
+            $search = (string) $request->search;
+            $listBase->where(function ($q) use ($search) {
+                $q->where('serial_number', 'like', "%{$search}%")
+                    ->orWhereHas('product', function ($p) use ($search) {
+                        $p->where('sku', 'like', "%{$search}%")
+                            ->orWhere('brand', 'like', "%{$search}%")
+                            ->orWhere('series', 'like', "%{$search}%");
+                    });
+            });
+            $countBase->where(function ($q) use ($search) {
+                $q->where('serial_number', 'like', "%{$search}%")
+                    ->orWhereHas('product', function ($p) use ($search) {
+                        $p->where('sku', 'like', "%{$search}%")
+                            ->orWhere('brand', 'like', "%{$search}%")
+                            ->orWhere('series', 'like', "%{$search}%");
+                    });
+            });
+        }
+    }
+}

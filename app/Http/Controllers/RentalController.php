@@ -34,7 +34,7 @@ class RentalController extends Controller
             ->orderByDesc('pickup_date')
             ->orderByDesc('id');
 
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             $isBranchUser = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]);
             if ($isBranchUser) {
                 if (! $user->branch_id) {
@@ -69,7 +69,7 @@ class RentalController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('rental_payments')
             ->join('rentals', 'rental_payments.rental_id', '=', 'rentals.id')
-            ->when(! $user->isSuperAdmin(), function ($q) use ($user) {
+            ->when(! $user->isSuperAdminOrAdminPusat(), function ($q) use ($user) {
                 $isBranchUser = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]);
                 if ($isBranchUser && $user->branch_id) {
                     $q->where('rentals.branch_id', $user->branch_id);
@@ -92,7 +92,7 @@ class RentalController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && ! $user->branch_id && ! $user->hasAnyRole([\App\Models\Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id && ! $user->hasAnyRole([\App\Models\Role::STAFF_GUDANG])) {
             abort(403, __('User branch not set.'));
         }
 
@@ -116,7 +116,7 @@ class RentalController extends Controller
     {
         try {
             $user = $request->user();
-            $branchId = $user->isSuperAdmin()
+            $branchId = $user->isSuperAdminOrAdminPusat()
                 ? (int) Branch::orderBy('id')->value('id')
                 : (int) $user->branch_id;
             if (! $branchId && $user->hasAnyRole([\App\Models\Role::STAFF_GUDANG])) {
@@ -152,7 +152,7 @@ class RentalController extends Controller
     public function show(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -170,7 +170,7 @@ class RentalController extends Controller
     public function edit(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
         if ($rental->status !== Rental::STATUS_OPEN) {
@@ -197,7 +197,7 @@ class RentalController extends Controller
     public function update(RentalRequest $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
         if ($rental->status !== Rental::STATUS_OPEN) {
@@ -236,7 +236,7 @@ class RentalController extends Controller
     public function addPayment(Request $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -259,7 +259,7 @@ class RentalController extends Controller
     public function markReturned(Rental $rental): RedirectResponse
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -286,7 +286,7 @@ class RentalController extends Controller
     public function cancel(Request $request, Rental $rental): RedirectResponse
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
         if (! in_array($rental->status, [Rental::STATUS_OPEN, Rental::STATUS_RELEASED], true)) {
@@ -319,7 +319,7 @@ class RentalController extends Controller
     public function invoice(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 

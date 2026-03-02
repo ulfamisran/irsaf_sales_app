@@ -385,7 +385,7 @@ class RentalService
             throw new InvalidArgumentException(__('Hanya penyewaan OPEN atau RELEASED yang bisa dibatalkan.'));
         }
 
-        return DB::transaction(function () use ($rental) {
+        return DB::transaction(function () use ($rental, $userId) {
             if ($rental->status === Rental::STATUS_OPEN) {
                 $items = RentalItem::where('rental_id', $rental->id)->get();
                 foreach ($items as $item) {
@@ -393,15 +393,27 @@ class RentalService
                 }
             }
 
+            $refundDate = now()->toDateString();
+            $payments = RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get();
+            foreach ($payments as $rp) {
+                $pmLabel = $rp->paymentMethod?->display_label ?? __('Payment');
+                CashFlow::create([
+                    'branch_id' => null,
+                    'warehouse_id' => $rental->warehouse_id,
+                    'type' => CashFlow::TYPE_OUT,
+                    'amount' => $rp->amount,
+                    'description' => __('Cancel Rental') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                    'reference_type' => CashFlow::REFERENCE_RENTAL,
+                    'reference_id' => $rental->id,
+                    'payment_method_id' => $rp->payment_method_id,
+                    'transaction_date' => $refundDate,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
             RentalPayment::where('rental_id', $rental->id)->delete();
-            CashFlow::where('reference_type', CashFlow::REFERENCE_RENTAL)
-                ->where('reference_id', $rental->id)
-                ->delete();
 
             $rental->update([
                 'status' => Rental::STATUS_CANCEL,
-                'payment_status' => Rental::PAYMENT_BELUM_LUNAS,
-                'total_paid' => 0,
                 'cancel_date' => now()->toDateString(),
                 'cancel_user_id' => $userId,
                 'cancel_reason' => $reason,

@@ -20,7 +20,7 @@ class ReportController extends Controller
     public function stockWarehouse(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -51,7 +51,7 @@ class ReportController extends Controller
         $query = Stock::with(['product.category', 'location'])
             ->where('location_type', Stock::LOCATION_BRANCH);
 
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             if (! $user->branch_id) {
                 abort(403, __('User branch not set.'));
             }
@@ -66,7 +66,7 @@ class ReportController extends Controller
         }
 
         $stocks = $query->orderBy('product_id')->paginate(20)->withQueryString();
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
         $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);

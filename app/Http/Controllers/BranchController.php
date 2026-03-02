@@ -86,7 +86,7 @@ class BranchController extends Controller
         $this->authorize('view', $branch);
 
         $user = $request->user();
-        if ($user && ! $user->isSuperAdmin() && $user->branch_id && (int) $user->branch_id !== (int) $branch->id) {
+        if ($user && ! $user->isSuperAdminOrAdminPusat() && $user->branch_id && (int) $user->branch_id !== (int) $branch->id) {
             abort(403, __('Unauthorized.'));
         }
 

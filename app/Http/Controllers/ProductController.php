@@ -9,6 +9,7 @@ use App\Models\ProductUnit;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Repositories\CategoryRepository;
+use App\Repositories\DistributorRepository;
 use App\Repositories\ProductRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,8 @@ class ProductController extends Controller
 {
     public function __construct(
         protected ProductRepository $productRepository,
-        protected CategoryRepository $categoryRepository
+        protected CategoryRepository $categoryRepository,
+        protected DistributorRepository $distributorRepository
     ) {}
 
     /**
@@ -31,7 +33,7 @@ class ProductController extends Controller
         $products = $this->productRepository->paginate(15, [
             'search' => $request->get('search'),
             'category_id' => $request->get('category_id'),
-            'branch_id' => $user && ! $user->isSuperAdmin() ? $user->branch_id : null,
+            'branch_id' => $user && ! $user->isSuperAdminOrAdminPusat() ? $user->branch_id : null,
         ]);
         $categories = $this->categoryRepository->all();
         return view('products.index', compact('products', 'categories'));
@@ -43,7 +45,8 @@ class ProductController extends Controller
     public function create(): View
     {
         $categories = $this->categoryRepository->all();
-        return view('products.create', compact('categories'));
+        $distributors = $this->distributorRepository->all();
+        return view('products.create', compact('categories', 'distributors'));
     }
 
     /**
@@ -53,6 +56,12 @@ class ProductController extends Controller
     {
         $data = $request->validated();
         $data['user_id'] = $request->user()?->id;
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku !== '' && ! Product::where('sku', $sku)->exists()) {
+            $data['sku'] = $sku;
+        } else {
+            $data['sku'] = Product::generateSku($data);
+        }
         $product = $this->productRepository->create($data);
         $userId = $request->user()?->id;
         AuditLog::create([
@@ -71,7 +80,8 @@ class ProductController extends Controller
     public function edit(Product $product): View
     {
         $categories = $this->categoryRepository->all();
-        return view('products.edit', compact('product', 'categories'));
+        $distributors = $this->distributorRepository->all();
+        return view('products.edit', compact('product', 'categories', 'distributors'));
     }
 
     /**
@@ -79,7 +89,15 @@ class ProductController extends Controller
      */
     public function update(ProductRequest $request, Product $product): RedirectResponse
     {
-        $this->productRepository->update($product, $request->validated());
+        $data = $request->validated();
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku !== '' && $sku !== $product->sku) {
+            $request->validate([
+                'sku' => ['unique:products,sku,' . $product->id],
+            ]);
+            $data['sku'] = $sku;
+        }
+        $this->productRepository->update($product, $data);
         return redirect()->route('products.index')->with('success', __('Product updated successfully.'));
     }
 
@@ -90,6 +108,18 @@ class ProductController extends Controller
     {
         $this->productRepository->delete($product);
         return redirect()->route('products.index')->with('success', __('Product deleted successfully.'));
+    }
+
+    /**
+     * Toggle active status for the specified product.
+     */
+    public function toggleActive(Product $product): RedirectResponse
+    {
+        $product->is_active = ! (bool) $product->is_active;
+        $product->save();
+
+        $status = $product->is_active ? __('activated') : __('deactivated');
+        return redirect()->route('products.index')->with('success', __('Product :status successfully.', ['status' => $status]));
     }
 
     /**

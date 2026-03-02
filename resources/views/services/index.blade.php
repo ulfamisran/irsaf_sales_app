@@ -66,11 +66,19 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div class="card-modern p-6">
                 <p class="text-sm text-slate-600">{{ __('Total Pendapatan Service') }}</p>
                 <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalService ?? 0, 0, ',', '.') }}</p>
                 <!-- <p class="text-xs text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
+            </div>
+            <div class="card-modern p-6">
+                <p class="text-sm text-slate-600">{{ __('Total Pengeluaran Material/Sparepart') }}</p>
+                <p class="text-xl font-semibold text-rose-600">{{ number_format($totalMaterialExpense ?? 0, 0, ',', '.') }}</p>
+            </div>
+            <div class="card-modern p-6">
+                <p class="text-sm text-slate-600">{{ __('Pendapatan Jasa Bersih') }}</p>
+                <p class="text-xl font-semibold text-indigo-600">{{ number_format($totalServiceNet ?? 0, 0, ',', '.') }}</p>
             </div>
         </div>
 

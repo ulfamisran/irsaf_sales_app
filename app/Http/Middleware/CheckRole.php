@@ -20,8 +20,18 @@ class CheckRole
             return redirect()->route('login');
         }
 
-        if ($request->user()->isSuperAdmin()) {
+        if ($request->user()->isStrictSuperAdmin()) {
             return $next($request);
+        }
+
+        if ($request->user()->isAdminPusat()) {
+            $routeName = $request->route()?->getName();
+            $isSettingsRoute = $routeName
+                && (str_starts_with($routeName, 'landing-page.')
+                    || str_starts_with($routeName, 'users.'));
+            if (! $isSettingsRoute) {
+                return $next($request);
+            }
         }
 
         if (! $request->user()->hasAnyRole($roles)) {

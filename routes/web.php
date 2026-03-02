@@ -4,6 +4,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\CashFlowController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DistributorController;
 use App\Http\Controllers\IncomingGoodsController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\IncomeCategoryController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
 use App\Http\Controllers\StockInOutController;
+use App\Http\Controllers\StockUnitController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WarehouseController;
 use Illuminate\Http\Request;
@@ -145,9 +147,14 @@ Route::middleware('auth')->group(function () {
         ->name('branches.units');
     Route::resource('branches', BranchController::class)->middleware('role:admin_cabang');
     Route::resource('categories', CategoryController::class)
-        ->middleware('role:admin_cabang,staff_gudang,super_admin');
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
+    Route::resource('distributors', DistributorController::class)
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
+    Route::patch('products/{product}/toggle-active', [ProductController::class, 'toggleActive'])
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->name('products.toggle-active');
     Route::resource('products', ProductController::class)
-        ->middleware('role:admin_cabang,staff_gudang,super_admin');
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
     Route::resource('customers', CustomerController::class)
         ->middleware('role:admin_cabang,kasir')
         ->except(['show']);
@@ -159,6 +166,18 @@ Route::middleware('auth')->group(function () {
     Route::get('stock-mutations', [StockMutationController::class, 'index'])
         ->middleware('role:admin_cabang,staff_gudang')
         ->name('stock-mutations.index');
+    Route::get('stock-units', [StockUnitController::class, 'index'])
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->name('stock-units.index');
+    Route::get('stock-units/export', [StockUnitController::class, 'export'])
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->name('stock-units.export');
+    Route::get('stock-units/export-pdf', [StockUnitController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->name('stock-units.export-pdf');
+    Route::get('stock-units/{unit}', [StockUnitController::class, 'show'])
+        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->name('stock-units.show');
     Route::get('stock-mutations/create', [StockMutationController::class, 'create'])
         ->middleware('role:staff_gudang')
         ->name('stock-mutations.create');
@@ -184,10 +203,10 @@ Route::middleware('auth')->group(function () {
         ->name('incoming-goods.store');
 
     Route::get('sales/available-serials', [SaleController::class, 'availableSerials'])
-        ->middleware('role:admin_cabang,kasir,super_admin')
+        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
         ->name('sales.available-serials');
     Route::get('sales/available-products', [SaleController::class, 'availableProducts'])
-        ->middleware('role:admin_cabang,kasir,super_admin')
+        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
         ->name('sales.available-products');
     Route::get('sales/{sale}/invoice', [SaleController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir')
@@ -196,20 +215,20 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,kasir')
         ->name('sales.release');
     Route::post('sales/{sale}/cancel', [SaleController::class, 'cancel'])
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->name('sales.cancel');
     Route::resource('sales', SaleController::class)
         ->middleware('role:admin_cabang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('sales', SaleController::class)
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->only(['edit', 'update']);
 
     Route::get('rentals/available-serials', [RentalController::class, 'availableSerials'])
-        ->middleware('role:staff_gudang,kasir,super_admin')
+        ->middleware('role:staff_gudang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-serials');
     Route::get('rentals/available-products', [RentalController::class, 'availableProducts'])
-        ->middleware('role:staff_gudang,kasir,super_admin')
+        ->middleware('role:staff_gudang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-products');
     Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
         ->middleware('role:staff_gudang,kasir')
@@ -221,13 +240,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:staff_gudang,kasir')
         ->name('rentals.mark-returned');
     Route::post('rentals/{rental}/cancel', [RentalController::class, 'cancel'])
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->name('rentals.cancel');
     Route::resource('rentals', RentalController::class)
         ->middleware('role:staff_gudang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('rentals', RentalController::class)
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->only(['edit', 'update']);
 
     Route::get('services/{service}/invoice', [ServiceController::class, 'invoice'])
@@ -249,13 +268,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,kasir')
         ->name('services.mark-picked-up');
     Route::post('services/{service}/cancel', [ServiceController::class, 'cancel'])
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->name('services.cancel');
     Route::resource('services', ServiceController::class)
         ->middleware('role:admin_cabang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('services', ServiceController::class)
-        ->middleware('role:super_admin')
+        ->middleware('role:super_admin,admin_pusat')
         ->only(['edit', 'update']);
 
     Route::get('cash-flows', [CashFlowController::class, 'index'])

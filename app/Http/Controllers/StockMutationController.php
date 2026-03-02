@@ -30,7 +30,7 @@ class StockMutationController extends Controller
             ->orderByDesc('mutation_date')
             ->orderByDesc('id');
 
-        if (! $user->isSuperAdmin() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
             if (! $user->branch_id) {
                 abort(403, __('User branch not set.'));
             }
@@ -96,7 +96,7 @@ class StockMutationController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -110,7 +110,7 @@ class StockMutationController extends Controller
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -144,7 +144,7 @@ class StockMutationController extends Controller
     public function store(StockMutationRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 

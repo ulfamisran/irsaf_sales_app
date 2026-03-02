@@ -30,6 +30,28 @@
             <div class="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-800">{{ session('error') }}</div>
         @endif
 
+        @if ($rental->status === \App\Models\Rental::STATUS_CANCEL)
+            <div class="card-modern overflow-hidden mb-6">
+                <div class="p-6 rounded-lg border border-rose-200 bg-rose-50/50">
+                    <p class="text-sm font-semibold text-rose-700">{{ __('Informasi Pembatalan') }}</p>
+                    <div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-700">
+                        <div>
+                            <p class="text-xs text-slate-500">{{ __('Tanggal Batal') }}</p>
+                            <p class="font-medium">{{ $rental->cancel_date?->format('d/m/Y') ?? '-' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500">{{ __('Dibatalkan Oleh') }}</p>
+                            <p class="font-medium">{{ $rental->cancelUser?->name ?? '-' }}</p>
+                        </div>
+                        <div class="md:col-span-1">
+                            <p class="text-xs text-slate-500">{{ __('Alasan Batal') }}</p>
+                            <p class="font-medium whitespace-pre-line">{{ $rental->cancel_reason ?? '-' }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -120,6 +142,7 @@
                 </div>
             </div>
         </div>
+
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-6 overflow-x-auto">

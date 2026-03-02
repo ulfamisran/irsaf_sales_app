@@ -235,6 +235,10 @@
             'sku' => $t->sku,
             'brand' => $t->brand,
             'series' => $t->series ?? '',
+            'processor' => $t->processor ?? '',
+            'ram' => $t->ram ?? '',
+            'storage' => $t->storage ?? '',
+            'color' => $t->color ?? '',
             'specs' => $t->specs ?? '',
             'category_id' => $t->category_id,
             'serial_number' => $t->serial_number,
@@ -261,6 +265,12 @@
         let products = @json($productsForJs);
         const saleProductsForEdit = @json($editSaleProductsForJs);
         const categories = @json($categories ?? []);
+        const laptopCategoryId = (() => {
+            const byCode = (categories || []).find(c => String(c.code || '').toUpperCase() === 'LAP');
+            if (byCode?.id) return byCode.id;
+            const byName = (categories || []).find(c => String(c.name || '').toLowerCase() === 'laptop');
+            return byName?.id || null;
+        })();
         const appBaseUrl = @json(request()->getBaseUrl()); // supports subfolder installs
         const availableProductsPath = @json(route('sales.available-products', [], false));
         const availableSerialsPath = @json(route('sales.available-serials', [], false));
@@ -613,11 +623,32 @@
 
         let tradeInIndex = 0;
 
-        function tradeInCategoryOptionsHtml() {
-            return '<option value="">' + @json(__('Pilih Kategori')) + '</option>' + (categories || []).map(c =>
-                '<option value="' + c.id + '">' + (c.name || '') + '</option>'
-            ).join('');
-        }
+        const sanitizeSkuValue = (value) => {
+            return String(value || '')
+                .trim()
+                .toUpperCase()
+                .replace(/\s+/g, '')
+                .replace(/[^A-Z0-9]/g, '');
+        };
+
+        const skuBrandSegment = (value) => {
+            const cleaned = sanitizeSkuValue(value).replace(/[AEIOU]/g, '');
+            return cleaned !== '' ? cleaned : 'NA';
+        };
+
+        const skuSegment = (value) => {
+            const cleaned = sanitizeSkuValue(value);
+            return cleaned !== '' ? cleaned : 'NA';
+        };
+
+        const randomSkuSuffix = () => {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let out = '';
+            for (let i = 0; i < 3; i++) {
+                out += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return out;
+        };
 
         function addTradeInRow(pref = {}) {
             const container = document.getElementById('trade-in-rows');
@@ -629,34 +660,51 @@
             div.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Merek')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][brand]" value="${esc(pref.brand)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Seri')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][series]" value="${esc(pref.series)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Processor')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][processor]" value="${esc(pref.processor)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('RAM')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][ram]" value="${esc(pref.ram)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Kapasitas Penyimpanan')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][storage]" value="${esc(pref.storage)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Warna')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][color]" value="${esc(pref.color)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Spesifikasi')) + `</label>
+                        <input type="text" name="trade_ins[${idx}][specs]" value="${esc(pref.specs)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <input type="hidden" name="trade_ins[${idx}][category_id]" value="${esc(pref.category_id || laptopCategoryId || '')}">
+                    </div>
+                    <div class="flex items-end">
+                        <button type="button" class="generate-trade-in-sku inline-flex items-center px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">
+                            ` + @json(__('Generate SKU')) + `
+                        </button>
+                    </div>
+                    <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('SKU')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][sku]" value="${esc(pref.sku)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="TT-LEN-001" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Brand')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][brand]" value="${esc(pref.brand)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Lenovo" required>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Series')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][series]" value="${esc(pref.series)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="ThinkPad">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Specs')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][specs]" value="${esc(pref.specs)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="i5/8GB/256GB">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Kategori')) + `</label>
-                        <select name="trade_ins[${idx}][category_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
-                            ${tradeInCategoryOptionsHtml()}
-                        </select>
+                        <input type="hidden" name="trade_ins[${idx}][sku]" value="${esc(pref.sku)}">
+                        <input type="text" class="trade-in-sku-display block w-full rounded-md border-gray-300 shadow-sm bg-slate-100 text-sm" value="${esc(pref.sku)}" disabled>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Nomor Serial')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][serial_number]" value="${esc(pref.serial_number)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="len-098987" required>
+                        <input type="text" name="trade_ins[${idx}][serial_number]" value="${esc(pref.serial_number)}" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Nilai Tukar (HPP)')) + `</label>
-                        <input type="text" name="trade_ins[${idx}][trade_in_value]" data-rupiah="true" class="trade-in-value-input block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="3000000" value="${esc(pref.trade_in_value)}" required>
+                        <input type="text" name="trade_ins[${idx}][trade_in_value]" data-rupiah="true" class="trade-in-value-input block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" value="${esc(pref.trade_in_value)}" required>
                     </div>
                     <div class="flex items-end">
                         <button type="button" class="remove-trade-in px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm">` + @json(__('Hapus')) + `</button>
@@ -672,6 +720,28 @@
                 el.addEventListener('input', () => { refreshTradeInSum(); refreshPaymentSum(); });
             });
             div.querySelector('.remove-trade-in')?.addEventListener('click', () => { div.remove(); refreshTradeInSum(); refreshPaymentSum(); });
+            div.querySelector('.generate-trade-in-sku')?.addEventListener('click', () => {
+                const brand = div.querySelector('input[name*="[brand]"]')?.value;
+                const series = div.querySelector('input[name*="[series]"]')?.value;
+                const processor = div.querySelector('input[name*="[processor]"]')?.value;
+                const ram = div.querySelector('input[name*="[ram]"]')?.value;
+                const storage = div.querySelector('input[name*="[storage]"]')?.value;
+                const sku = [
+                    'LP',
+                    'TT',
+                    skuBrandSegment(brand),
+                    skuSegment(series),
+                    skuSegment(processor),
+                    skuSegment(ram),
+                    skuSegment(storage),
+                    randomSkuSuffix()
+                ].join('-');
+
+                const skuInput = div.querySelector('input[name*="[sku]"]');
+                const skuDisplay = div.querySelector('.trade-in-sku-display');
+                if (skuInput) skuInput.value = sku;
+                if (skuDisplay) skuDisplay.value = sku;
+            });
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
         }
         document.getElementById('add-trade-in')?.addEventListener('click', () => addTradeInRow());

@@ -22,15 +22,21 @@
                             </div>
                             <div>
                                 <x-input-label for="product_id" :value="__('Product')" />
-                                <select id="product_id" name="product_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    <option value="">{{ __('Select Product') }}</option>
-                                    @foreach ($products as $product)
-                                        <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
-                                            {{ $product->sku }} - {{ $product->brand }} {{ $product->series }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
+                                @if ($selectedProduct)
+                                    <x-text-input id="product_id" class="block mt-1 w-full bg-slate-100" type="text"
+                                        :value="$selectedProduct->sku . ' - ' . $selectedProduct->brand . ' ' . $selectedProduct->series" disabled />
+                                    <input type="hidden" name="product_id" value="{{ $selectedProduct->id }}">
+                                @else
+                                    <select id="product_id" name="product_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="">{{ __('Select Product') }}</option>
+                                        @foreach ($products as $product)
+                                            <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
+                                                {{ $product->sku }} - {{ $product->brand }} {{ $product->series }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
+                                @endif
                             </div>
                             @if ($isBranchUser)
                                 <div>
@@ -43,18 +49,23 @@
                                     <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                         <option value="">{{ __('Select Warehouse') }}</option>
                                         @foreach ($warehouses as $warehouse)
-                                            <option value="{{ $warehouse->id }}" {{ old('warehouse_id') == $warehouse->id ? 'selected' : '' }}>{{ $warehouse->name }}</option>
+                                            <option value="{{ $warehouse->id }}"
+                                                {{ (old('warehouse_id') ?? $selectedWarehouse?->id) == $warehouse->id ? 'selected' : '' }}>
+                                                {{ $warehouse->name }}
+                                            </option>
                                         @endforeach
                                     </select>
                                     <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
                                 </div>
                             @endif
-                            <div>
-                                <x-input-label for="quantity" :value="__('Quantity')" />
-                                <x-text-input id="quantity" class="block mt-1 w-full" type="number" name="quantity" min="1" :value="old('quantity')" />
-                                <x-input-error :messages="$errors->get('quantity')" class="mt-2" />
-                                <p class="mt-1 text-sm text-gray-500">{{ __('Isi quantity jika belum punya serial number per unit.') }}</p>
-                            </div>
+                            @if (! $selectedProduct)
+                                <div>
+                                    <x-input-label for="quantity" :value="__('Quantity')" />
+                                    <x-text-input id="quantity" class="block mt-1 w-full" type="number" name="quantity" min="1" :value="old('quantity')" />
+                                    <x-input-error :messages="$errors->get('quantity')" class="mt-2" />
+                                    <p class="mt-1 text-sm text-gray-500">{{ __('Isi quantity jika belum punya serial number per unit.') }}</p>
+                                </div>
+                            @endif
 
                             <div>
                                 <x-input-label for="serial_numbers" :value="__('Serial Numbers (1 per line)')" />

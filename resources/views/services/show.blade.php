@@ -30,6 +30,25 @@
 
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    @if ($service->status === \App\Models\Service::STATUS_CANCEL)
+                        <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
+                            <p class="text-sm font-semibold text-rose-700">{{ __('Informasi Pembatalan') }}</p>
+                            <div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-700">
+                                <div>
+                                    <p class="text-xs text-slate-500">{{ __('Tanggal Batal') }}</p>
+                                    <p class="font-medium">{{ $service->cancel_date?->format('d/m/Y') ?? '-' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-500">{{ __('Dibatalkan Oleh') }}</p>
+                                    <p class="font-medium">{{ $service->cancelUser?->name ?? '-' }}</p>
+                                </div>
+                                <div class="md:col-span-1">
+                                    <p class="text-xs text-slate-500">{{ __('Alasan Batal') }}</p>
+                                    <p class="font-medium whitespace-pre-line">{{ $service->cancel_reason ?? '-' }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div><p class="text-sm text-gray-500">{{ __('Cabang') }}</p><p class="font-medium">{{ $service->branch?->name }}</p></div>
                         <div><p class="text-sm text-gray-500">{{ __('Status') }}</p>

@@ -373,10 +373,23 @@ class ServiceService
             throw new InvalidArgumentException(__('Hanya service open atau selesai yang bisa dibatalkan.'));
         }
 
-        return DB::transaction(function () use ($service) {
-            CashFlow::where('reference_type', CashFlow::REFERENCE_SERVICE)
-                ->where('reference_id', $service->id)
-                ->delete();
+        return DB::transaction(function () use ($service, $userId, $reason) {
+            $refundDate = now()->toDateString();
+            $payments = ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get();
+            foreach ($payments as $sp) {
+                $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
+                CashFlow::create([
+                    'branch_id' => $service->branch_id,
+                    'type' => CashFlow::TYPE_OUT,
+                    'amount' => $sp->amount,
+                    'description' => __('Cancel Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
+                    'reference_type' => CashFlow::REFERENCE_SERVICE,
+                    'reference_id' => $service->id,
+                    'payment_method_id' => $sp->payment_method_id,
+                    'transaction_date' => $refundDate,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
 
             ServicePayment::where('service_id', $service->id)->delete();
             $service->update([

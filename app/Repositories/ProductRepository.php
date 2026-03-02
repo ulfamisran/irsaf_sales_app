@@ -22,8 +22,9 @@ class ProductRepository
     {
         $query = $this->model
             ->select('products.*')
-            ->with(['category', 'user'])
-            ->orderBy('sku');
+            ->with(['category', 'user', 'distributor'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
 
         if (! empty($filters['search'])) {
             $search = $filters['search'];
@@ -73,7 +74,7 @@ class ProductRepository
 
     public function find(int $id): ?Product
     {
-        return $this->model->with('category')->find($id);
+        return $this->model->with(['category', 'distributor'])->find($id);
     }
 
     public function findBySku(string $sku): ?Product

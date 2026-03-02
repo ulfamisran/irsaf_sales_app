@@ -35,7 +35,7 @@ class SaleController extends Controller
             ->orderByDesc('sale_date')
             ->orderByDesc('id');
 
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             if (! $user->branch_id) {
                 abort(403, __('User branch not set.'));
             }
@@ -49,22 +49,30 @@ class SaleController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('sale_date', '<=', $request->date_to);
         }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
 
         $totalSales = (float) (clone $query)
             ->whereIn('status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('total');
         $totalSalesCash = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
             ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('sale_payments.amount');
         $totalTradeIn = (float) DB::table('sale_trade_ins')
             ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
             ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
@@ -77,8 +85,8 @@ class SaleController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
             ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
@@ -86,7 +94,7 @@ class SaleController extends Controller
             ->groupBy('sale_payments.payment_method_id')
             ->pluck('total', 'sale_payments.payment_method_id');
         $sales = $query->paginate(20)->withQueryString();
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : Branch::whereKey($user->branch_id)->get(['id', 'name']);
 
@@ -98,15 +106,15 @@ class SaleController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && ! $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
 
-        if ($user->isSuperAdmin()) {
+        if ($user->isSuperAdminOrAdminPusat()) {
             // Super admin must choose branch first; products will be loaded via AJAX.
             $products = collect();
         } else {
@@ -156,7 +164,7 @@ class SaleController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        $categories = Category::orderBy('name')->get(['id', 'name']);
+        $categories = Category::orderBy('name')->get(['id', 'name', 'code']);
 
         return view('sales.create', compact('branches', 'products', 'productsForJs', 'customers', 'paymentMethods', 'categories'));
     }
@@ -165,7 +173,7 @@ class SaleController extends Controller
     {
         try {
             $user = $request->user();
-            $branchId = $user->isSuperAdmin()
+            $branchId = $user->isSuperAdminOrAdminPusat()
                 ? (int) $request->branch_id
                 : (int) $user->branch_id;
 
@@ -224,7 +232,7 @@ class SaleController extends Controller
     public function show(Sale $sale): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         $sale->load(['branch', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
@@ -241,10 +249,10 @@ class SaleController extends Controller
     public function edit(Sale $sale): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         if ($sale->status !== Sale::STATUS_OPEN) {
@@ -253,7 +261,7 @@ class SaleController extends Controller
 
         $sale->load(['saleDetails.product', 'customer', 'payments.paymentMethod']);
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
 
@@ -303,7 +311,7 @@ class SaleController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        $categories = Category::orderBy('name')->get(['id', 'name']);
+        $categories = Category::orderBy('name')->get(['id', 'name', 'code']);
 
         return view('sales.edit', compact('sale', 'branches', 'products', 'productsForJs', 'customers', 'paymentMethods', 'categories'));
     }
@@ -311,10 +319,10 @@ class SaleController extends Controller
     public function update(SaleRequest $request, Sale $sale): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         if ($sale->status !== Sale::STATUS_OPEN) {
@@ -359,10 +367,10 @@ class SaleController extends Controller
     public function cancel(Request $request, Sale $sale): RedirectResponse
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin()) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         if (! in_array($sale->status, [Sale::STATUS_OPEN, Sale::STATUS_RELEASED], true)) {
@@ -396,7 +404,7 @@ class SaleController extends Controller
     public function release(Request $request, Sale $sale): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         if ($sale->status !== Sale::STATUS_OPEN) {
@@ -432,7 +440,7 @@ class SaleController extends Controller
         ]);
 
         $user = $request->user();
-        $branchId = $user->isSuperAdmin()
+        $branchId = $user->isSuperAdminOrAdminPusat()
             ? (int) ($validated['branch_id'] ?? 0)
             : (int) $user->branch_id;
 
@@ -470,7 +478,7 @@ class SaleController extends Controller
         ]);
 
         $user = $request->user();
-        $branchId = $user->isSuperAdmin()
+        $branchId = $user->isSuperAdminOrAdminPusat()
             ? (int) $validated['branch_id']
             : (int) $user->branch_id;
 
@@ -516,7 +524,7 @@ class SaleController extends Controller
     public function invoice(Sale $sale): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 
