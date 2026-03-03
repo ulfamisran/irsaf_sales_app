@@ -93,7 +93,7 @@ class SampleDataSeeder extends Seeder
         // Sample users per branch/role (password: password)
         $roleAdminCabangId = Role::where('name', Role::ADMIN_CABANG)->value('id');
         $roleKasirId = Role::where('name', Role::KASIR)->value('id');
-        $roleStaffGudangId = Role::where('name', Role::STAFF_GUDANG)->value('id');
+        $roleStaffGudangId = Role::where('name', Role::ADMIN_GUDANG)->value('id');
 
         if ($branchJakarta) {
             $adminCabangJakarta = User::updateOrCreate(

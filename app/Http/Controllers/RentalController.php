@@ -34,14 +34,26 @@ class RentalController extends Controller
             ->orderByDesc('pickup_date')
             ->orderByDesc('id');
 
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
         if (! $user->isSuperAdminOrAdminPusat()) {
-            $isBranchUser = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]);
-            if ($isBranchUser) {
-                if (! $user->branch_id) {
-                    abort(403, __('User branch not set.'));
-                }
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+                $filterLocked = true;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
             }
+        } else {
+            $canFilterLocation = true;
         }
 
         if ($request->filled('date_from')) {
@@ -54,28 +66,37 @@ class RentalController extends Controller
             $query->where('return_status', $request->return_status);
         }
 
-        if ($request->filled('warehouse_id')) {
-            $query->where('warehouse_id', $request->warehouse_id);
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
         }
 
         $totalRental = (float) (clone $query)
             ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
             ->sum('total');
+        $pmBranchId = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id
+            ? (int) $user->branch_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
+        $pmWarehouseId = $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id
+            ? (int) $user->warehouse_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('rental_payments')
             ->join('rentals', 'rental_payments.rental_id', '=', 'rentals.id')
-            ->when(! $user->isSuperAdminOrAdminPusat(), function ($q) use ($user) {
-                $isBranchUser = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]);
-                if ($isBranchUser && $user->branch_id) {
-                    $q->where('rentals.branch_id', $user->branch_id);
-                }
-            })
-            ->when($request->filled('warehouse_id'), fn ($q) => $q->where('rentals.warehouse_id', $request->warehouse_id))
+            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('rentals.warehouse_id', $user->warehouse_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id'), fn ($q) => $q->where('rentals.warehouse_id', $request->warehouse_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('rentals.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('rentals.pickup_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('rentals.pickup_date', '<=', $request->date_to))
             ->when($request->filled('return_status'), fn ($q) => $q->where('rentals.return_status', $request->return_status))
@@ -85,31 +106,47 @@ class RentalController extends Controller
             ->pluck('total', 'rental_payments.payment_method_id');
         $rentals = $query->paginate(20)->withQueryString();
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        return view('rentals.index', compact('rentals', 'warehouses', 'totalRental', 'paymentMethods', 'paymentMethodTotals'));
+        return view('rentals.index', compact('rentals', 'warehouses', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalRental', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id && ! $user->hasAnyRole([\App\Models\Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id && ! $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])) {
             abort(403, __('User branch not set.'));
         }
 
         $warehouses = Warehouse::orderBy('name')->get();
-        $customers = Customer::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->limit(500)
-            ->get(['id', 'name', 'phone']);
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('id')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            $warehouses = $warehouses->where('id', $user->warehouse_id)->values();
+        }
 
-        return view('rentals.create', compact('warehouses', 'customers', 'paymentMethods'));
+        $defaultWarehouseId = null;
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            $defaultWarehouseId = (int) $user->warehouse_id;
+        }
+
+        $customers = collect();
+        $paymentMethods = collect();
+        if ($defaultWarehouseId) {
+            $paymentMethods = PaymentMethod::query()
+                ->where('is_active', true)
+                ->where('warehouse_id', $defaultWarehouseId)
+                ->orderBy('jenis_pembayaran')
+                ->orderBy('nama_bank')
+                ->orderBy('id')
+                ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+            $customers = Customer::query()
+                ->where('is_active', true)
+                ->where('warehouse_id', $defaultWarehouseId)
+                ->orderBy('name')
+                ->limit(500)
+                ->get(['id', 'name', 'phone']);
+        }
+
+        return view('rentals.create', compact('warehouses', 'customers', 'paymentMethods', 'defaultWarehouseId'));
     }
 
     public function store(RentalRequest $request): RedirectResponse
@@ -119,7 +156,7 @@ class RentalController extends Controller
             $branchId = $user->isSuperAdminOrAdminPusat()
                 ? (int) Branch::orderBy('id')->value('id')
                 : (int) $user->branch_id;
-            if (! $branchId && $user->hasAnyRole([\App\Models\Role::STAFF_GUDANG])) {
+            if (! $branchId && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])) {
                 $branchId = (int) Branch::orderBy('id')->value('id');
             }
 
@@ -413,11 +450,18 @@ class RentalController extends Controller
             return null;
         }
 
+        $user = $request->user();
+        $warehouseId = $user->isSuperAdminOrAdminPusat()
+            ? (int) $request->warehouse_id
+            : (int) $user->warehouse_id;
+
         $customer = Customer::create([
             'name' => $name,
             'phone' => $request->input('customer_new_phone'),
             'address' => $request->input('customer_new_address'),
             'is_active' => true,
+            'placement_type' => $warehouseId ? Customer::PLACEMENT_GUDANG : null,
+            'warehouse_id' => $warehouseId ?: null,
         ]);
 
         return (int) $customer->id;

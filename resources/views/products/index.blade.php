@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Produk') }}</h2>
-            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
+            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]))
                 <x-icon-btn-add :href="route('products.create')" :label="__('Tambah Produk')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -28,7 +28,7 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('products.index') }}" class="flex flex-wrap gap-3 items-end">
+                <form method="GET" action="{{ route('products.index') }}" class="flex flex-wrap gap-3 items-end" x-data="{ locType: '{{ $locationType ?? '' }}' }">
                     <div class="flex-1 min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('SKU, brand, atau series...') }}"
@@ -43,6 +43,36 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="min-w-[140px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Filter Lokasi') }}</label>
+                        <select name="location_type" x-model="locType" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="warehouse">{{ __('Gudang') }}</option>
+                            <option value="branch">{{ __('Cabang') }}</option>
+                        </select>
+                    </div>
+                    <template x-if="locType === 'warehouse'">
+                        <div class="min-w-[180px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Pilih Gudang') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ ($locationType === 'warehouse' && $locationId == $w->id) ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </template>
+                    <template x-if="locType === 'branch'">
+                        <div class="min-w-[180px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
+                            <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Pilih Cabang') }}</option>
+                                @foreach ($branches as $b)
+                                    <option value="{{ $b->id }}" {{ ($locationType === 'branch' && $locationId == $b->id) ? 'selected' : '' }}>{{ $b->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </template>
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +80,7 @@
                             </svg>
                             {{ __('Filter') }}
                         </button>
-                        <a href="{{ route('products.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+                        <a href="{{ route('products.index', ['location_type' => '', 'category_id' => '', 'search' => '']) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
                     </div>
@@ -70,6 +100,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Gudang') }}</th>
@@ -88,6 +119,7 @@
                                 <td class="px-4 py-3">{{ $product->laptop_type ? ucfirst($product->laptop_type) : '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->category?->name }}</td>
                                 <td class="px-4 py-3">{{ $product->distributor?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">{{ $product->location?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $product->user?->name ?? '-' }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($product->selling_price, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-medium">{{ (int) ($product->warehouse_stock ?? 0) }}</td>
@@ -111,6 +143,14 @@
                                         @endphp
                                         @if (!$isAks)
                                             <x-icon-btn-view :href="route('products.show', $product)" :label="__('Unit')" />
+                                            <a href="{{ route('stock-mutations.index', ['product_id' => $product->id]) }}"
+                                               class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                               title="{{ __('Detail Distribusi') }}">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                                                </svg>
+                                                {{ __('Distribusi') }}
+                                            </a>
                                         @endif
                                         @if (auth()->user()->isSuperAdmin())
                                             <form action="{{ route('products.toggle-active', $product) }}" method="POST" class="inline">
@@ -136,7 +176,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="14" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
+                                <td colspan="15" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

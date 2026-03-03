@@ -30,20 +30,61 @@ class StockMutationController extends Controller
             ->orderByDesc('mutation_date')
             ->orderByDesc('id');
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
-            }
-            $branchId = $user->branch_id;
-            $query->where(function ($q) use ($branchId) {
-                $q->where(function ($q2) use ($branchId) {
-                    $q2->where('from_location_type', 'branch')
-                        ->where('from_location_id', $branchId);
-                })->orWhere(function ($q2) use ($branchId) {
-                    $q2->where('to_location_type', 'branch')
-                        ->where('to_location_id', $branchId);
+        $filterLocked = false;
+        $locationType = null;
+        $locationId = null;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+                $query->where(function ($q) use ($branchId) {
+                    $q->where(function ($q2) use ($branchId) {
+                        $q2->where('from_location_type', Stock::LOCATION_BRANCH)
+                            ->where('from_location_id', $branchId);
+                    })->orWhere(function ($q2) use ($branchId) {
+                        $q2->where('to_location_type', Stock::LOCATION_BRANCH)
+                            ->where('to_location_id', $branchId);
+                    });
                 });
-            });
+                $filterLocked = true;
+                $branch = Branch::find($branchId);
+                $locationType = 'branch';
+                $locationId = $branchId;
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+                $query->where(function ($q) use ($warehouseId) {
+                    $q->where(function ($q2) use ($warehouseId) {
+                        $q2->where('from_location_type', Stock::LOCATION_WAREHOUSE)
+                            ->where('from_location_id', $warehouseId);
+                    })->orWhere(function ($q2) use ($warehouseId) {
+                        $q2->where('to_location_type', Stock::LOCATION_WAREHOUSE)
+                            ->where('to_location_id', $warehouseId);
+                    });
+                });
+                $filterLocked = true;
+                $warehouse = Warehouse::find($warehouseId);
+                $locationType = 'warehouse';
+                $locationId = $warehouseId;
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        }
+
+        if ($user->isSuperAdminOrAdminPusat() && $request->filled('location_type') && $request->filled('location_id')) {
+            $locType = (string) $request->location_type;
+            $locId = (int) $request->location_id;
+            if (in_array($locType, [Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH]) && $locId > 0) {
+                $query->where(function ($q) use ($locType, $locId) {
+                    $q->where(function ($q2) use ($locType, $locId) {
+                        $q2->where('from_location_type', $locType)->where('from_location_id', $locId);
+                    })->orWhere(function ($q2) use ($locType, $locId) {
+                        $q2->where('to_location_type', $locType)->where('to_location_id', $locId);
+                    });
+                });
+            }
         }
 
         if ($request->filled('product_id')) {
@@ -57,7 +98,9 @@ class StockMutationController extends Controller
         }
 
         $mutations = $query->paginate(20)->withQueryString();
-        $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);
+        $products = Product::withCount([
+            'units as in_stock_count' => fn ($q) => $q->where('status', ProductUnit::STATUS_IN_STOCK),
+        ])->having('in_stock_count', '>', 0)->orderBy('sku')->get(['id', 'sku', 'brand']);
 
         // Resolve location names (avoid N+1 in Blade)
         $items = $mutations->getCollection();
@@ -90,27 +133,54 @@ class StockMutationController extends Controller
             ? Branch::query()->whereIn('id', $branchIds)->pluck('name', 'id')
             : collect();
 
-        return view('stock-mutations.index', compact('mutations', 'products', 'warehousesById', 'branchesById'));
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $canFilterLocation = $user->isSuperAdminOrAdminPusat();
+
+        return view('stock-mutations.index', compact(
+            'mutations',
+            'products',
+            'warehousesById',
+            'branchesById',
+            'branches',
+            'warehouses',
+            'canFilterLocation',
+            'filterLocked',
+            'locationType',
+            'locationId',
+            'locationLabel'
+        ));
     }
 
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $products = Product::orderBy('sku')->get();
+        $products = Product::withCount([
+            'units as in_stock_count' => fn ($q) => $q->where('status', ProductUnit::STATUS_IN_STOCK),
+        ])->having('in_stock_count', '>', 0)->orderBy('sku')->get();
+
+        $productsForDropdown = $products->map(fn ($p) => [
+            'id' => $p->id,
+            'sku' => $p->sku,
+            'brand' => $p->brand,
+            'series' => $p->series ?? '',
+            'in_stock_count' => $p->in_stock_count ?? 0,
+        ])->values();
+
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        return view('stock-mutations.create', compact('products', 'warehouses', 'branches'));
+        return view('stock-mutations.create', compact('products', 'productsForDropdown', 'warehouses', 'branches'));
     }
 
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -144,7 +214,7 @@ class StockMutationController extends Controller
     public function store(StockMutationRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 

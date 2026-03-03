@@ -13,7 +13,7 @@ A full-featured Laptop Sales Management System for multi-branch laptop stores bu
 
 ## Features
 
-- **Auth & RBAC**: Login, roles (super_admin, admin_cabang, staff_gudang, kasir)
+- **Auth & RBAC**: Login, roles (super_admin, admin_cabang, admin_gudang, kasir)
 - **Master Data**: Branches, Categories, Products (CRUD)
 - **Inventory**: Warehouses, Stocks, Stock Mutations, Incoming Goods
 - **Sales**: Sales with auto stock deduction
@@ -95,5 +95,5 @@ app/
 |------|-------------|
 | super_admin | Full system access |
 | admin_cabang | Branch administrator |
-| staff_gudang | Warehouse staff |
+| admin_gudang | Warehouse administrator |
 | kasir | Cashier |

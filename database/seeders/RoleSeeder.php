@@ -29,9 +29,9 @@ class RoleSeeder extends Seeder
                 'description' => 'Branch administrator',
             ],
             [
-                'name' => Role::STAFF_GUDANG,
-                'display_name' => 'Staff Gudang',
-                'description' => 'Warehouse staff',
+                'name' => Role::ADMIN_GUDANG,
+                'display_name' => 'Admin Gudang',
+                'description' => 'Warehouse administrator',
             ],
             [
                 'name' => Role::KASIR,

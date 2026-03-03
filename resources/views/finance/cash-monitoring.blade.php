@@ -10,7 +10,7 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('finance.cash-monitoring') }}" class="flex flex-wrap gap-4 items-end">
-                    @if (auth()->user()->isSuperAdmin())
+                    @if($canFilterLocation ?? false)
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
                             <select name="branch_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -28,6 +28,10 @@
                                     <option value="{{ $w->id }}" {{ (string) $selectedWarehouseId === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                                 @endforeach
                             </select>
+                        </div>
+                    @elseif($filterLocked ?? false)
+                        <div class="min-w-[180px]">
+                            <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         </div>
                     @endif
                     <div>
@@ -98,6 +102,7 @@
                 };
             @endphp
 
+            @if($canFilterLocation ?? false)
             <div class="card-modern overflow-hidden">
                 <div class="p-4 bg-slate-50 border-b border-slate-100">
                     <h3 class="font-semibold text-slate-800">{{ __('Kas Gabungan') }}</h3>
@@ -150,6 +155,7 @@
                     </div>
                 </div>
             </div>
+            @endif
 
             @forelse ($displayBranches as $branch)
                 @php

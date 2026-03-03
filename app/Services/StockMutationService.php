@@ -159,7 +159,7 @@ class StockMutationService
             // If this product already uses serial-numbered units, require serial numbers.
             $isSerialTracked = ProductUnit::where('product_id', $product->id)->exists();
             if ($isSerialTracked) {
-                throw new InvalidArgumentException(__('This product uses serial numbers. Please input serial numbers.'));
+                throw new InvalidArgumentException(__('Produk ini memakai nomor serial. Mohon masukkan nomor serial.'));
             }
 
             $stock = Stock::firstOrCreate(
@@ -512,7 +512,7 @@ class StockMutationService
                 ->all();
             if (! empty($exists)) {
                 throw new InvalidArgumentException(
-                    __('Serial number already exists: :serials', ['serials' => implode(', ', $exists)])
+                    __('Nomor serial sudah terdaftar: :serials', ['serials' => implode(', ', $exists)])
                 );
             }
 

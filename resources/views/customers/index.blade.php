@@ -25,6 +25,14 @@
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Nama / no HP / alamat...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-location-filter
+                        :filter-locked="$locationFilter['filterLocked']"
+                        :location-type="$locationFilter['locationType']"
+                        :location-id="$locationFilter['locationId']"
+                        :location-label="$locationFilter['locationLabel']"
+                        :branches="$locationFilter['branches']"
+                        :warehouses="$locationFilter['warehouses']"
+                    />
                     <div class="min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
                         <select name="is_active" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -50,6 +58,7 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead>
                         <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Nama') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No. HP') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Alamat') }}</th>
@@ -60,6 +69,15 @@
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($customers as $c)
                             <tr class="hover:bg-slate-50/50">
+                                <td class="px-4 py-3 text-sm text-slate-600">
+                                    @if($c->branch_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs">{{ __('Cabang') }}: {{ $c->branch?->name ?? '-' }}</span>
+                                    @elseif($c->warehouse_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-violet-50 text-violet-800 text-xs">{{ __('Gudang') }}: {{ $c->warehouse?->name ?? '-' }}</span>
+                                    @else
+                                        <span class="text-slate-400">-</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 font-medium text-slate-800">{{ $c->name }}</td>
                                 <td class="px-4 py-3">{{ $c->phone ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ \Illuminate\Support\Str::limit($c->address, 60) }}</td>
@@ -81,7 +99,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pelanggan.') }}</td>
+                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pelanggan.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

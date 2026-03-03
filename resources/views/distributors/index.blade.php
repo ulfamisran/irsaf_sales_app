@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Distributor') }}</h2>
-            @if (auth()->user()->isSuperAdmin())
+            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_PUSAT]))
                 <x-icon-btn-add :href="route('distributors.create')" :label="__('Tambah Distributor')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -34,6 +34,14 @@
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Nama, alamat, atau no.hp...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-location-filter
+                        :filter-locked="$locationFilter['filterLocked']"
+                        :location-type="$locationFilter['locationType']"
+                        :location-id="$locationFilter['locationId']"
+                        :location-label="$locationFilter['locationLabel']"
+                        :branches="$locationFilter['branches']"
+                        :warehouses="$locationFilter['warehouses']"
+                    />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -54,6 +62,7 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead>
                         <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Nama') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Alamat') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No. HP') }}</th>
@@ -63,6 +72,15 @@
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($distributors as $distributor)
                             <tr class="hover:bg-slate-50/50">
+                                <td class="px-4 py-3 text-sm text-slate-600">
+                                    @if($distributor->branch_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs">{{ __('Cabang') }}: {{ $distributor->branch?->name ?? '-' }}</span>
+                                    @elseif($distributor->warehouse_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-violet-50 text-violet-800 text-xs">{{ __('Gudang') }}: {{ $distributor->warehouse?->name ?? '-' }}</span>
+                                    @else
+                                        <span class="text-slate-400">-</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ $distributor->name }}</td>
                                 <td class="px-4 py-3">{{ Str::limit($distributor->address, 50) }}</td>
                                 <td class="px-4 py-3">{{ $distributor->phone }}</td>
@@ -92,7 +110,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data distributor.') }}</td>
+                                <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data distributor.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\IncomingGood;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Role;
 use App\Models\Stock;
 use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Services\StockMutationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -25,7 +27,7 @@ class IncomingGoodsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -51,6 +53,9 @@ class IncomingGoodsController extends Controller
         if ($request->filled('warehouse_id')) {
             $query->where('warehouse_id', $request->warehouse_id);
         }
+        if ($request->filled('branch_id')) {
+            $query->where('branch_id', $request->branch_id);
+        }
         if ($request->filled('date_from')) {
             $query->whereDate('received_date', '>=', $request->date_from);
         }
@@ -61,24 +66,22 @@ class IncomingGoodsController extends Controller
         $records = $query->paginate(20)->withQueryString();
 
         $productsQuery = Product::with('category')->orderBy('sku');
-        if ($isBranchUser) {
-            $productsQuery->where('laptop_type', 'baru');
-        }
         if ($request->filled('category_id')) {
             $productsQuery->where('category_id', $request->category_id);
         }
         $products = $productsQuery->get(['id', 'sku', 'brand', 'category_id']);
         $categories = Category::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
         $branch = $isBranchUser ? Branch::find($user->branch_id) : null;
 
-        return view('incoming-goods.index', compact('records', 'products', 'categories', 'warehouses', 'isBranchUser', 'branch'));
+        return view('incoming-goods.index', compact('records', 'products', 'categories', 'warehouses', 'branches', 'isBranchUser', 'branch'));
     }
 
     public function create(Request $request): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -87,8 +90,7 @@ class IncomingGoodsController extends Controller
             abort(403, __('User branch not set.'));
         }
 
-        $productsQuery = Product::orderBy('sku')
-            ->when($isBranchUser, fn ($q) => $q->where('laptop_type', 'baru'));
+        $productsQuery = Product::orderBy('sku');
         $selectedProduct = null;
         if ($request->filled('product_id')) {
             $selectedProduct = (clone $productsQuery)->whereKey($request->product_id)->first();
@@ -103,24 +105,32 @@ class IncomingGoodsController extends Controller
             $products = $productsQuery->get();
         }
         $warehouses = Warehouse::orderBy('name')->get();
+        $branches = $isBranchUser ? collect() : Branch::orderBy('name')->get();
         $selectedWarehouse = null;
+        $selectedBranch = null;
         if ($request->filled('warehouse_id')) {
             $selectedWarehouse = $warehouses->firstWhere('id', (int) $request->warehouse_id);
             if (! $selectedWarehouse) {
                 abort(404, __('Warehouse not found.'));
             }
-        } elseif ($warehouses->count() === 1) {
+        } elseif ($warehouses->count() === 1 && ! $isBranchUser) {
             $selectedWarehouse = $warehouses->first();
+        }
+        if ($request->filled('branch_id') && ! $isBranchUser) {
+            $selectedBranch = $branches->firstWhere('id', (int) $request->branch_id);
+            if (! $selectedBranch) {
+                abort(404, __('Branch not found.'));
+            }
         }
         $branch = $isBranchUser ? Branch::find($user->branch_id) : null;
 
-        return view('incoming-goods.create', compact('products', 'warehouses', 'isBranchUser', 'branch', 'selectedProduct', 'selectedWarehouse'));
+        return view('incoming-goods.create', compact('products', 'warehouses', 'branches', 'isBranchUser', 'branch', 'selectedProduct', 'selectedWarehouse', 'selectedBranch'));
     }
 
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::STAFF_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -134,33 +144,42 @@ class IncomingGoodsController extends Controller
             'quantity' => ['nullable', 'integer', 'min:1', 'required_without:serial_numbers'],
             'serial_numbers' => ['nullable', 'string', 'required_without:quantity'],
         ];
-        if (! $isBranchUser) {
-            $rules['warehouse_id'] = ['required', 'exists:warehouses,id'];
+        if ($isBranchUser) {
+            // Cabang: fixed ke branch user
+        } else {
+            $rules['location_type'] = ['required', 'in:warehouse,branch'];
+            $rules['warehouse_id'] = ['required_if:location_type,warehouse', 'nullable', 'exists:warehouses,id'];
+            $rules['branch_id'] = ['required_if:location_type,branch', 'nullable', 'exists:branches,id'];
         }
         $validated = $request->validate($rules);
 
         try {
             $product = Product::findOrFail($validated['product_id']);
-            if ($isBranchUser && $product->laptop_type !== 'baru') {
-                return back()->withInput()->with('error', __('Hanya produk jenis baru yang boleh dicatat sebagai barang masuk cabang.'));
-            }
             $serialNumbers = $this->parseSerialNumbers($validated['serial_numbers'] ?? null);
             $quantity = ! empty($serialNumbers) ? count($serialNumbers) : (int) $validated['quantity'];
 
+            $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : ($validated['location_type'] ?? 'warehouse');
+            $locationId = $isBranchUser
+                ? (int) $user->branch_id
+                : (int) (($validated['location_type'] ?? '') === 'branch' ? ($validated['branch_id'] ?? 0) : ($validated['warehouse_id'] ?? 0));
+
             $this->stockMutationService->addStock(
                 $product,
-                $isBranchUser ? Stock::LOCATION_BRANCH : Stock::LOCATION_WAREHOUSE,
-                $isBranchUser ? (int) $user->branch_id : (int) $validated['warehouse_id'],
+                $locationType,
+                $locationId,
                 $quantity,
                 $user->id,
                 $serialNumbers,
                 now()->toDateString()
             );
 
+            $warehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $locationId : null;
+            $branchId = $locationType === Stock::LOCATION_BRANCH ? $locationId : null;
+
             IncomingGood::create([
                 'product_id' => $product->id,
-                'warehouse_id' => $isBranchUser ? null : (int) $validated['warehouse_id'],
-                'branch_id' => $isBranchUser ? (int) $user->branch_id : null,
+                'warehouse_id' => $warehouseId,
+                'branch_id' => $branchId,
                 'quantity' => $quantity,
                 'received_date' => now()->toDateString(),
                 'notes' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
@@ -176,9 +195,88 @@ class IncomingGoodsController extends Controller
             ]);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', $e->getMessage() ?: __('Terjadi kesalahan saat menyimpan.'));
         }
 
-        return redirect()->route('incoming-goods.create')->with('success', __('Incoming goods recorded successfully.'));
+        return redirect()->route('incoming-goods.index')->with('success', __('Barang masuk berhasil dicatat.'));
+    }
+
+    public function detail(Request $request, IncomingGood $incomingGood): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $incomingGood->load(['product', 'warehouse', 'branch', 'user']);
+        $serials = $this->parseSerialNumbersForDetail($incomingGood->notes);
+        $units = [];
+        if (! empty($serials)) {
+            $productUnits = ProductUnit::with(['warehouse', 'branch'])
+                ->where('product_id', $incomingGood->product_id)
+                ->whereIn('serial_number', $serials)
+                ->orderBy('serial_number')
+                ->get();
+            $statusLabels = [
+                ProductUnit::STATUS_IN_STOCK => 'Tersedia',
+                ProductUnit::STATUS_KEEP => 'Dipesan',
+                ProductUnit::STATUS_SOLD => 'Terjual',
+                ProductUnit::STATUS_IN_RENT => 'Disewa',
+                ProductUnit::STATUS_INACTIVE => 'Nonaktif',
+                ProductUnit::STATUS_CANCEL => 'Dibatalkan',
+            ];
+            foreach ($productUnits as $u) {
+                if ($u->location_type === Stock::LOCATION_WAREHOUSE) {
+                    $posisi = 'Gudang: ' . (Warehouse::find($u->location_id)?->name ?? '-');
+                } else {
+                    $posisi = 'Cabang: ' . (Branch::find($u->location_id)?->name ?? '-');
+                }
+                $units[] = [
+                    'serial_number' => $u->serial_number,
+                    'posisi' => $posisi,
+                    'status' => $statusLabels[$u->status] ?? $u->status,
+                ];
+            }
+        }
+
+        $lokasi = $incomingGood->branch_id
+            ? 'Cabang: ' . ($incomingGood->branch?->name ?? '#'.$incomingGood->branch_id)
+            : 'Gudang: ' . ($incomingGood->warehouse?->name ?? '-');
+
+        return response()->json([
+            'tanggal' => $incomingGood->received_date->format('d/m/Y'),
+            'produk' => ($incomingGood->product?->sku ?? '-') . ' - ' . ($incomingGood->product?->brand ?? '') . ($incomingGood->product?->series ? ' ' . $incomingGood->product->series : ''),
+            'lokasi' => $lokasi,
+            'qty' => $incomingGood->quantity,
+            'user' => $incomingGood->user?->name ?? '-',
+            'units' => $units,
+            'has_serial' => ! empty($serials),
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function parseSerialNumbersForDetail(?string $input): array
+    {
+        if (! $input) {
+            return [];
+        }
+        $parts = preg_split('/[\r\n,]+/', $input) ?: [];
+        $out = [];
+        foreach ($parts as $p) {
+            $p = trim($p);
+            if ($p !== '') {
+                $out[] = $p;
+            }
+        }
+        return array_values(array_unique($out));
     }
 
     /**

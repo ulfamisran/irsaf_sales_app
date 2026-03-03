@@ -6,12 +6,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class Product extends Model
 {
     use HasFactory, SoftDeletes;
+
+    public const LOCATION_WAREHOUSE = 'warehouse';
+    public const LOCATION_BRANCH = 'branch';
 
     protected $fillable = [
         'category_id',
@@ -29,6 +33,8 @@ class Product extends Model
         'purchase_price',
         'selling_price',
         'is_active',
+        'location_type',
+        'location_id',
     ];
 
     protected function casts(): array
@@ -56,6 +62,14 @@ class Product extends Model
     public function distributor(): BelongsTo
     {
         return $this->belongsTo(Distributor::class);
+    }
+
+    /**
+     * Get the location (warehouse or branch).
+     */
+    public function location(): MorphTo
+    {
+        return $this->morphTo(__FUNCTION__, 'location_type', 'location_id');
     }
 
     /**

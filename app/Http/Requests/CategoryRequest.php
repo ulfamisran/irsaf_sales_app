@@ -21,8 +21,11 @@ class CategoryRequest extends FormRequest
      */
     public function rules(): array
     {
-        $categoryId = $this->route('category');
-        $uniqueCode = $categoryId
+        $category = $this->route('category');
+        $categoryId = $category instanceof \Illuminate\Database\Eloquent\Model
+            ? $category->getKey()
+            : $category;
+        $uniqueCode = $categoryId !== null
             ? 'unique:categories,code,' . $categoryId
             : 'unique:categories,code';
 

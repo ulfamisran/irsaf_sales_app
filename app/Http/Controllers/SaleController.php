@@ -10,6 +10,8 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Stock;
+use App\Models\Warehouse;
+use App\Models\Role;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
@@ -35,13 +37,29 @@ class SaleController extends Controller
             ->orderByDesc('sale_date')
             ->orderByDesc('id');
 
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->whereRaw('1 = 0');
+                $filterLocked = true;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
             }
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        } else {
+            $canFilterLocation = true;
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
         }
         if ($request->filled('date_from')) {
             $query->whereDate('sale_date', '>=', $request->date_from);
@@ -63,7 +81,8 @@ class SaleController extends Controller
             ->sum('total');
         $totalSalesCash = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
@@ -71,21 +90,28 @@ class SaleController extends Controller
             ->sum('sale_payments.amount');
         $totalTradeIn = (float) DB::table('sale_trade_ins')
             ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
             ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
             ->sum('sale_trade_ins.trade_in_value');
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+            ? (int) $user->branch_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when(! $user->isSuperAdminOrAdminPusat() && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
@@ -96,11 +122,11 @@ class SaleController extends Controller
         $sales = $query->paginate(20)->withQueryString();
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
 
         $totalSalesCombined = $totalSalesCash + $totalTradeIn;
 
-        return view('sales.index', compact('sales', 'branches', 'totalSales', 'totalTradeIn', 'totalSalesCash', 'totalSalesCombined', 'paymentMethods', 'paymentMethodTotals'));
+        return view('sales.index', compact('sales', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalSales', 'totalTradeIn', 'totalSalesCash', 'totalSalesCombined', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View
@@ -151,18 +177,13 @@ class SaleController extends Controller
             ];
         })->values();
 
-        $customers = Customer::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->limit(500)
-            ->get(['id', 'name', 'phone']);
-
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('id')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        $branchIdForData = $user->isSuperAdminOrAdminPusat() ? null : (int) $user->branch_id;
+        $customers = $branchIdForData
+            ? Customer::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
+            : collect();
+        $paymentMethods = $branchIdForData
+            ? PaymentMethod::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
+            : collect();
 
         $categories = Category::orderBy('name')->get(['id', 'name', 'code']);
 
@@ -544,11 +565,18 @@ class SaleController extends Controller
             return null;
         }
 
+        $user = $request->user();
+        $branchId = $user->isSuperAdminOrAdminPusat()
+            ? (int) $request->branch_id
+            : (int) $user->branch_id;
+
         $customer = Customer::create([
             'name' => $name,
             'phone' => $request->input('customer_new_phone'),
             'address' => $request->input('customer_new_address'),
             'is_active' => true,
+            'placement_type' => $branchId ? 'cabang' : null,
+            'branch_id' => $branchId ?: null,
         ]);
 
         return (int) $customer->id;

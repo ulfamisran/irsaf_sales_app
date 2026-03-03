@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ProductRequest extends FormRequest
 {
@@ -24,8 +25,10 @@ class ProductRequest extends FormRequest
     {
         $user = $this->user();
         $isBranchAdmin = $user && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isSuperAdminOrAdminPusat = $user && $user->isSuperAdminOrAdminPusat();
+        $isAdminGudang = $user && $user->hasAnyRole([Role::ADMIN_GUDANG]);
 
-        return [
+        $rules = [
             'category_id' => ['required', 'exists:categories,id'],
             'distributor_id' => ['required', 'exists:distributors,id'],
             'brand' => ['required', 'string', 'max:255'],
@@ -39,5 +42,33 @@ class ProductRequest extends FormRequest
             'purchase_price' => ['required', 'numeric', 'min:0'],
             'selling_price' => ['required', 'numeric', 'min:0'],
         ];
+
+        $rules['location_type'] = ['required', 'in:warehouse,branch'];
+        $locType = $this->input('location_type');
+        $rules['location_id'] = [
+            'required',
+            'integer',
+            'min:1',
+            $locType === 'warehouse' ? Rule::exists('warehouses', 'id') : Rule::exists('branches', 'id'),
+        ];
+
+        return $rules;
+    }
+
+    /**
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->routeIs('products.update') && ! $this->has('location_type')) {
+            $user = $this->user();
+            if ($user?->hasAnyRole([Role::ADMIN_GUDANG])) {
+                if ($user->warehouse_id) {
+                    $this->merge(['location_type' => 'warehouse', 'location_id' => $user->warehouse_id]);
+                } elseif ($user->branch_id) {
+                    $this->merge(['location_type' => 'branch', 'location_id' => $user->branch_id]);
+                }
+            }
+        }
     }
 }

@@ -16,15 +16,18 @@
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <x-input-label for="branch_id" :value="__('Cabang')" />
-                                    <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="">{{ __('Pilih Cabang') }}</option>
-                                        @foreach ($branches as $branch)
-                                            <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id || (!old('branch_id') && $branches->count() === 1) ? 'selected' : '' }}>
-                                                {{ $branch->name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                    @if($branches->count() === 1)
+                                        <x-locked-location label="{{ __('Cabang') }}" :value="__('Cabang') . ': ' . $branches->first()->name" />
+                                        <input type="hidden" id="branch_id" name="branch_id" value="{{ $branches->first()->id }}">
+                                    @else
+                                        <x-input-label for="branch_id" :value="__('Cabang')" />
+                                        <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="">{{ __('Pilih Cabang') }}</option>
+                                            @foreach ($branches as $branch)
+                                                <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    @endif
                                     <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
                                 </div>
                                 <div>
@@ -131,10 +134,46 @@
         $saldoMapBranch = $saldoMapBranch ?? [];
     @endphp
     <script>
-        const paymentMethods = @json($createPaymentMethods);
+        let paymentMethods = @json($createPaymentMethods);
         const saldoMapBranch = @json($saldoMapBranch);
         const paymentRows = document.getElementById('payment-rows');
         let paymentIndex = 0;
+        const formDataUrl = @json(route('data-by-location.form-data', [], false));
+        const appBase = @json(request()->getBaseUrl());
+
+        async function loadFormDataForBranch() {
+            const branchId = document.getElementById('branch_id')?.value;
+            if (!branchId) {
+                paymentMethods = [];
+                const custSel = document.getElementById('customer_id');
+                if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih cabang dulu')) + '</option>';
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
+                return;
+            }
+            try {
+                const url = new URL(appBase + formDataUrl, window.location.origin);
+                url.searchParams.set('location_type', 'branch');
+                url.searchParams.set('location_id', branchId);
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('Fetch failed');
+                const data = await res.json();
+                paymentMethods = (data.payment_methods || []).map(m => ({ id: m.id, label: m.label }));
+                const customers = data.customers || [];
+                const custSel = document.getElementById('customer_id');
+                if (custSel) {
+                    custSel.innerHTML = '<option value="">' + @json(__('Pilih Pelanggan (atau isi pelanggan baru)')) + '</option>' +
+                        customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
+                }
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
+                    const oldVal = sel.value;
+                    sel.innerHTML = '<option value="">Pilih metode</option>' + paymentMethods.map(m => '<option value="' + m.id + '">' + (m.label || '') + '</option>').join('');
+                    if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
+                });
+            } catch (e) { console.error('loadFormDataForBranch failed', e); }
+        }
+
+        document.getElementById('branch_id')?.addEventListener('change', loadFormDataForBranch);
+        if (document.getElementById('branch_id')?.value) loadFormDataForBranch();
 
         function paymentOptionsHtml() {
             return '<option value="">Pilih metode</option>' + paymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');

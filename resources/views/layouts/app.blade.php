@@ -93,5 +93,9 @@
              style="display: none;">
             </div>
         </div>
+
+        <!-- SweetAlert2 for beautiful alerts -->
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        @stack('scripts')
     </body>
 </html>

@@ -17,6 +17,46 @@
                                 <x-input-label for="created_by" :value="__('Pengguna')" />
                                 <x-text-input id="created_by" class="block mt-1 w-full bg-slate-100" type="text" :value="auth()->user()?->name" disabled />
                             </div>
+                            {{-- Lokasi Produk: PERTAMA - pilihan Gudang/Cabang, default dari user jika bukan super admin --}}
+                            <div x-data="{ locType: '{{ old('location_type', $defaultLocationType ?? 'warehouse') }}' }">
+                                <x-input-label :value="__('Lokasi Produk')" />
+                                <div class="mt-2 flex gap-6">
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="location_type" value="warehouse" x-model="locType"
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Gudang') }}</span>
+                                    </label>
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="location_type" value="branch" x-model="locType"
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Cabang') }}</span>
+                                    </label>
+                                </div>
+                                <template x-if="locType === 'warehouse'">
+                                    <div class="mt-3">
+                                        <x-input-label for="location_id" :value="__('Gudang')" />
+                                        <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="">{{ __('Pilih Gudang') }}</option>
+                                            @foreach ($warehouses as $wh)
+                                                <option value="{{ $wh->id }}" {{ old('location_id', $defaultLocationType === 'warehouse' ? $defaultLocationId : null) == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
+                                    </div>
+                                </template>
+                                <template x-if="locType === 'branch'">
+                                    <div class="mt-3">
+                                        <x-input-label for="location_id" :value="__('Cabang')" />
+                                        <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="">{{ __('Pilih Cabang') }}</option>
+                                            @foreach ($branches as $b)
+                                                <option value="{{ $b->id }}" {{ old('location_id', $defaultLocationType === 'branch' ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
+                                    </div>
+                                </template>
+                            </div>
                             <div>
                                 <x-input-label for="category_id" :value="__('Kategori')" />
                                 <select id="category_id" name="category_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
@@ -29,11 +69,9 @@
                             </div>
                             <div>
                                 <x-input-label for="distributor_id" :value="__('Distributor')" />
-                                <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    <option value="">{{ __('Pilih Distributor') }}</option>
-                                    @foreach ($distributors as $distributor)
-                                        <option value="{{ $distributor->id }}" {{ old('distributor_id') == $distributor->id ? 'selected' : '' }}>{{ $distributor->name }}</option>
-                                    @endforeach
+                                <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih lokasi terlebih dahulu.') }}</p>
+                                <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required disabled>
+                                    <option value="">{{ __('Pilih Lokasi dulu') }}</option>
                                 </select>
                                 <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
                             </div>
@@ -126,6 +164,47 @@
 </x-app-layout>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const distributorsUrl = @json(route('data-by-location.distributors'));
+        const defaultLocType = @json($defaultLocationType ?? null);
+        const defaultLocId = @json($defaultLocationId ?? null);
+
+        async function loadDistributors() {
+            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
+            const locIdEl = document.querySelector('select[name="location_id"]');
+            const locId = locIdEl?.value;
+            const sel = document.getElementById('distributor_id');
+            if (!sel) return;
+            if (!locType || !locId) {
+                sel.innerHTML = '<option value="">' + @json(__('Pilih Lokasi dulu')) + '</option>';
+                sel.disabled = true;
+                return;
+            }
+            try {
+                const url = new URL(distributorsUrl, window.location.origin);
+                url.searchParams.set('location_type', locType);
+                url.searchParams.set('location_id', locId);
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('Fetch failed');
+                const data = await res.json();
+                const distributors = data.distributors || [];
+                const oldVal = @json(old('distributor_id'));
+                sel.innerHTML = '<option value="">' + @json(__('Pilih Distributor')) + '</option>' +
+                    distributors.map(d => '<option value="' + d.id + '"' + (oldVal == d.id ? ' selected' : '') + '>' + (d.name || '') + '</option>').join('');
+                sel.disabled = false;
+            } catch (e) {
+                sel.innerHTML = '<option value="">' + @json(__('Gagal memuat distributor')) + '</option>';
+                sel.disabled = false;
+            }
+        }
+
+        document.querySelectorAll('input[name="location_type"]').forEach(r => r.addEventListener('change', loadDistributors));
+        document.querySelector('form')?.addEventListener('change', function(e) {
+            if (e.target.matches('select[name="location_id"]')) loadDistributors();
+        });
+        if (defaultLocType && defaultLocId) {
+            setTimeout(loadDistributors, 100);
+        }
+
         const generateBtn = document.getElementById('generate-sku-btn');
         const skuInput = document.getElementById('sku');
         const skuDisplay = document.getElementById('sku_display');

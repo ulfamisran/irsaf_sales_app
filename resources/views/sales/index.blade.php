@@ -33,6 +33,7 @@
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Invoice, pelanggan, atau user...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    @if($canFilterLocation ?? false)
                     <div class="min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
                         <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -42,6 +43,11 @@
                             @endforeach
                         </select>
                     </div>
+                    @elseif($filterLocked ?? false)
+                    <div class="min-w-[180px]">
+                        <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                    </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

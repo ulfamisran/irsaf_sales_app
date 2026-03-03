@@ -35,7 +35,7 @@
             $isSuperAdmin = $user?->isSuperAdmin();
             $isAdminCabang = $user?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]);
             $isKasir = $user?->hasAnyRole([\App\Models\Role::KASIR]);
-            $isStaffGudang = $user?->hasAnyRole([\App\Models\Role::STAFF_GUDANG]);
+            $isAdminGudang = $user?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]);
         @endphp
 
         <nav class="flex-1 overflow-y-auto px-4 py-5">
@@ -53,7 +53,7 @@
                 </li>
 
                 <!-- Data Master -->
-                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang || $isKasir)
+                @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang || $isKasir)
                 <li x-data="{ open: {{ request()->routeIs('branches.*', 'categories.*', 'distributors.*', 'products.*', 'warehouses.*', 'customers.*', 'payment-methods.*', 'expense-categories.*', 'income-categories.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Master</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -71,7 +71,7 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if ($isSuperAdmin || $isStaffGudang)
+                        @if ($isSuperAdmin || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('warehouses.index')" :active="request()->routeIs('warehouses.*')">Gudang</x-sidebar-nav-link></li>
                         @endif
 
@@ -79,13 +79,15 @@
                             <li><x-sidebar-nav-link :href="route('branches.index')" :active="request()->routeIs('branches.*')">Cabang</x-sidebar-nav-link></li>
                         @endif
 
-                        @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
+                        @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('categories.index')" :active="request()->routeIs('categories.*')">Kategori</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('distributors.index')" :active="request()->routeIs('distributors.*')">Distributor</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-sidebar-nav-link></li>
                         @endif
 
-                        <li><x-sidebar-nav-link :href="route('customers.index')" :active="request()->routeIs('customers.*')">Pelanggan</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isAdminCabang || $isKasir)
+                            <li><x-sidebar-nav-link :href="route('customers.index')" :active="request()->routeIs('customers.*')">Pelanggan</x-sidebar-nav-link></li>
+                        @endif
                         @if ($isSuperAdmin || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('payment-methods.index')" :active="request()->routeIs('payment-methods.*')">Metode Pembayaran</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('expense-categories.index')" :active="request()->routeIs('expense-categories.*')">Jenis Pengeluaran</x-sidebar-nav-link></li>
@@ -96,7 +98,7 @@
                 @endif
 
                 <!-- Stok -->
-                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
+                @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
                 <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -113,15 +115,15 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if ($isSuperAdmin || $isStaffGudang || $isAdminCabang)
+                        @if ($isSuperAdmin || $isAdminGudang || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('incoming-goods.index')" :active="request()->routeIs('incoming-goods.*')">Barang Masuk</x-sidebar-nav-link></li>
                         @endif
 
-                        @if ($isSuperAdmin || $isStaffGudang)
+                        @if ($isSuperAdmin || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('stock-mutations.index')" :active="request()->routeIs('stock-mutations.*')">Distribusi Stok</x-sidebar-nav-link></li>
                         @endif
 
-                        @if ($isSuperAdmin || $isStaffGudang || $isAdminCabang)
+                        @if ($isSuperAdmin || $isAdminGudang || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('stock-units.index')" :active="request()->routeIs('stock-units.*')">Daftar Unit</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('stock-inout.index')" :active="request()->routeIs('stock-inout.*')">Mutasi Stok (IN/OUT)</x-sidebar-nav-link></li>
                         @endif
@@ -130,7 +132,7 @@
                 @endif
 
                 <!-- Penjualan -->
-                @if ($isSuperAdmin || $isAdminCabang || $isKasir || $isStaffGudang)
+                @if ($isSuperAdmin || $isAdminCabang || $isKasir || $isAdminGudang)
                 <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -148,9 +150,11 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
-                        <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
-                        @if ($isSuperAdmin || $isStaffGudang)
+                        @if ($isSuperAdmin || $isAdminCabang || $isKasir)
+                            <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
+                        @endif
+                        @if ($isSuperAdmin || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                         @endif
                     </ul>
@@ -207,7 +211,7 @@
                 @endif
 
                 <!-- Laporan -->
-                @if ($isSuperAdmin || $isAdminCabang || $isStaffGudang)
+                @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
                 <li x-data="{ open: {{ request()->routeIs('reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Analitik</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">

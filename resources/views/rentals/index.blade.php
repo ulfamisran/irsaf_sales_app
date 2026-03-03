@@ -28,6 +28,16 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('rentals.index') }}" class="flex flex-wrap gap-3 items-end">
+                    @if($canFilterLocation ?? false)
+                    <div class="min-w-[180px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
+                        <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach ($branches ?? [] as $b)
+                                <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <div class="min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
                         <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -37,6 +47,11 @@
                             @endforeach
                         </select>
                     </div>
+                    @elseif($filterLocked ?? false)
+                    <div class="min-w-[180px]">
+                        <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                    </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Pengembalian') }}</label>
                         <select name="return_status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

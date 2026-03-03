@@ -62,7 +62,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Nama') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Email') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Role') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Penempatan') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
@@ -73,7 +73,7 @@
                                 <td class="px-4 py-3 font-medium text-slate-800">{{ $user->name }}</td>
                                 <td class="px-4 py-3">{{ $user->email }}</td>
                                 <td class="px-4 py-3">{{ $user->roles->pluck('display_name')->implode(', ') ?: '-' }}</td>
-                                <td class="px-4 py-3">{{ $user->branch?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">{{ $user->placement_display }}</td>
                                 <td class="px-4 py-3">
                                     <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $user->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">
                                         {{ $user->is_active ? __('Aktif') : __('Nonaktif') }}
@@ -81,6 +81,7 @@
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
+                                        <x-icon-btn-edit :href="route('users.edit', $user)" />
                                         <form action="{{ route('users.reset-password', $user) }}" method="POST" class="inline">
                                             @csrf
                                             @method('PUT')

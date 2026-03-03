@@ -6,6 +6,7 @@ use App\Http\Requests\ProductRequest;
 use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\Role;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Repositories\CategoryRepository;
@@ -29,24 +30,73 @@ class ProductController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        $products = $this->productRepository->paginate(15, [
+        $defaultLocationType = null;
+        $defaultLocationId = null;
+        if ($user) {
+            if ($user->warehouse_id) {
+                $defaultLocationType = Product::LOCATION_WAREHOUSE;
+                $defaultLocationId = $user->warehouse_id;
+            } elseif ($user->branch_id) {
+                $defaultLocationType = Product::LOCATION_BRANCH;
+                $defaultLocationId = $user->branch_id;
+            }
+        }
+
+        $locationType = $request->has('location_type') ? $request->get('location_type') : $defaultLocationType;
+        $locationId = $request->has('location_id') ? $request->get('location_id') : $defaultLocationId;
+        if ($locationType && $locationId) {
+            $locationId = (int) $locationId;
+        } else {
+            $locationType = null;
+            $locationId = null;
+        }
+
+        $filters = [
             'search' => $request->get('search'),
             'category_id' => $request->get('category_id'),
-            'branch_id' => $user && ! $user->isSuperAdminOrAdminPusat() ? $user->branch_id : null,
-        ]);
+            'location_type' => $locationType,
+            'location_id' => $locationId,
+        ];
+        if ($locationType === Product::LOCATION_BRANCH && $locationId) {
+            $filters['branch_id'] = $locationId;
+        }
+
+        $products = $this->productRepository->paginate(15, $filters);
         $categories = $this->categoryRepository->all();
-        return view('products.index', compact('products', 'categories'));
+
+        return view('products.index', compact('products', 'categories', 'warehouses', 'branches', 'locationType', 'locationId', 'defaultLocationType', 'defaultLocationId'));
     }
 
     /**
      * Show the form for creating a new product.
      */
-    public function create(): View
+    public function create(Request $request): View
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && ! $user->branch_id && ! $user->warehouse_id) {
+            abort(403, __('Staff gudang harus memiliki cabang atau gudang yang ditetapkan untuk menambah produk.'));
+        }
         $categories = $this->categoryRepository->all();
-        $distributors = $this->distributorRepository->all();
-        return view('products.create', compact('categories', 'distributors'));
+        $distributors = $this->distributorRepository->all($request->user());
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+
+        $defaultLocationType = null;
+        $defaultLocationId = null;
+        if ($user) {
+            if ($user->warehouse_id) {
+                $defaultLocationType = Product::LOCATION_WAREHOUSE;
+                $defaultLocationId = $user->warehouse_id;
+            } elseif ($user->branch_id) {
+                $defaultLocationType = Product::LOCATION_BRANCH;
+                $defaultLocationId = $user->branch_id;
+            }
+        }
+
+        return view('products.create', compact('categories', 'distributors', 'warehouses', 'branches', 'defaultLocationType', 'defaultLocationId'));
     }
 
     /**
@@ -56,6 +106,16 @@ class ProductController extends Controller
     {
         $data = $request->validated();
         $data['user_id'] = $request->user()?->id;
+
+        $user = $request->user();
+        if (isset($data['location_type']) && isset($data['location_id']) && $data['location_type'] && $data['location_id']) {
+            $data['location_type'] = $data['location_type'] === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
+            $data['location_id'] = (int) $data['location_id'];
+        } else {
+            $data['location_type'] = null;
+            $data['location_id'] = null;
+        }
+
         $sku = trim((string) $request->input('sku', ''));
         if ($sku !== '' && ! Product::where('sku', $sku)->exists()) {
             $data['sku'] = $sku;
@@ -77,11 +137,21 @@ class ProductController extends Controller
     /**
      * Show the form for editing the specified product.
      */
-    public function edit(Product $product): View
+    public function edit(Request $request, Product $product): View
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
+                abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
+            }
+        }
         $categories = $this->categoryRepository->all();
-        $distributors = $this->distributorRepository->all();
-        return view('products.edit', compact('product', 'categories', 'distributors'));
+        $distributors = $this->distributorRepository->all($request->user());
+        $warehouses = $user && $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get(['id', 'name'])
+            : collect();
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        return view('products.edit', compact('product', 'categories', 'distributors', 'warehouses', 'branches'));
     }
 
     /**
@@ -89,7 +159,18 @@ class ProductController extends Controller
      */
     public function update(ProductRequest $request, Product $product): RedirectResponse
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
+                abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
+            }
+        }
+
         $data = $request->validated();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            $data['location_type'] = Product::LOCATION_BRANCH;
+            $data['location_id'] = $user->branch_id;
+        }
         $sku = trim((string) $request->input('sku', ''));
         if ($sku !== '' && $sku !== $product->sku) {
             $request->validate([
@@ -104,8 +185,14 @@ class ProductController extends Controller
     /**
      * Remove the specified product.
      */
-    public function destroy(Product $product): RedirectResponse
+    public function destroy(Request $request, Product $product): RedirectResponse
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
+                abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
+            }
+        }
         $this->productRepository->delete($product);
         return redirect()->route('products.index')->with('success', __('Product deleted successfully.'));
     }
@@ -113,8 +200,14 @@ class ProductController extends Controller
     /**
      * Toggle active status for the specified product.
      */
-    public function toggleActive(Product $product): RedirectResponse
+    public function toggleActive(Request $request, Product $product): RedirectResponse
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
+                abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
+            }
+        }
         $product->is_active = ! (bool) $product->is_active;
         $product->save();
 
@@ -127,6 +220,12 @@ class ProductController extends Controller
      */
     public function show(Request $request, Product $product): View
     {
+        $user = $request->user();
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+            if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
+                abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
+            }
+        }
         $product->load(['category', 'user']);
 
         $query = ProductUnit::with(['warehouse', 'branch', 'user'])

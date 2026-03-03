@@ -16,15 +16,18 @@
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <x-input-label for="warehouse_id" :value="__('Gudang')" />
-                                    <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="">{{ __('Pilih Gudang') }}</option>
-                                        @foreach ($warehouses as $wh)
-                                            <option value="{{ $wh->id }}" {{ old('warehouse_id') == $wh->id ? 'selected' : '' }}>
-                                                {{ $wh->name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                    @if($warehouses->count() === 1)
+                                        <x-locked-location label="{{ __('Gudang') }}" :value="__('Gudang') . ': ' . $warehouses->first()->name" />
+                                        <input type="hidden" id="warehouse_id" name="warehouse_id" value="{{ $warehouses->first()->id }}">
+                                    @else
+                                        <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                                        <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="">{{ __('Pilih Gudang') }}</option>
+                                            @foreach ($warehouses as $wh)
+                                                <option value="{{ $wh->id }}" {{ old('warehouse_id', $defaultWarehouseId ?? null) == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    @endif
                                     <p id="products_status" class="mt-1 text-xs text-slate-500"></p>
                                     <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
                                 </div>
@@ -175,10 +178,11 @@
         $createPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
     @endphp
     <script>
-        const paymentMethods = @json($createPaymentMethods);
+        let paymentMethods = @json($createPaymentMethods);
         const appBaseUrl = @json(request()->getBaseUrl());
         const availableProductsPath = @json(route('rentals.available-products', [], false));
         const availableSerialsPath = @json(route('rentals.available-serials', [], false));
+        const formDataUrl = @json(route('data-by-location.form-data', [], false));
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
         let products = [];
@@ -219,6 +223,37 @@
             } else {
                 selectEl.value = '';
             }
+        }
+
+        async function loadFormDataForWarehouse() {
+            const warehouseId = document.getElementById('warehouse_id')?.value;
+            if (!warehouseId) {
+                paymentMethods = [];
+                const custSel = document.getElementById('customer_id');
+                if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih gudang dulu')) + '</option>';
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
+                return;
+            }
+            try {
+                const url = new URL(appBaseUrl + formDataUrl, window.location.origin);
+                url.searchParams.set('location_type', 'warehouse');
+                url.searchParams.set('location_id', warehouseId);
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('Fetch failed');
+                const data = await res.json();
+                paymentMethods = (data.payment_methods || []).map(m => ({ id: m.id, label: m.label }));
+                const customers = data.customers || [];
+                const custSel = document.getElementById('customer_id');
+                if (custSel) {
+                    custSel.innerHTML = '<option value="">' + @json(__('Pilih Penyewa (atau isi penyewa baru)')) + '</option>' +
+                        customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
+                }
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
+                    const oldVal = sel.value;
+                    sel.innerHTML = '<option value="">Pilih metode</option>' + paymentMethods.map(m => '<option value="' + m.id + '">' + (m.label || '') + '</option>').join('');
+                    if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
+                });
+            } catch (e) { console.error('loadFormDataForWarehouse failed', e); }
         }
 
         async function loadProductsForWarehouse() {
@@ -463,6 +498,7 @@
         toggleCustomerFields();
 
         document.getElementById('warehouse_id')?.addEventListener('change', async function() {
+            await loadFormDataForWarehouse();
             await loadProductsForWarehouse();
             document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
         });
@@ -472,8 +508,10 @@
         document.getElementById('penalty_amount')?.addEventListener('input', refreshTotals);
 
         function initRentalCreate() {
-            loadProductsForWarehouse().then(() => {
-                document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
+            loadFormDataForWarehouse().then(() => {
+                loadProductsForWarehouse().then(() => {
+                    document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
+                });
             });
             refreshDays();
             refreshTotals();

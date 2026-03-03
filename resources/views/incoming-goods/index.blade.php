@@ -48,10 +48,18 @@
                                 @endforeach
                             </select>
                         </div>
-                    @else
                         <div class="min-w-[180px]">
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                            <input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 shadow-sm" value="{{ $branch?->name }}" readonly />
+                            <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($branches as $b)
+                                    <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @else
+                        <div class="min-w-[180px]">
+                            <x-locked-location label="{{ __('Cabang') }}" :value="__('Cabang') . ': ' . ($branch?->name ?? '')" />
                         </div>
                     @endif
                     <div>
@@ -88,6 +96,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Qty') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Detail') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -107,10 +116,22 @@
                                 </td>
                                 <td class="px-4 py-3 text-right">{{ $r->quantity }}</td>
                                 <td class="px-4 py-3">{{ $r->user?->name }}</td>
+                                <td class="px-4 py-3 text-center">
+                                    <button type="button"
+                                        class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors show-detail-btn"
+                                        title="{{ __('Lihat Detail') }}"
+                                        data-url="{{ route('incoming-goods.detail', $r) }}">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        {{ __('Detail') }}
+                                    </button>
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
+                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -119,4 +140,72 @@
             </div>
         </div>
     </div>
+
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.show-detail-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const url = this.dataset.url;
+                    if (!url) return;
+                    const el = this;
+                    el.disabled = true;
+                    fetch(url, {
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                    .then(r => r.json())
+                    .then(function(data) {
+                        const escape = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                        let unitsHtml = '';
+                        if (data.units && data.units.length > 0) {
+                            unitsHtml = '<div class="mt-4"><p class="text-sm font-semibold text-slate-700 mb-2">Detail Unit</p>' +
+                                '<div class="overflow-x-auto max-h-48 overflow-y-auto rounded-lg border border-slate-200">' +
+                                '<table class="min-w-full text-sm"><thead><tr class="bg-slate-50 border-b border-slate-200">' +
+                                '<th class="px-3 py-2 text-left font-medium text-slate-600">No</th>' +
+                                '<th class="px-3 py-2 text-left font-medium text-slate-600">Serial</th>' +
+                                '<th class="px-3 py-2 text-left font-medium text-slate-600">Posisi</th>' +
+                                '<th class="px-3 py-2 text-left font-medium text-slate-600">Status</th></tr></thead><tbody>';
+                            data.units.forEach(function(u, i) {
+                                const statusClass = u.status === 'Tersedia' ? 'bg-emerald-100 text-emerald-800' :
+                                    u.status === 'Terjual' ? 'bg-amber-100 text-amber-800' :
+                                    u.status === 'Dipesan' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-slate-100 text-slate-700';
+                                unitsHtml += '<tr class="border-b border-slate-100 hover:bg-slate-50">' +
+                                    '<td class="px-3 py-2 text-slate-600">' + (i+1) + '</td>' +
+                                    '<td class="px-3 py-2 font-mono text-slate-800">' + escape(u.serial_number) + '</td>' +
+                                    '<td class="px-3 py-2 text-slate-700">' + escape(u.posisi) + '</td>' +
+                                    '<td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + statusClass + '">' + escape(u.status) + '</span></td>' +
+                                    '</tr>';
+                            });
+                            unitsHtml += '</tbody></table></div></div>';
+                        } else if (data.has_serial === false) {
+                            unitsHtml = '<p class="mt-3 text-sm text-slate-500 italic">Input tanpa nomor serial (hanya quantity)</p>';
+                        } else {
+                            unitsHtml = '<p class="mt-3 text-sm text-slate-500 italic">Data unit tidak ditemukan</p>';
+                        }
+                        const infoHtml = '<div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">' +
+                            '<div><span class="text-slate-500 block text-xs">Tanggal</span><span class="font-medium text-slate-800">' + escape(data.tanggal) + '</span></div>' +
+                            '<div><span class="text-slate-500 block text-xs">User</span><span class="font-medium text-slate-800">' + escape(data.user) + '</span></div>' +
+                            '<div class="col-span-2"><span class="text-slate-500 block text-xs">Produk</span><span class="font-medium text-slate-800">' + escape(data.produk) + '</span></div>' +
+                            '<div><span class="text-slate-500 block text-xs">Lokasi Tujuan</span><span class="font-medium text-slate-800">' + escape(data.lokasi) + '</span></div>' +
+                            '<div><span class="text-slate-500 block text-xs">Quantity</span><span class="font-medium text-slate-800">' + escape(data.qty) + '</span></div>' +
+                            '</div>';
+                        Swal.fire({
+                            title: 'Detail Barang Masuk',
+                            html: '<div class="text-left">' + infoHtml + unitsHtml + '</div>',
+                            confirmButtonText: 'Tutup',
+                            confirmButtonColor: '#4f46e5',
+                            width: '560px',
+                            padding: '1.5rem'
+                        });
+                    })
+                    .catch(function() {
+                        Swal.fire({ icon: 'error', title: 'Gagal', text: 'Tidak dapat memuat detail.', confirmButtonColor: '#dc2626' });
+                    })
+                    .finally(function() { el.disabled = false; });
+                });
+            });
+        });
+    </script>
+    @endpush
 </x-app-layout>

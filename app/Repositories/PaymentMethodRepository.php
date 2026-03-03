@@ -12,14 +12,46 @@ class PaymentMethodRepository
         protected PaymentMethod $model
     ) {}
 
-    public function all(): Collection
+    public function all(?\App\Models\User $user = null): Collection
     {
-        return $this->model->orderBy('jenis_pembayaran')->orderBy('nama_bank')->get();
+        $query = $this->model->orderBy('jenis_pembayaran')->orderBy('nama_bank');
+        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        }
+
+        return $query->get();
     }
 
     public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator
     {
-        $query = $this->model->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id');
+        $query = $this->model->with(['branch', 'warehouse'])
+            ->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id');
+
+        $user = $filters['user'] ?? null;
+        $locationType = $filters['location_type'] ?? null;
+        $locationId = $filters['location_id'] ?? null;
+
+        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        } elseif ($locationType && $locationId) {
+            if ($locationType === 'cabang') {
+                $query->where('branch_id', $locationId);
+            } else {
+                $query->where('warehouse_id', $locationId);
+            }
+        }
 
         if (! empty($filters['search'])) {
             $s = $filters['search'];

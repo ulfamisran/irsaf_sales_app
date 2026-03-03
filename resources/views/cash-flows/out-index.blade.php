@@ -8,7 +8,7 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('cash-flows.out.index') }}" class="flex flex-wrap gap-4 items-end">
-                    @if (auth()->user()->isSuperAdmin())
+                    @if($canFilterLocation ?? false)
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
                             <select name="branch_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -26,6 +26,10 @@
                                     <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                                 @endforeach
                             </select>
+                        </div>
+                    @elseif($filterLocked ?? false)
+                        <div class="min-w-[180px]">
+                            <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         </div>
                     @endif
                     <div>

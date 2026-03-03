@@ -13,7 +13,27 @@ class CustomerRepository
 
     public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator
     {
-        $query = $this->model->orderBy('name')->orderBy('id');
+        $query = $this->model->with(['branch', 'warehouse'])->orderBy('name')->orderBy('id');
+
+        $user = $filters['user'] ?? null;
+        $locationType = $filters['location_type'] ?? null;
+        $locationId = $filters['location_id'] ?? null;
+
+        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        } elseif ($locationType && $locationId) {
+            if ($locationType === 'cabang') {
+                $query->where('branch_id', $locationId);
+            } else {
+                $query->where('warehouse_id', $locationId);
+            }
+        }
 
         if (! empty($filters['search'])) {
             $s = $filters['search'];

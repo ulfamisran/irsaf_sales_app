@@ -14,6 +14,17 @@
                         @csrf
                         @method('PATCH')
                         <div class="space-y-4">
+                            <x-location-selector
+                                :branches="$branches"
+                                :warehouses="$warehouses"
+                                :can-choose="$canChoose"
+                                :default-placement-type="$defaultPlacementType"
+                                :default-branch-id="$defaultBranchId"
+                                :default-warehouse-id="$defaultWarehouseId"
+                                :old-placement-type="$oldPlacementType"
+                                :old-branch-id="$oldBranchId"
+                                :old-warehouse-id="$oldWarehouseId"
+                            />
                             <div>
                                 <x-input-label for="jenis_pembayaran" :value="__('Jenis Pembayaran')" />
                                 <x-text-input id="jenis_pembayaran" class="block mt-1 w-full" type="text" name="jenis_pembayaran" :value="old('jenis_pembayaran', $paymentMethod->jenis_pembayaran)" required autofocus />

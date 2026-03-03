@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\CashFlow;
+use App\Models\Role;
 use App\Models\PaymentMethod;
 use App\Models\Rental;
 use App\Models\Sale;
@@ -33,16 +34,30 @@ class FinanceController extends Controller
 
         $branchId = null;
         $warehouseId = null;
-        if (! $user->isSuperAdmin()) {
-            $branchId = $user->branch_id;
-        } elseif ($request->filled('branch_id')) {
-            $branchId = (int) $request->branch_id;
-        } elseif ($request->filled('warehouse_id')) {
-            $warehouseId = (int) $request->warehouse_id;
-        }
-        if ($request->filled('warehouse_id')) {
-            $warehouseId = (int) $request->warehouse_id;
-            $branchId = null;
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+                $filterLocked = true;
+                $branch = Branch::find($branchId);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+                $filterLocked = true;
+                $warehouse = Warehouse::find($warehouseId);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+            }
+        } else {
+            $canFilterLocation = true;
+            if ($request->filled('warehouse_id')) {
+                $warehouseId = (int) $request->warehouse_id;
+                $branchId = null;
+            } elseif ($request->filled('branch_id')) {
+                $branchId = (int) $request->branch_id;
+            }
         }
 
         $salesQuery = Sale::query()
@@ -145,14 +160,17 @@ class FinanceController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : collect();
-        $warehouses = $user->isSuperAdmin()
+        $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
             : collect();
 
         return view('finance.profit-loss', [
+            'canFilterLocation' => $canFilterLocation,
+            'filterLocked' => $filterLocked,
+            'locationLabel' => $locationLabel,
             'dateFrom' => $dateFrom->toDateString(),
             'dateTo' => $dateTo->toDateString(),
             'totalSales' => $totalSales,
@@ -182,12 +200,28 @@ class FinanceController extends Controller
         $user = $request->user();
 
         $branchId = null;
-        if (! $user->isSuperAdmin()) {
-            $branchId = $user->branch_id;
-        } elseif ($request->filled('branch_id')) {
-            $branchId = (int) $request->branch_id;
+        $warehouseId = null;
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+                $filterLocked = true;
+                $branch = Branch::find($branchId);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+                $filterLocked = true;
+                $warehouse = Warehouse::find($warehouseId);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+            }
+        } else {
+            $canFilterLocation = true;
+            $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+            $warehouseId = $request->filled('warehouse_id') ? (int) $request->warehouse_id : null;
         }
-        $warehouseId = $request->filled('warehouse_id') ? (int) $request->warehouse_id : null;
 
         // Filter tanggal (opsional) - default: tidak filter, tampilkan semua data
         $dateFrom = $request->filled('date_from') ? Carbon::parse($request->date_from)->startOfDay() : null;
@@ -278,8 +312,11 @@ class FinanceController extends Controller
         $warehouseInTotals = [];
         $allKeys = [];
 
-        // Masukkan semua metode pembayaran aktif (nama bank + no rekening) agar rekening kosong tetap tampil
-        $allPaymentMethods = PaymentMethod::where('is_active', true)->get(['jenis_pembayaran', 'nama_bank', 'no_rekening']);
+        // Masukkan metode pembayaran aktif sesuai lokasi (nama bank + no rekening) agar rekening kosong tetap tampil
+        $allPaymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchId, $warehouseId)
+            ->get(['jenis_pembayaran', 'nama_bank', 'no_rekening']);
         foreach ($allPaymentMethods as $pm) {
             $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? '')));
             $bank = trim((string) ($pm->nama_bank ?? ''));
@@ -451,12 +488,17 @@ class FinanceController extends Controller
         }
         $overallSaldo = $overallIn - $overallOut;
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $warehouses = $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get(['id', 'name'])
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         return view('finance.cash-monitoring', [
+            'canFilterLocation' => $canFilterLocation,
+            'filterLocked' => $filterLocked,
+            'locationLabel' => $locationLabel,
             'branchTotals' => $branchTotals,
             'branchExpense' => $branchExpense,
             'warehouseTotals' => $warehouseTotals,
@@ -497,8 +539,13 @@ class FinanceController extends Controller
             abort(404, __('Parameter tidak valid.'));
         }
 
-        if (! $user->isSuperAdmin() && $branchId && (int) $user->branch_id !== $branchId) {
-            abort(403, __('Akses ditolak.'));
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $branchId && (int) $user->branch_id !== $branchId) {
+                abort(403, __('Akses ditolak.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $warehouseId && (int) $user->warehouse_id !== $warehouseId) {
+                abort(403, __('Akses ditolak.'));
+            }
         }
 
         $locationType = $isOverall ? 'overall' : ($warehouseId ? 'warehouse' : 'branch');

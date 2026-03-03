@@ -19,8 +19,13 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
+    public const PLACEMENT_CABANG = 'cabang';
+    public const PLACEMENT_GUDANG = 'gudang';
+
     protected $fillable = [
         'branch_id',
+        'warehouse_id',
+        'placement_type',
         'name',
         'email',
         'password',
@@ -30,6 +35,25 @@ class User extends Authenticatable
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    /**
+     * Get placement display name (Cabang/Gudang + name).
+     */
+    public function getPlacementDisplayAttribute(): ?string
+    {
+        if ($this->placement_type === self::PLACEMENT_GUDANG && $this->warehouse_id) {
+            return __('Gudang') . ': ' . ($this->warehouse?->name ?? '-');
+        }
+        if (($this->placement_type === self::PLACEMENT_CABANG || $this->branch_id) && $this->branch_id) {
+            return __('Cabang') . ': ' . ($this->branch?->name ?? '-');
+        }
+        return '-';
     }
 
     /**

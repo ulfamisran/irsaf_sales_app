@@ -72,6 +72,26 @@ class StockUnitController extends Controller
         $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $canFilterLocation = $user->isSuperAdminOrAdminPusat();
+        $filterLocked = false;
+        $locationType = null;
+        $locationId = null;
+        $locationLabel = null;
+        if (! $canFilterLocation) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationType = 'branch';
+                $locationId = (int) $user->branch_id;
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $filterLocked = true;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationType = 'warehouse';
+                $locationId = (int) $user->warehouse_id;
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            }
+        }
 
         $statusOptions = [
             ProductUnit::STATUS_IN_STOCK => __('In Stock'),
@@ -95,6 +115,11 @@ class StockUnitController extends Controller
             'statusOptions',
             'branches',
             'warehouses',
+            'canFilterLocation',
+            'filterLocked',
+            'locationType',
+            'locationId',
+            'locationLabel',
             'inStockCounts',
             'soldInfoBySerial'
         ));
@@ -108,11 +133,16 @@ class StockUnitController extends Controller
         $user = $request->user();
         $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user']);
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
-            }
-            if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                if ($unit->location_type !== Stock::LOCATION_WAREHOUSE || (int) $unit->location_id !== (int) $user->warehouse_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } else {
                 abort(403, __('Unauthorized.'));
             }
         }
@@ -322,14 +352,20 @@ class StockUnitController extends Controller
 
     private function applyFilters(Request $request, $user, $listBase, $countBase): void
     {
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $listBase->where('location_type', Stock::LOCATION_BRANCH)
+                    ->where('location_id', (int) $user->branch_id);
+                $countBase->where('location_type', Stock::LOCATION_BRANCH)
+                    ->where('location_id', (int) $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $listBase->where('location_type', Stock::LOCATION_WAREHOUSE)
+                    ->where('location_id', (int) $user->warehouse_id);
+                $countBase->where('location_type', Stock::LOCATION_WAREHOUSE)
+                    ->where('location_id', (int) $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
             }
-            $listBase->where('location_type', Stock::LOCATION_BRANCH)
-                ->where('location_id', (int) $user->branch_id);
-            $countBase->where('location_type', Stock::LOCATION_BRANCH)
-                ->where('location_id', (int) $user->branch_id);
         }
 
         if ($request->filled('product_id')) {
@@ -339,13 +375,15 @@ class StockUnitController extends Controller
         if ($request->filled('status')) {
             $listBase->where('status', (string) $request->status);
         }
-        if ($request->filled('location_type')) {
-            $listBase->where('location_type', (string) $request->location_type);
-            $countBase->where('location_type', (string) $request->location_type);
-        }
-        if ($request->filled('location_id')) {
-            $listBase->where('location_id', (int) $request->location_id);
-            $countBase->where('location_id', (int) $request->location_id);
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if ($request->filled('location_type')) {
+                $listBase->where('location_type', (string) $request->location_type);
+                $countBase->where('location_type', (string) $request->location_type);
+            }
+            if ($request->filled('location_id')) {
+                $listBase->where('location_id', (int) $request->location_id);
+                $countBase->where('location_id', (int) $request->location_id);
+            }
         }
         if ($request->filled('search')) {
             $search = (string) $request->search;

@@ -14,6 +14,17 @@
                         @csrf
                         @method('PATCH')
                         <div class="space-y-4">
+                            <x-location-selector
+                                :branches="$branches"
+                                :warehouses="$warehouses"
+                                :can-choose="$canChoose"
+                                :default-placement-type="$defaultPlacementType"
+                                :default-branch-id="$defaultBranchId"
+                                :default-warehouse-id="$defaultWarehouseId"
+                                :old-placement-type="$oldPlacementType"
+                                :old-branch-id="$oldBranchId"
+                                :old-warehouse-id="$oldWarehouseId"
+                            />
                             <div>
                                 <x-input-label for="name" :value="__('Nama Distributor')" />
                                 <x-text-input id="name" class="block mt-1 w-full" type="text" name="name" :value="old('name', $distributor->name)" required autofocus />

@@ -8,9 +8,6 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            @if (session('success'))
-                <div class="mb-4 rounded-md bg-green-50 p-4 text-green-800">{{ session('success') }}</div>
-            @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
                     <form method="POST" action="{{ route('incoming-goods.store') }}">
@@ -40,22 +37,55 @@
                             </div>
                             @if ($isBranchUser)
                                 <div>
-                                    <x-input-label for="branch_name" :value="__('Cabang')" />
-                                    <x-text-input id="branch_name" class="block mt-1 w-full bg-slate-100" type="text" :value="$branch?->name" disabled />
+                                    <x-locked-location label="{{ __('Cabang') }}" :value="__('Cabang') . ': ' . ($branch?->name ?? '')" />
+                                    <input type="hidden" name="location_type" value="branch">
+                                    <input type="hidden" name="branch_id" value="{{ $branch?->id }}">
                                 </div>
                             @else
-                                <div>
-                                    <x-input-label for="warehouse_id" :value="__('Warehouse')" />
-                                    <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="">{{ __('Select Warehouse') }}</option>
-                                        @foreach ($warehouses as $warehouse)
-                                            <option value="{{ $warehouse->id }}"
-                                                {{ (old('warehouse_id') ?? $selectedWarehouse?->id) == $warehouse->id ? 'selected' : '' }}>
-                                                {{ $warehouse->name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                <div x-data="{ locationType: '{{ old('location_type', 'warehouse') }}' }">
+                                    <x-input-label :value="__('Lokasi Tujuan')" />
+                                    <div class="mt-2 flex gap-6">
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="warehouse" x-model="locationType"
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">Gudang</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="branch" x-model="locationType"
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">Cabang</span>
+                                        </label>
+                                    </div>
+                                    <div x-show="locationType === 'warehouse'" x-cloak x-transition class="mt-3">
+                                        <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                                        <select id="warehouse_id" name="warehouse_id"
+                                            class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                            :required="locationType === 'warehouse'" :disabled="locationType !== 'warehouse'">
+                                            <option value="">Pilih Gudang</option>
+                                            @foreach ($warehouses as $warehouse)
+                                                <option value="{{ $warehouse->id }}"
+                                                    {{ (old('warehouse_id') ?? $selectedWarehouse?->id) == $warehouse->id ? 'selected' : '' }}>
+                                                    {{ $warehouse->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                    </div>
+                                    <div x-show="locationType === 'branch'" x-cloak x-transition class="mt-3">
+                                        <x-input-label for="branch_id" :value="__('Cabang')" />
+                                        <select id="branch_id" name="branch_id"
+                                            class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                            :required="locationType === 'branch'" :disabled="locationType !== 'branch'">
+                                            <option value="">Pilih Cabang</option>
+                                            @foreach ($branches as $b)
+                                                <option value="{{ $b->id }}"
+                                                    {{ (old('branch_id') ?? $selectedBranch?->id) == $b->id ? 'selected' : '' }}>
+                                                    {{ $b->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                                    </div>
                                 </div>
                             @endif
                             @if (! $selectedProduct)
@@ -84,31 +114,81 @@
         </div>
     </div>
 
+    @push('scripts')
     <script>
-        function countSerials(text) {
-            return text
-                .split(/[\n,]+/g)
-                .map(s => s.trim())
-                .filter(Boolean)
-                .filter((v, i, arr) => arr.indexOf(v) === i)
-                .length;
-        }
+        document.addEventListener('DOMContentLoaded', function() {
+            @if (session('success'))
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil',
+                text: @json(session('success')),
+                confirmButtonText: 'Baik',
+                confirmButtonColor: '#4f46e5'
+            });
+            @endif
+            @if (session('error'))
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal',
+                text: @json(session('error')),
+                confirmButtonText: 'Baik',
+                confirmButtonColor: '#dc2626'
+            });
+            @endif
+        });
 
-        const serialEl = document.getElementById('serial_numbers');
-        const qtyEl = document.getElementById('quantity');
+        (function() {
+            function parseSerials(text) {
+                return (text || '').split(/[\n,]+/g).map(s => s.trim()).filter(Boolean);
+            }
+            function countSerials(text) {
+                return [...new Set(parseSerials(text))].length;
+            }
+            function getDuplicateSerials(text) {
+                const arr = parseSerials(text);
+                const seen = new Set();
+                const dups = new Set();
+                arr.forEach(v => {
+                    if (seen.has(v)) dups.add(v);
+                    else seen.add(v);
+                });
+                return [...dups];
+            }
 
-        if (serialEl && qtyEl) {
-            const sync = () => {
-                const c = countSerials(serialEl.value || '');
-                if (c > 0) {
-                    qtyEl.value = c;
-                    qtyEl.setAttribute('readonly', 'readonly');
-                } else {
-                    qtyEl.removeAttribute('readonly');
-                }
-            };
-            serialEl.addEventListener('input', sync);
-            sync();
-        }
+            const serialEl = document.getElementById('serial_numbers');
+            const qtyEl = document.getElementById('quantity');
+            const form = serialEl?.closest('form');
+
+            if (serialEl && qtyEl) {
+                const sync = () => {
+                    const c = countSerials(serialEl.value);
+                    if (c > 0) {
+                        qtyEl.value = c;
+                        qtyEl.setAttribute('readonly', 'readonly');
+                    } else {
+                        qtyEl.removeAttribute('readonly');
+                    }
+                };
+                serialEl.addEventListener('input', sync);
+                sync();
+            }
+
+            if (form && serialEl) {
+                form.addEventListener('submit', function(e) {
+                    const dups = getDuplicateSerials(serialEl.value);
+                    if (dups.length > 0) {
+                        e.preventDefault();
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Validasi Gagal',
+                            html: 'Nomor serial tidak boleh duplikat:<br><code class="mt-2 block text-sm">' + dups.join(', ') + '</code>',
+                            confirmButtonText: 'Baik',
+                            confirmButtonColor: '#dc2626'
+                        });
+                    }
+                });
+            }
+        })();
     </script>
+    @endpush
 </x-app-layout>

@@ -39,6 +39,11 @@ class ProductRepository
             $query->where('category_id', $filters['category_id']);
         }
 
+        if (! empty($filters['location_type']) && ! empty($filters['location_id'])) {
+            $query->where('location_type', $filters['location_type'])
+                ->where('location_id', (int) $filters['location_id']);
+        }
+
         // Stok ready = total stok di cabang (ready untuk dijual)
         $query->selectSub(function ($q) use ($filters) {
             $q->from('stocks')

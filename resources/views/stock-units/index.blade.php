@@ -42,17 +42,18 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div class="min-w-[200px]">
+                        @if($canFilterLocation ?? false)
+                        <div class="w-[120px]">
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi Tipe') }}</label>
-                            <select name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">{{ __('Semua') }}</option>
                                 <option value="warehouse" {{ request('location_type') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
                                 <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                             </select>
                         </div>
-                        <div class="min-w-[220px]">
+                        <div class="w-[140px]">
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
-                            <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">{{ __('Semua') }}</option>
                                 @foreach ($warehouses as $w)
                                     <option value="{{ $w->id }}" {{ request('location_id') == $w->id ? 'selected' : '' }}>{{ __('Gudang') }}: {{ $w->name }}</option>
@@ -62,6 +63,13 @@
                                 @endforeach
                             </select>
                         </div>
+                        @elseif($filterLocked ?? false)
+                        <div class="w-[180px]">
+                            <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                            <input type="hidden" name="location_type" value="{{ $locationType }}">
+                            <input type="hidden" name="location_id" value="{{ $locationId }}">
+                        </div>
+                        @endif
                         <div class="flex gap-2">
                             <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,7 +96,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Seri') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase w-28">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sold') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
@@ -116,14 +124,10 @@
                                             {{ $statusOptions[$u->status] ?? $u->status }}
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">
+                                    <td class="px-2 py-3 text-xs text-slate-600 max-w-[7rem] truncate" title="{{ ($u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang')) }}: {{ $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? ($u->warehouse?->name ?? '#'.$u->location_id) : ($u->branch?->name ?? '#'.$u->location_id) }}">
                                         @php
-                                            $locationLabel = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE
-                                                ? __('Gudang')
-                                                : __('Cabang');
-                                            $locationName = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE
-                                                ? ($u->warehouse?->name ?? ('#'.$u->location_id))
-                                                : ($u->branch?->name ?? ('#'.$u->location_id));
+                                            $locationLabel = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
+                                            $locationName = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? ($u->warehouse?->name ?? ('#'.$u->location_id)) : ($u->branch?->name ?? ('#'.$u->location_id));
                                         @endphp
                                         {{ $locationLabel }}: {{ $locationName }}
                                     </td>

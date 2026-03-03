@@ -28,6 +28,7 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('services.index') }}" class="flex flex-wrap gap-3 items-end">
+                    @if($canFilterLocation ?? false)
                     <div class="min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
                         <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -37,6 +38,11 @@
                             @endforeach
                         </select>
                     </div>
+                    @elseif($filterLocked ?? false)
+                    <div class="min-w-[180px]">
+                        <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                    </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
                         <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

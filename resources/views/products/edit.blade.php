@@ -32,6 +32,25 @@
                                 </select>
                                 <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
                             </div>
+                            {{-- Lokasi Produk: super_admin/admin_pusat pilih gudang, admin_gudang readonly --}}
+                            @if (auth()->user()?->isSuperAdminOrAdminPusat())
+                            <div>
+                                <x-input-label for="location_id" :value="__('Lokasi Gudang')" />
+                                <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="">{{ __('Pilih Gudang') }}</option>
+                                    @foreach ($warehouses as $wh)
+                                        <option value="{{ $wh->id }}" {{ old('location_id', $product->location_type === 'warehouse' ? $product->location_id : '') == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="hidden" name="location_type" value="warehouse" />
+                                <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
+                            </div>
+                            @elseif (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id)
+                            <div>
+                                <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()->branch_id))?->name ?? __('Cabang Anda'))" />
+                                <p class="mt-1 text-sm text-slate-500">{{ __('Produk berada di cabang Anda.') }}</p>
+                            </div>
+                            @endif
                             <div>
                                 <x-input-label for="laptop_type" :value="__('Jenis Laptop')" />
                                 @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))

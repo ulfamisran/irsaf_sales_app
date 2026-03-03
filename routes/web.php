@@ -147,60 +147,68 @@ Route::middleware('auth')->group(function () {
         ->name('branches.units');
     Route::resource('branches', BranchController::class)->middleware('role:admin_cabang');
     Route::resource('categories', CategoryController::class)
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
     Route::resource('distributors', DistributorController::class)
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
     Route::patch('products/{product}/toggle-active', [ProductController::class, 'toggleActive'])
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('products.toggle-active');
     Route::resource('products', ProductController::class)
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat');
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
     Route::resource('customers', CustomerController::class)
         ->middleware('role:admin_cabang,kasir')
         ->except(['show']);
     Route::resource('payment-methods', PaymentMethodController::class)
         ->middleware('role:admin_cabang')
         ->except(['show']);
-    Route::resource('warehouses', WarehouseController::class)->middleware('role:staff_gudang');
+    Route::resource('warehouses', WarehouseController::class)->middleware('role:admin_gudang');
 
     Route::get('stock-mutations', [StockMutationController::class, 'index'])
-        ->middleware('role:admin_cabang,staff_gudang')
+        ->middleware('role:admin_cabang,admin_gudang')
         ->name('stock-mutations.index');
     Route::get('stock-units', [StockUnitController::class, 'index'])
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.index');
     Route::get('stock-units/export', [StockUnitController::class, 'export'])
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.export');
     Route::get('stock-units/export-pdf', [StockUnitController::class, 'exportPdf'])
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.export-pdf');
     Route::get('stock-units/{unit}', [StockUnitController::class, 'show'])
-        ->middleware('role:admin_cabang,staff_gudang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.show');
     Route::get('stock-mutations/create', [StockMutationController::class, 'create'])
-        ->middleware('role:staff_gudang')
+        ->middleware('role:admin_gudang')
         ->name('stock-mutations.create');
     Route::get('stock-mutations/available-serials', [StockMutationController::class, 'availableSerials'])
-        ->middleware('role:staff_gudang')
+        ->middleware('role:admin_gudang')
         ->name('stock-mutations.available-serials');
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
-        ->middleware('role:staff_gudang')
+        ->middleware('role:admin_gudang')
         ->name('stock-mutations.store');
 
     Route::get('stock-inout', [StockInOutController::class, 'index'])
-        ->middleware('role:admin_cabang,staff_gudang')
+        ->middleware('role:admin_cabang,admin_gudang')
         ->name('stock-inout.index');
 
     Route::get('incoming-goods', [IncomingGoodsController::class, 'index'])
-        ->middleware('role:staff_gudang,admin_cabang')
+        ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.index');
     Route::get('incoming-goods/create', [IncomingGoodsController::class, 'create'])
-        ->middleware('role:staff_gudang,admin_cabang')
+        ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.create');
     Route::post('incoming-goods', [IncomingGoodsController::class, 'store'])
-        ->middleware('role:staff_gudang,admin_cabang')
+        ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.store');
+    Route::get('incoming-goods/{incomingGood}/detail', [IncomingGoodsController::class, 'detail'])
+        ->middleware('role:admin_gudang,admin_cabang')
+        ->name('incoming-goods.detail');
+
+    Route::get('data-by-location/distributors', [\App\Http\Controllers\DataByLocationController::class, 'distributors'])
+        ->name('data-by-location.distributors');
+    Route::get('data-by-location/form-data', [\App\Http\Controllers\DataByLocationController::class, 'formData'])
+        ->name('data-by-location.form-data');
 
     Route::get('sales/available-serials', [SaleController::class, 'availableSerials'])
         ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
@@ -225,25 +233,25 @@ Route::middleware('auth')->group(function () {
         ->only(['edit', 'update']);
 
     Route::get('rentals/available-serials', [RentalController::class, 'availableSerials'])
-        ->middleware('role:staff_gudang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_gudang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-serials');
     Route::get('rentals/available-products', [RentalController::class, 'availableProducts'])
-        ->middleware('role:staff_gudang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_gudang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-products');
     Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
-        ->middleware('role:staff_gudang,kasir')
+        ->middleware('role:admin_gudang,kasir')
         ->name('rentals.invoice');
     Route::post('rentals/{rental}/add-payment', [RentalController::class, 'addPayment'])
-        ->middleware('role:staff_gudang,kasir')
+        ->middleware('role:admin_gudang,kasir')
         ->name('rentals.add-payment');
     Route::post('rentals/{rental}/mark-returned', [RentalController::class, 'markReturned'])
-        ->middleware('role:staff_gudang,kasir')
+        ->middleware('role:admin_gudang,kasir')
         ->name('rentals.mark-returned');
     Route::post('rentals/{rental}/cancel', [RentalController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('rentals.cancel');
     Route::resource('rentals', RentalController::class)
-        ->middleware('role:staff_gudang,kasir')
+        ->middleware('role:admin_gudang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('rentals', RentalController::class)
         ->middleware('role:super_admin,admin_pusat')
@@ -318,7 +326,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('reports/stock-warehouse', [ReportController::class, 'stockWarehouse'])
-        ->middleware('role:staff_gudang')
+        ->middleware('role:admin_gudang')
         ->name('reports.stock-warehouse');
     Route::get('reports/stock-branch', [ReportController::class, 'stockBranch'])
         ->middleware('role:admin_cabang')
@@ -351,6 +359,8 @@ Route::middleware('auth')->group(function () {
         Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
         Route::get('users/create', [UserManagementController::class, 'create'])->name('users.create');
         Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
+        Route::get('users/{user}/edit', [UserManagementController::class, 'edit'])->name('users.edit');
+        Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
         Route::put('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('users.toggle-active');
     });

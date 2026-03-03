@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ServiceRequest;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Role;
+use App\Models\Warehouse;
 use App\Models\ExpenseCategory;
 use App\Models\CashFlow;
 use App\Models\PaymentMethod;
@@ -33,13 +35,29 @@ class ServiceController extends Controller
             ->orderByDesc('entry_date')
             ->orderByDesc('id');
 
-        if (! $user->isSuperAdmin()) {
-            if (! $user->branch_id) {
-                abort(403, __('User branch not set.'));
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->whereRaw('1 = 0');
+                $filterLocked = true;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
             }
-            $query->where('branch_id', $user->branch_id);
-        } elseif ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        } else {
+            $canFilterLocation = true;
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
         }
         if ($request->filled('date_from')) {
             $query->whereDate('entry_date', '>=', $request->date_from);
@@ -58,16 +76,22 @@ class ServiceController extends Controller
         $totalService = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->total_service_price);
         $totalMaterialExpense = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->materials_total_price);
         $totalServiceNet = $totalService - $totalMaterialExpense;
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+            ? (int) $user->branch_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->when(! $user->isSuperAdmin() && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
-            ->when($user->isSuperAdmin() && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('services.entry_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
             ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
@@ -76,11 +100,11 @@ class ServiceController extends Controller
             ->groupBy('service_payments.payment_method_id')
             ->pluck('total', 'service_payments.payment_method_id');
         $services = $query->paginate(20)->withQueryString();
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
 
-        return view('services.index', compact('services', 'branches', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
+        return view('services.index', compact('services', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function create(): View
@@ -94,18 +118,13 @@ class ServiceController extends Controller
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
 
-        $customers = Customer::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->limit(500)
-            ->get(['id', 'name', 'phone']);
-
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('id')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        $branchIdForData = $user->isSuperAdmin() ? null : (int) $user->branch_id;
+        $customers = $branchIdForData
+            ? Customer::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
+            : collect();
+        $paymentMethods = $branchIdForData
+            ? PaymentMethod::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
+            : collect();
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
@@ -484,11 +503,18 @@ class ServiceController extends Controller
             return null;
         }
 
+        $user = $request->user();
+        $branchId = $user->isSuperAdmin()
+            ? (int) $request->branch_id
+            : (int) $user->branch_id;
+
         $customer = Customer::create([
             'name' => $name,
             'phone' => $request->input('customer_new_phone'),
             'address' => $request->input('customer_new_address'),
             'is_active' => true,
+            'placement_type' => $branchId ? 'cabang' : null,
+            'branch_id' => $branchId ?: null,
         ]);
 
         return (int) $customer->id;

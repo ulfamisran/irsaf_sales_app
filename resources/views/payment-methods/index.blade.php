@@ -3,7 +3,13 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Metode Pembayaran') }}</h2>
-            @if (auth()->user()->isSuperAdmin())
+            @php
+                $user = auth()->user();
+                $canAdd = $user->isSuperAdminOrAdminPusat()
+                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG]) && $user->branch_id)
+                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id);
+            @endphp
+            @if ($canAdd)
                 <x-icon-btn-add :href="route('payment-methods.create')" :label="__('Tambah Metode')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -34,6 +40,14 @@
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Jenis pembayaran / bank / rekening...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-location-filter
+                        :filter-locked="$locationFilter['filterLocked']"
+                        :location-type="$locationFilter['locationType']"
+                        :location-id="$locationFilter['locationId']"
+                        :location-label="$locationFilter['locationLabel']"
+                        :branches="$locationFilter['branches']"
+                        :warehouses="$locationFilter['warehouses']"
+                    />
                     <div class="min-w-[180px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
                         <select name="is_active" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -59,6 +73,7 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead>
                         <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Bank') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Atas Nama') }}</th>
@@ -70,6 +85,15 @@
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($methods as $m)
                             <tr class="hover:bg-slate-50/50">
+                                <td class="px-4 py-3 text-sm text-slate-600">
+                                    @if($m->branch_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs">{{ __('Cabang') }}: {{ $m->branch?->name ?? '-' }}</span>
+                                    @elseif($m->warehouse_id)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-violet-50 text-violet-800 text-xs">{{ __('Gudang') }}: {{ $m->warehouse?->name ?? '-' }}</span>
+                                    @else
+                                        <span class="text-slate-400">-</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 font-medium text-slate-800">{{ $m->jenis_pembayaran }}</td>
                                 <td class="px-4 py-3">{{ $m->nama_bank ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $m->atas_nama_bank ?? '-' }}</td>
@@ -80,8 +104,13 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 text-right">
+                                    @php
+                                        $canEdit = $user->isSuperAdminOrAdminPusat()
+                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG]) && $m->branch_id == $user->branch_id)
+                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $m->warehouse_id == $user->warehouse_id);
+                                    @endphp
                                     <div class="flex items-center justify-end gap-2">
-                                        @if (auth()->user()->isSuperAdmin())
+                                        @if ($canEdit)
                                             <x-icon-btn-edit :href="route('payment-methods.edit', $m)" />
                                             <form action="{{ route('payment-methods.destroy', $m) }}" method="POST" class="inline">
                                                 @csrf
@@ -105,7 +134,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada metode pembayaran.') }}</td>
+                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada metode pembayaran.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
