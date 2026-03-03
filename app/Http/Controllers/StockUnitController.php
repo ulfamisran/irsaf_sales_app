@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Role;
 use App\Models\Sale;
 use App\Models\SaleDetail;
+use App\Models\SaleTradeIn;
 use App\Models\Stock;
 use App\Models\Warehouse;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -31,17 +32,24 @@ class StockUnitController extends Controller
 
         $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
         $productsPage = Product::query()
+            ->with(['category', 'distributor'])
             ->whereIn('id', $productIdsQuery)
             ->orderBy('sku')
             ->paginate(15)
             ->withQueryString();
 
         $productIds = $productsPage->getCollection()->pluck('id')->all();
+        $tradeInProductIds = SaleTradeIn::whereNotNull('product_id')
+            ->whereIn('product_id', $productIds ?: [0])
+            ->pluck('product_id')
+            ->unique()
+            ->flip()
+            ->all();
         $unitsByProduct = collect();
         $soldInfoBySerial = [];
         if (! empty($productIds)) {
             $units = (clone $listBase)
-                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->with(['product.category', 'product.distributor', 'warehouse', 'branch', 'user'])
                 ->whereIn('product_id', $productIds)
                 ->orderBy('product_id')
                 ->orderByDesc('id')
@@ -121,7 +129,8 @@ class StockUnitController extends Controller
             'locationId',
             'locationLabel',
             'inStockCounts',
-            'soldInfoBySerial'
+            'soldInfoBySerial',
+            'tradeInProductIds'
         ));
     }
 
@@ -178,16 +187,23 @@ class StockUnitController extends Controller
 
         $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
         $products = Product::query()
+            ->with(['category', 'distributor'])
             ->whereIn('id', $productIdsQuery)
             ->orderBy('sku')
-            ->get(['id', 'sku', 'brand', 'series']);
+            ->get(['id', 'sku', 'brand', 'series', 'processor', 'ram', 'storage', 'color', 'specs', 'laptop_type', 'purchase_price', 'category_id', 'distributor_id']);
 
         $productIds = $products->pluck('id')->all();
+        $tradeInProductIds = SaleTradeIn::whereNotNull('product_id')
+            ->whereIn('product_id', $productIds ?: [0])
+            ->pluck('product_id')
+            ->unique()
+            ->flip()
+            ->all();
         $unitsByProduct = collect();
         $soldInfoBySerial = [];
         if (! empty($productIds)) {
             $units = (clone $listBase)
-                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->with(['product.category', 'product.distributor', 'warehouse', 'branch', 'user'])
                 ->whereIn('product_id', $productIds)
                 ->orderBy('product_id')
                 ->orderByDesc('id')
@@ -236,7 +252,8 @@ class StockUnitController extends Controller
             'unitsByProduct',
             'statusOptions',
             'inStockCounts',
-            'soldInfoBySerial'
+            'soldInfoBySerial',
+            'tradeInProductIds'
         ))->render();
 
         return response($html, 200, [
@@ -259,16 +276,23 @@ class StockUnitController extends Controller
 
         $productIdsQuery = (clone $listBase)->select('product_id')->distinct();
         $products = Product::query()
+            ->with(['category', 'distributor'])
             ->whereIn('id', $productIdsQuery)
             ->orderBy('sku')
-            ->get(['id', 'sku', 'brand', 'series']);
+            ->get(['id', 'sku', 'brand', 'series', 'processor', 'ram', 'storage', 'color', 'specs', 'laptop_type', 'purchase_price', 'category_id', 'distributor_id']);
 
         $productIds = $products->pluck('id')->all();
+        $tradeInProductIds = SaleTradeIn::whereNotNull('product_id')
+            ->whereIn('product_id', $productIds ?: [0])
+            ->pluck('product_id')
+            ->unique()
+            ->flip()
+            ->all();
         $unitsByProduct = collect();
         $soldInfoBySerial = [];
         if (! empty($productIds)) {
             $units = (clone $listBase)
-                ->with(['product', 'warehouse', 'branch', 'user'])
+                ->with(['product.category', 'product.distributor', 'warehouse', 'branch', 'user'])
                 ->whereIn('product_id', $productIds)
                 ->orderBy('product_id')
                 ->orderByDesc('id')
@@ -343,6 +367,7 @@ class StockUnitController extends Controller
             'statusOptions',
             'inStockCounts',
             'soldInfoBySerial',
+            'tradeInProductIds',
             'locationLabel',
             'statusLabel'
         ))->setPaper('a4', 'landscape');

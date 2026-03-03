@@ -92,9 +92,12 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('SKU') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Merek') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Seri') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Type/Seri') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase min-w-[12rem]">{{ __('Spesifikasi Lengkap') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase w-28">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
@@ -103,22 +106,56 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
+                        @php $tid = $tradeInProductIds ?? []; @endphp
                         @forelse ($productsPage as $product)
+                            @php
+                                $isTradeIn = isset($tid[$product->id]);
+                                $kategoriLabel = $isTradeIn ? __('Tukar tambah') : ($product->laptop_type ? ucfirst($product->laptop_type) : '-');
+                                $specsParts = array_filter([
+                                    $product->processor ? 'Prosesor: ' . $product->processor : null,
+                                    $product->ram ? 'RAM: ' . $product->ram : null,
+                                    $product->storage ? 'Storage: ' . $product->storage : null,
+                                    $product->color ? 'Warna: ' . $product->color : null,
+                                    $product->specs ? trim($product->specs) : null,
+                                ]);
+                                $specsText = implode(' | ', $specsParts) ?: '-';
+                            @endphp
                             <tr class="bg-indigo-100" style="background-color: #e0e7ff;">
                                 <td class="px-4 py-3 font-semibold text-slate-800">{{ $product->sku }}</td>
+                                <td class="px-4 py-3 text-slate-700"><span class="px-2 py-0.5 rounded text-xs {{ $isTradeIn ? 'bg-amber-100 text-amber-800' : ($product->laptop_type === 'bekas' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-800') }}">{{ $kategoriLabel }}</span></td>
                                 <td class="px-4 py-3 text-slate-700">{{ $product->brand }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ $product->series ?? '-' }}</td>
-                                <td colspan="6" class="px-4 py-3">
-                                    <span class="text-slate-700">{{ __('In Stock') }}: </span>
-                                    <span class="font-semibold text-slate-800">{{ (int) ($inStockCounts[$product->id] ?? 0) }}</span>
+                                <td class="px-4 py-3 text-slate-700 text-sm max-w-[14rem]" title="{{ $specsText }}">{{ Str::limit($specsText, 50) }}</td>
+                                <td class="px-4 py-3">—</td>
+                                <td class="px-4 py-3 text-slate-700">{{ $product->distributor?->name ?? '-' }}</td>
+                                <td colspan="5" class="px-4 py-3 text-slate-700">
+                                    <span class="font-semibold">{{ __('In Stock') }}: {{ (int) ($inStockCounts[$product->id] ?? 0) }}</span>
+                                    <span class="mx-3">|</span>
+                                    <span>{{ __('Harga Modal') }}: {{ number_format($product->purchase_price ?? 0, 0, ',', '.') }}</span>
                                 </td>
                             </tr>
                             @forelse ($unitsByProduct->get($product->id, collect()) as $u)
+                                @php
+                                    $p = $u->product;
+                                    $uTradeIn = isset($tid[$p->id ?? 0]);
+                                    $uKategori = $uTradeIn ? __('Tukar tambah') : ($p->laptop_type ? ucfirst($p->laptop_type) : '-');
+                                    $uSpecsParts = $p ? array_filter([
+                                        $p->processor ? 'Prosesor: ' . $p->processor : null,
+                                        $p->ram ? 'RAM: ' . $p->ram : null,
+                                        $p->storage ? 'Storage: ' . $p->storage : null,
+                                        $p->color ? 'Warna: ' . $p->color : null,
+                                        $p->specs ? trim($p->specs) : null,
+                                    ]) : [];
+                                    $uSpecsText = implode(' | ', $uSpecsParts) ?: '-';
+                                @endphp
                                 <tr class="hover:bg-slate-50/50">
-                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $u->product?->sku ?? '-' }}</td>
-                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $u->product?->brand ?? '-' }}</td>
-                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $u->product?->series ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $p?->sku ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm"><span class="px-2 py-0.5 rounded text-xs {{ $uTradeIn ? 'bg-amber-100 text-amber-800' : ($p && $p->laptop_type === 'bekas' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-800') }}">{{ $uKategori }}</span></td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $p?->brand ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $p?->series ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm max-w-[14rem]" title="{{ $uSpecsText }}">{{ Str::limit($uSpecsText, 50) }}</td>
                                     <td class="px-4 py-3 font-mono text-sm">{{ $u->serial_number }}</td>
+                                    <td class="px-4 py-3 text-slate-600 text-sm">{{ $p?->distributor?->name ?? '-' }}</td>
                                     <td class="px-4 py-3 text-sm text-slate-700">
                                         <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800' }}">
                                             {{ $statusOptions[$u->status] ?? $u->status }}
@@ -155,12 +192,12 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="9" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
+                                    <td colspan="12" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
                                 </tr>
                             @endforelse
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
+                                <td colspan="12" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
