@@ -14,7 +14,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Override Filesystem untuk hosting yang menonaktifkan exec()
+        $this->app->singleton(\Illuminate\Filesystem\Filesystem::class, \App\Filesystem\Filesystem::class);
     }
 
     /**

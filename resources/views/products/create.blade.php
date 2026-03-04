@@ -18,24 +18,28 @@
                                 <x-text-input id="created_by" class="block mt-1 w-full bg-slate-100" type="text" :value="auth()->user()?->name" disabled />
                             </div>
                             {{-- Lokasi Produk: PERTAMA - pilihan Gudang/Cabang, default dari user jika bukan super admin --}}
-                            <div x-data="{ locType: '{{ old('location_type', $defaultLocationType ?? 'warehouse') }}' }">
+                            <div x-data="{ locType: '{{ old('location_type', $defaultLocationType ?? 'warehouse') }}' }"
+                                 x-init="$nextTick(() => { setTimeout(() => window.loadProductDistributors?.(), 150) })">
                                 <x-input-label :value="__('Lokasi Produk')" />
                                 <div class="mt-2 flex gap-6">
                                     <label class="inline-flex items-center cursor-pointer">
                                         <input type="radio" name="location_type" value="warehouse" x-model="locType"
-                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            @change="$nextTick(() => window.loadProductDistributors?.())">
                                         <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Gudang') }}</span>
                                     </label>
                                     <label class="inline-flex items-center cursor-pointer">
                                         <input type="radio" name="location_type" value="branch" x-model="locType"
-                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            @change="$nextTick(() => window.loadProductDistributors?.())">
                                         <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Cabang') }}</span>
                                     </label>
                                 </div>
                                 <template x-if="locType === 'warehouse'">
                                     <div class="mt-3">
                                         <x-input-label for="location_id" :value="__('Gudang')" />
-                                        <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <select name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required
+                                            @change="window.loadProductDistributors?.()">
                                             <option value="">{{ __('Pilih Gudang') }}</option>
                                             @foreach ($warehouses as $wh)
                                                 <option value="{{ $wh->id }}" {{ old('location_id', $defaultLocationType === 'warehouse' ? $defaultLocationId : null) == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
@@ -47,7 +51,8 @@
                                 <template x-if="locType === 'branch'">
                                     <div class="mt-3">
                                         <x-input-label for="location_id" :value="__('Cabang')" />
-                                        <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <select name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required
+                                            @change="window.loadProductDistributors?.()">
                                             <option value="">{{ __('Pilih Cabang') }}</option>
                                             @foreach ($branches as $b)
                                                 <option value="{{ $b->id }}" {{ old('location_id', $defaultLocationType === 'branch' ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
@@ -69,7 +74,7 @@
                             </div>
                             <div>
                                 <x-input-label for="distributor_id" :value="__('Distributor')" />
-                                <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih lokasi terlebih dahulu.') }}</p>
+                                <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih Gudang/Cabang lalu pilih lokasi spesifik, distributor akan otomatis dimuat.') }}</p>
                                 <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required disabled>
                                     <option value="">{{ __('Pilih Lokasi dulu') }}</option>
                                 </select>
@@ -196,14 +201,15 @@
                 sel.disabled = false;
             }
         }
+        window.loadProductDistributors = loadDistributors;
 
-        document.querySelectorAll('input[name="location_type"]').forEach(r => r.addEventListener('change', loadDistributors));
+        document.querySelectorAll('input[name="location_type"]').forEach(r => r.addEventListener('change', function() {
+            setTimeout(loadDistributors, 50);
+        }));
         document.querySelector('form')?.addEventListener('change', function(e) {
             if (e.target.matches('select[name="location_id"]')) loadDistributors();
         });
-        if (defaultLocType && defaultLocId) {
-            setTimeout(loadDistributors, 100);
-        }
+        setTimeout(loadDistributors, 300);
 
         const generateBtn = document.getElementById('generate-sku-btn');
         const skuInput = document.getElementById('sku');
