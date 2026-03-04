@@ -88,6 +88,14 @@ class Product extends Model
         return $this->hasMany(ProductUnit::class);
     }
 
+    /**
+     * Check if any unit of this product has been sold.
+     */
+    public function hasSoldUnits(): bool
+    {
+        return $this->units()->where('status', ProductUnit::STATUS_SOLD)->exists();
+    }
+
     public static function generateSku(array $data): string
     {
         $attempts = 0;

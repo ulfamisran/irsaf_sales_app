@@ -141,6 +141,16 @@
                                             $isAks = in_array(strtoupper($product->category?->name ?? ''), ['AKS'])
                                                 || in_array(strtoupper($product->category?->code ?? ''), ['AKS']);
                                         @endphp
+                                        @php
+                                            $canEdit = (auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]))
+                                                && ($product->sold_units_count ?? 0) == 0;
+                                            if ($canEdit && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id) {
+                                                $canEdit = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
+                                            }
+                                        @endphp
+                                        @if ($canEdit)
+                                            <x-icon-btn-edit :href="route('products.edit', $product)" :label="__('Edit')" />
+                                        @endif
                                         @if (!$isAks)
                                             <x-icon-btn-view :href="route('products.show', $product)" :label="__('Unit')" />
                                             <a href="{{ route('stock-mutations.index', ['product_id' => $product->id]) }}"

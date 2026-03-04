@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Stock;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -23,6 +24,7 @@ class ProductRepository
         $query = $this->model
             ->select('products.*')
             ->with(['category', 'user', 'distributor'])
+            ->withCount(['units as sold_units_count' => fn ($q) => $q->where('status', ProductUnit::STATUS_SOLD)])
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 

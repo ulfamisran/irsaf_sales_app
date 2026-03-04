@@ -136,30 +136,39 @@ class ProductController extends Controller
 
     /**
      * Show the form for editing the specified product.
+     * Edit hanya diperbolehkan jika belum ada unit yang terjual.
      */
     public function edit(Request $request, Product $product): View
     {
         $user = $request->user();
+        if ($product->hasSoldUnits()) {
+            abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
+        }
         if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
         }
         $categories = $this->categoryRepository->all();
-        $distributors = $this->distributorRepository->all($request->user());
-        $warehouses = $user && $user->isSuperAdminOrAdminPusat()
-            ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : collect();
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
-        return view('products.edit', compact('product', 'categories', 'distributors', 'warehouses', 'branches'));
+        $defaultLocationType = in_array($product->location_type, ['warehouse', 'branch', 'gudang', 'cabang'])
+            ? (in_array($product->location_type, ['warehouse', 'gudang']) ? Product::LOCATION_WAREHOUSE : Product::LOCATION_BRANCH)
+            : ($user?->warehouse_id ? Product::LOCATION_WAREHOUSE : ($user?->branch_id ? Product::LOCATION_BRANCH : 'warehouse'));
+        $defaultLocationId = $product->location_id ?: $user?->warehouse_id ?: $user?->branch_id;
+        return view('products.edit', compact('product', 'categories', 'warehouses', 'branches', 'defaultLocationType', 'defaultLocationId'));
     }
 
     /**
      * Update the specified product.
+     * Update hanya diperbolehkan jika belum ada unit yang terjual.
      */
     public function update(ProductRequest $request, Product $product): RedirectResponse
     {
         $user = $request->user();
+        if ($product->hasSoldUnits()) {
+            abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
+        }
         if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
@@ -170,6 +179,9 @@ class ProductController extends Controller
         if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
             $data['location_type'] = Product::LOCATION_BRANCH;
             $data['location_id'] = $user->branch_id;
+        } elseif (!empty($data['location_type']) && !empty($data['location_id'])) {
+            $data['location_type'] = $data['location_type'] === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
+            $data['location_id'] = (int) $data['location_id'];
         }
         $sku = trim((string) $request->input('sku', ''));
         if ($sku !== '' && $sku !== $product->sku) {

@@ -7,7 +7,16 @@
                 <p class="text-sm text-slate-600 mt-1">{{ $product->sku }} - {{ $product->brand }} {{ $product->series }}</p>
             </div>
             <div class="flex gap-2">
-                <x-icon-btn-edit :href="route('products.edit', $product)" />
+                @php
+                    $canEditProduct = !$product->hasSoldUnits()
+                        && (auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]));
+                    if ($canEditProduct && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id) {
+                        $canEditProduct = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
+                    }
+                @endphp
+                @if ($canEditProduct)
+                    <x-icon-btn-edit :href="route('products.edit', $product)" :label="__('Edit')" />
+                @endif
                 <x-icon-btn-back :href="route('products.index')" :label="__('Kembali')" />
             </div>
         </div>

@@ -23,32 +23,79 @@
                                 </select>
                                 <x-input-error :messages="$errors->get('category_id')" class="mt-2" />
                             </div>
-                            <div>
-                                <x-input-label for="distributor_id" :value="__('Distributor')" />
-                                <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    @foreach ($distributors as $distributor)
-                                        <option value="{{ $distributor->id }}" {{ old('distributor_id', $product->distributor_id) == $distributor->id ? 'selected' : '' }}>{{ $distributor->name }}</option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
+                            {{-- Lokasi Produk: pilihan Gudang/Cabang, pre-fill dari data sebelumnya. Distributor di bawah, dimuat sesuai lokasi. --}}
+                            @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id)
+                            <div id="location-edit-block">
+                                <div>
+                                    <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()?->branch_id))?->name ?? __('Cabang Anda'))" />
+                                    <input type="hidden" name="location_type" value="branch" />
+                                    <input type="hidden" name="location_id" value="{{ auth()->user()->branch_id }}" />
+                                    <p class="mt-1 text-sm text-slate-500">{{ __('Produk berada di cabang Anda.') }}</p>
+                                </div>
+                                <div class="mt-4">
+                                    <x-input-label for="distributor_id" :value="__('Distributor')" />
+                                    <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Distributor dimuat sesuai lokasi. Jika lokasi berubah, pilih ulang.') }}</p>
+                                    <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required disabled>
+                                        <option value="">{{ __('Memuat...') }}</option>
+                                    </select>
+                                    <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
+                                </div>
                             </div>
-                            {{-- Lokasi Produk: super_admin/admin_pusat pilih gudang, admin_gudang readonly --}}
-                            @if (auth()->user()?->isSuperAdminOrAdminPusat())
-                            <div>
-                                <x-input-label for="location_id" :value="__('Lokasi Gudang')" />
-                                <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    <option value="">{{ __('Pilih Gudang') }}</option>
-                                    @foreach ($warehouses as $wh)
-                                        <option value="{{ $wh->id }}" {{ old('location_id', $product->location_type === 'warehouse' ? $product->location_id : '') == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
-                                    @endforeach
-                                </select>
-                                <input type="hidden" name="location_type" value="warehouse" />
-                                <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
-                            </div>
-                            @elseif (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id)
-                            <div>
-                                <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()?->branch_id))?->name ?? __('Cabang Anda'))" />
-                                <p class="mt-1 text-sm text-slate-500">{{ __('Produk berada di cabang Anda.') }}</p>
+                            @else
+                            <div id="location-edit-block" x-data="{ locType: '{{ old('location_type', $defaultLocationType ?? 'warehouse') }}' }"
+                                 x-init="$nextTick(() => { setTimeout(() => window.loadProductDistributors?.(), 150) })">
+                                <div>
+                                    <x-input-label :value="__('Lokasi Produk')" />
+                                    <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih jenis lokasi dan cabang/gudang. Wajib diisi jika kosong.') }}</p>
+                                    <div class="mt-2 flex gap-6">
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="warehouse" x-model="locType"
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                @change="$nextTick(() => window.loadProductDistributors?.(false))">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Gudang') }}</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="branch" x-model="locType"
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                @change="$nextTick(() => window.loadProductDistributors?.(false))">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Cabang') }}</span>
+                                        </label>
+                                    </div>
+                                    <template x-if="locType === 'warehouse'">
+                                        <div class="mt-3">
+                                            <x-input-label for="location_id" :value="__('Gudang')" />
+                                            <select name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required
+                                                @change="window.loadProductDistributors?.(false)">
+                                                <option value="">{{ __('Pilih Gudang') }}</option>
+                                                @foreach ($warehouses as $wh)
+                                                    <option value="{{ $wh->id }}" {{ old('location_id', ($defaultLocationType ?? '') === 'warehouse' ? $defaultLocationId : null) == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
+                                        </div>
+                                    </template>
+                                    <template x-if="locType === 'branch'">
+                                        <div class="mt-3">
+                                            <x-input-label for="location_id" :value="__('Cabang')" />
+                                            <select name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required
+                                                @change="window.loadProductDistributors?.(false)">
+                                                <option value="">{{ __('Pilih Cabang') }}</option>
+                                                @foreach ($branches as $b)
+                                                    <option value="{{ $b->id }}" {{ old('location_id', ($defaultLocationType ?? '') === 'branch' ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="mt-4">
+                                    <x-input-label for="distributor_id" :value="__('Distributor')" />
+                                    <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih Gudang/Cabang lalu lokasi spesifik. Distributor otomatis dimuat. Jika lokasi diubah, pilih distributor ulang.') }}</p>
+                                    <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required disabled>
+                                        <option value="">{{ __('Pilih Lokasi dulu') }}</option>
+                                    </select>
+                                    <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
+                                </div>
                             </div>
                             @endif
                             <div>
@@ -140,6 +187,57 @@
 </x-app-layout>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const distributorsUrl = @json(route('data-by-location.distributors'));
+        const defaultDistributorId = @json(old('distributor_id', $product->distributor_id));
+        let isInitialLoad = true;
+
+        async function loadDistributors(useDefaultSelection = false) {
+            const locTypeEl = document.querySelector('input[name="location_type"]:checked') || document.querySelector('input[name="location_type"]');
+            const locIdEl = document.querySelector('select[name="location_id"]') || document.querySelector('input[name="location_id"]');
+            const locType = locTypeEl?.value;
+            const locId = locIdEl?.value;
+            const sel = document.getElementById('distributor_id');
+            if (!sel) return;
+            if (!locType || !locId) {
+                sel.innerHTML = '<option value="">' + @json(__('Pilih Lokasi dulu')) + '</option>';
+                sel.disabled = true;
+                return;
+            }
+            try {
+                const url = new URL(distributorsUrl, window.location.origin);
+                url.searchParams.set('location_type', locType);
+                url.searchParams.set('location_id', locId);
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('Fetch failed');
+                const data = await res.json();
+                const distributors = data.distributors || [];
+                const shouldSelectDefault = useDefaultSelection && defaultDistributorId;
+                sel.innerHTML = '<option value="">' + @json(__('Pilih Distributor')) + '</option>' +
+                    distributors.map(d => '<option value="' + d.id + '"' + (shouldSelectDefault && defaultDistributorId == d.id ? ' selected' : '') + '>' + (d.name || '') + '</option>').join('');
+                sel.disabled = false;
+            } catch (e) {
+                sel.innerHTML = '<option value="">' + @json(__('Gagal memuat distributor')) + '</option>';
+                sel.disabled = false;
+            }
+        }
+        window.loadProductDistributors = function(useDefaultSelection) {
+            const useDefault = useDefaultSelection !== false && isInitialLoad;
+            loadDistributors(useDefault);
+            if (useDefaultSelection === false) isInitialLoad = false;
+        };
+
+        document.querySelectorAll('input[name="location_type"]').forEach(r => r.addEventListener('change', function() {
+            isInitialLoad = false;
+            setTimeout(() => loadDistributors(false), 50);
+        }));
+        document.querySelector('form')?.addEventListener('change', function(e) {
+            if (e.target.matches('select[name="location_id"]')) {
+                isInitialLoad = false;
+                loadDistributors(false);
+            }
+        });
+        setTimeout(() => loadDistributors(true), 300);
+
         const generateBtn = document.getElementById('generate-sku-btn');
         const skuInput = document.getElementById('sku');
         const skuDisplay = document.getElementById('sku_display');
