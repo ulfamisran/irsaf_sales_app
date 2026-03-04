@@ -47,7 +47,7 @@
                             </div>
                             @elseif (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id)
                             <div>
-                                <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()->branch_id))?->name ?? __('Cabang Anda'))" />
+                                <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()?->branch_id))?->name ?? __('Cabang Anda'))" />
                                 <p class="mt-1 text-sm text-slate-500">{{ __('Produk berada di cabang Anda.') }}</p>
                             </div>
                             @endif

@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Produk') }}</h2>
-            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]))
+            @if (auth()->user()?->isSuperAdmin() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]))
                 <x-icon-btn-add :href="route('products.create')" :label="__('Tambah Produk')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -152,7 +152,7 @@
                                                 {{ __('Distribusi') }}
                                             </a>
                                         @endif
-                                        @if (auth()->user()->isSuperAdmin())
+                                        @if (auth()->user()?->isSuperAdmin())
                                             <form action="{{ route('products.toggle-active', $product) }}" method="POST" class="inline">
                                                 @csrf
                                                 @method('PATCH')

@@ -25,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
         Relation::morphMap([
             'warehouse' => Warehouse::class,
             'branch' => Branch::class,
+            'gudang' => Warehouse::class,    // alias: beberapa data mungkin pakai 'gudang'
+            'cabang' => Branch::class,       // alias: beberapa data mungkin pakai 'cabang'
         ]);
     }
 }
