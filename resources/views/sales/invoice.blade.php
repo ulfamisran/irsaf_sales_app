@@ -221,8 +221,7 @@
         $totalPaid = (float) ($sale->total_paid ?? ($sale->payments?->sum(fn($p) => (float) $p->amount) ?? 0) + ($sale->tradeIns?->sum('trade_in_value') ?? 0));
         $change = max(0, $totalPaid - $grandTotal);
         $isPaid = $sale->status === \App\Models\Sale::STATUS_RELEASED && $totalPaid + 0.00001 >= $grandTotal;
-
-        $statusText = $isPaid ? 'LUNAS' : ($sale->status === \App\Models\Sale::STATUS_CANCEL ? 'DIBATALKAN' : ($sale->status === \App\Models\Sale::STATUS_RELEASED ? 'BELUM LUNAS' : 'DRAFT'));
+        $statusText = $sale->status === \App\Models\Sale::STATUS_CANCEL ? 'DIBATALKAN' : (($sale->status === \App\Models\Sale::STATUS_OPEN || !$isPaid) ? 'BELUM LUNAS' : 'LUNAS');
         $isCancelled = $sale->status === \App\Models\Sale::STATUS_CANCEL;
 
         $trxAt = $sale->released_at ?? $sale->created_at ?? now();

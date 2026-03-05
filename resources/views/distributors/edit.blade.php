@@ -18,6 +18,7 @@
                                 :branches="$branches"
                                 :warehouses="$warehouses"
                                 :can-choose="$canChoose"
+                                :allow-semua-cabang="true"
                                 :default-placement-type="$defaultPlacementType"
                                 :default-branch-id="$defaultBranchId"
                                 :default-warehouse-id="$defaultWarehouseId"

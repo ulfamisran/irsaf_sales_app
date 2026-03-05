@@ -73,7 +73,9 @@
                         @forelse ($distributors as $distributor)
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3 text-sm text-slate-600">
-                                    @if($distributor->branch_id)
+                                    @if($distributor->isGlobal())
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs">{{ __('Semua Cabang & Gudang') }}</span>
+                                    @elseif($distributor->branch_id)
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs">{{ __('Cabang') }}: {{ $distributor->branch?->name ?? '-' }}</span>
                                     @elseif($distributor->warehouse_id)
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-violet-50 text-violet-800 text-xs">{{ __('Gudang') }}: {{ $distributor->warehouse?->name ?? '-' }}</span>

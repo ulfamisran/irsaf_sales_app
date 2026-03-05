@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\Distributor;
 use App\Models\PaymentMethod;
+use App\Services\KasBalanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,9 +30,19 @@ class DataByLocationController extends Controller
 
         $query = Distributor::orderBy('name');
         if ($locationType === 'branch') {
-            $query->where('branch_id', $locationId);
+            $query->where(function ($q) use ($locationId) {
+                $q->where('branch_id', $locationId)
+                    ->orWhere(function ($q2) {
+                        $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                    });
+            });
         } else {
-            $query->where('warehouse_id', $locationId);
+            $query->where(function ($q) use ($locationId) {
+                $q->where('warehouse_id', $locationId)
+                    ->orWhere(function ($q2) {
+                        $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                    });
+            });
         }
 
         $distributors = $query->get(['id', 'name']);
@@ -62,9 +73,15 @@ class DataByLocationController extends Controller
         $paymentMethods = $this->getPaymentMethodsByLocation($branchId, $warehouseId);
         $customers = $this->getCustomersByLocation($branchId, $warehouseId);
 
+        $saldoPerPm = [];
+        if ($branchId) {
+            $saldoPerPm = (new KasBalanceService)->getSaldoPerPaymentMethod($branchId);
+        }
+
         return response()->json([
             'payment_methods' => $paymentMethods,
             'customers' => $customers,
+            'saldo_per_pm' => $saldoPerPm,
         ]);
     }
 
@@ -77,9 +94,9 @@ class DataByLocationController extends Controller
             ->orderBy('id');
 
         if ($branchId) {
-            $query->where('branch_id', $branchId);
+            $query->forLocation($branchId, null);
         } elseif ($warehouseId) {
-            $query->where('warehouse_id', $warehouseId);
+            $query->forLocation(null, $warehouseId);
         } else {
             return [];
         }

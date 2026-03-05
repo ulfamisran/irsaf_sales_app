@@ -119,6 +119,9 @@ class Service extends Model
 
     public function isPaidOff(): bool
     {
+        if ($this->status === self::STATUS_OPEN) {
+            return false;
+        }
         $total = (float) $this->total_service_price;
         if ($total <= 0) {
             return true;

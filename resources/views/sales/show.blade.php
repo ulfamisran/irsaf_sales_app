@@ -90,9 +90,12 @@
                                 <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $sale->status === 'released' ? 'bg-emerald-100 text-emerald-800' : ($sale->status === 'cancel' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800') }}">
                                     {{ $sale->status === 'cancel' ? __('Dibatalkan') : $sale->status }}
                                 </span>
-                                @if (in_array($sale->status, ['released', 'cancel'], true))
-                                    <span class="ml-1 px-2 py-1 rounded-lg text-xs font-medium {{ $sale->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
-                                        {{ $sale->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
+                                @if (in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, 'released', 'cancel'], true))
+                                    @php
+                                        $isLunas = $sale->status !== \App\Models\Sale::STATUS_OPEN && $sale->isPaidOff();
+                                    @endphp
+                                    <span class="ml-1 px-2 py-1 rounded-lg text-xs font-medium {{ $isLunas ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
+                                        {{ $isLunas ? __('Lunas') : __('Belum Lunas') }}
                                     </span>
                                 @endif
                             </p>

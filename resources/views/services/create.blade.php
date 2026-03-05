@@ -14,6 +14,20 @@
                     <form method="POST" action="{{ route('services.store') }}" id="service-form">
                         @csrf
                         <div class="space-y-4">
+                            <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                                <x-input-label :value="__('Status Transaksi')" class="font-semibold" />
+                                <p class="text-xs text-slate-600 mt-1 mb-3">{{ __('Pilih Open: hanya input pelanggan & info laptop. Pilih Release: input lengkap termasuk material dan pembayaran.') }}</p>
+                                <div class="flex gap-6">
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="status" value="open" {{ old('status', 'open') === 'open' ? 'checked' : '' }} id="status_open" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Open') }}</span>
+                                    </label>
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="status" value="release" {{ old('status') === 'release' ? 'checked' : '' }} id="status_release" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Release') }}</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     @if($branches->count() === 1)
@@ -83,6 +97,7 @@
                                 <x-input-error :messages="$errors->get('damage_description')" class="mt-2" />
                             </div>
 
+                            <div id="release-only-section" style="display: none;">
                             <div id="materials-section" class="border rounded-lg p-4 bg-slate-50">
                                 <p class="font-semibold text-slate-800">{{ __('Bahan/Material Service') }}</p>
                                 <p class="text-xs text-slate-500 mt-1">{{ __('Isi material yang diganti/dibeli (opsional).') }}</p>
@@ -95,7 +110,7 @@
 
                             <div>
                                 <x-input-label for="service_fee" :value="__('Biaya Jasa Service')" />
-                                <x-text-input id="service_fee" class="block mt-1 w-full" type="text" name="service_fee" data-rupiah="true" :value="old('service_fee', 0)" required />
+                                <x-text-input id="service_fee" class="block mt-1 w-full" type="text" name="service_fee" data-rupiah="true" :value="old('service_fee', 0)" />
                                 <x-input-error :messages="$errors->get('service_fee')" class="mt-2" />
                             </div>
 
@@ -105,8 +120,8 @@
                             </div>
 
                             <div id="payments-section" class="border rounded-lg p-4 bg-slate-50">
-                                <p class="font-semibold text-slate-800">{{ __('Pembayaran DP (Wajib)') }}</p>
-                                <p class="text-xs text-amber-700 mt-1">{{ __('Service wajib membayar DP minimal. Boleh kurang dari total service.') }}</p>
+                                <p class="font-semibold text-slate-800">{{ __('Pembayaran (Wajib untuk Release)') }}</p>
+                                <p class="text-xs text-amber-700 mt-1">{{ __('Service Release wajib membayar minimal. Boleh kurang dari total service.') }}</p>
                                 <div class="mt-3 flex justify-between items-center">
                                     <button type="button" id="add-payment" class="inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
                                 </div>
@@ -116,6 +131,7 @@
                                     <span class="ml-2 text-slate-500">({{ __('selisih') }} <span id="paymentDiffText">0</span>)</span>
                                 </div>
                                 <x-input-error :messages="$errors->get('payments')" class="mt-2" />
+                            </div>
                             </div>
 
                             <div class="flex gap-4">
@@ -135,7 +151,7 @@
     @endphp
     <script>
         let paymentMethods = @json($createPaymentMethods);
-        const saldoMapBranch = @json($saldoMapBranch);
+        let saldoMapBranch = Object.assign({}, @json($saldoMapBranch));
         const paymentRows = document.getElementById('payment-rows');
         let paymentIndex = 0;
         const formDataUrl = @json(route('data-by-location.form-data', [], false));
@@ -145,9 +161,11 @@
             const branchId = document.getElementById('branch_id')?.value;
             if (!branchId) {
                 paymentMethods = [];
+                saldoMapBranch = {};
                 const custSel = document.getElementById('customer_id');
                 if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih cabang dulu')) + '</option>';
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
+                document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(sel => { sel.innerHTML = '<option value="">Sumber dana</option>'; });
                 return;
             }
             try {
@@ -158,6 +176,7 @@
                 if (!res.ok) throw new Error('Fetch failed');
                 const data = await res.json();
                 paymentMethods = (data.payment_methods || []).map(m => ({ id: m.id, label: m.label }));
+                saldoMapBranch[branchId] = data.saldo_per_pm || {};
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
@@ -169,11 +188,32 @@
                     sel.innerHTML = '<option value="">Pilih metode</option>' + paymentMethods.map(m => '<option value="' + m.id + '">' + (m.label || '') + '</option>').join('');
                     if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
                 });
+                if (typeof refreshMaterialPaymentOptions === 'function') refreshMaterialPaymentOptions();
             } catch (e) { console.error('loadFormDataForBranch failed', e); }
         }
 
         document.getElementById('branch_id')?.addEventListener('change', loadFormDataForBranch);
         if (document.getElementById('branch_id')?.value) loadFormDataForBranch();
+
+        function toggleReleaseSection() {
+            const isRelease = document.getElementById('status_release')?.checked;
+            const section = document.getElementById('release-only-section');
+            if (section) section.style.display = isRelease ? '' : 'none';
+            const feeEl = document.getElementById('service_fee');
+            if (feeEl) feeEl.toggleAttribute('required', isRelease);
+            document.querySelectorAll('#payment-rows select[name*="payment_method_id"], #payment-rows input[name*="[amount]"]').forEach(el => {
+                el.toggleAttribute('required', isRelease);
+            });
+            if (!isRelease) {
+                if (feeEl) feeEl.value = '0';
+                document.getElementById('payment-rows')?.querySelectorAll('.remove-payment').forEach(btn => btn.click());
+            } else if (document.getElementById('payment-rows')?.children.length === 0) {
+                addPaymentRow();
+            }
+        }
+        document.getElementById('status_open')?.addEventListener('change', toggleReleaseSection);
+        document.getElementById('status_release')?.addEventListener('change', toggleReleaseSection);
+        toggleReleaseSection();
 
         function paymentOptionsHtml() {
             return '<option value="">Pilih metode</option>' + paymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
@@ -189,7 +229,7 @@
             return '<option value="">Sumber dana</option>' + paymentMethods.map(m => {
                 const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
                 const disabled = branchId === '' || saldo <= 0;
-                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label}</option>`;
+                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label} (Saldo: ${Number(saldo).toLocaleString('id-ID')})</option>`;
             }).join('');
         }
 
@@ -314,16 +354,19 @@
             });
         }
 
+        const initialStatus = @json(old('status', 'open'));
         const oldPayments = @json(old('payments', []));
-        if (Array.isArray(oldPayments) && oldPayments.length > 0) {
-            oldPayments.forEach(p => addPaymentRow(p));
-        } else {
-            addPaymentRow();
+        if (initialStatus === 'release') {
+            if (Array.isArray(oldPayments) && oldPayments.length > 0) {
+                oldPayments.forEach(p => addPaymentRow(p));
+            } else {
+                addPaymentRow();
+            }
         }
         refreshPaymentSum();
 
         const oldMaterials = @json(old('materials', []));
-        if (Array.isArray(oldMaterials) && oldMaterials.length > 0) {
+        if (initialStatus === 'release' && Array.isArray(oldMaterials) && oldMaterials.length > 0) {
             oldMaterials.forEach(m => addMaterialRow(m));
         }
         document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());

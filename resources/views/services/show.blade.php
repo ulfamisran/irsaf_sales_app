@@ -92,9 +92,6 @@
                                         <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga') }}</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Subtotal') }}</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Catatan') }}</th>
-                                        @if ($service->status === 'open')
-                                            <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
-                                        @endif
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
@@ -107,21 +104,10 @@
                                             <td class="px-3 py-2 text-right">{{ number_format((float) $mat->price, 0, ',', '.') }}</td>
                                             <td class="px-3 py-2 text-right">{{ number_format($subtotal, 0, ',', '.') }}</td>
                                             <td class="px-3 py-2">{{ $mat->notes ?? '-' }}</td>
-                                            @if ($service->status === 'open')
-                                                <td class="px-3 py-2 text-right">
-                                                    <form method="POST" action="{{ route('services.materials.destroy', [$service, $mat]) }}" onsubmit="return confirm('{{ __('Hapus material ini?') }}')">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded bg-red-100 text-red-700 hover:bg-red-200">
-                                                            {{ __('Hapus') }}
-                                                        </button>
-                                                    </form>
-                                                </td>
-                                            @endif
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="{{ $service->status === 'open' ? 7 : 6 }}" class="px-3 py-4 text-center text-slate-500">-</td>
+                                            <td colspan="6" class="px-3 py-4 text-center text-slate-500">-</td>
                                         </tr>
                                     @endforelse
                                 </tbody>
@@ -138,22 +124,6 @@
                             </div>
                         </div>
                     </div>
-
-                    @if ($service->status === 'open')
-                        <div class="mt-4 border rounded-lg p-4 bg-slate-50">
-                            <p class="font-semibold text-slate-800">{{ __('Input Material/Barang') }}</p>
-                            <form method="POST" action="{{ route('services.materials.store', $service) }}" class="mt-3">
-                                @csrf
-                                <div id="material-rows" class="space-y-2"></div>
-                                <button type="button" id="add-material" class="mt-2 inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
-                                <div class="mt-3">
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-                                        {{ __('Simpan Material') }}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    @endif
 
                     <div class="mt-6">
                         <p class="text-sm font-semibold text-gray-800">{{ __('Pembayaran') }}</p>
@@ -177,56 +147,9 @@
                     </div>
 
                     @if ($service->status === 'open')
-                        <div class="mt-8 border rounded-lg p-4 bg-slate-50">
-                            <p class="font-semibold text-slate-800">{{ __('Tambah Pembayaran / Pelunasan') }}</p>
-                            <form method="POST" action="{{ route('services.add-payment', $service) }}" class="mt-4">
-                                @csrf
-                                <div id="add-payment-rows" class="space-y-2"></div>
-                                <button type="button" id="add-payment-btn" class="mt-2 inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
-                                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">{{ __('Tanggal Keluar') }}</label>
-                                        <input type="date" name="exit_date" value="{{ old('exit_date', $service->exit_date?->toDateString()) }}" class="block mt-1 w-full rounded-md border-gray-300">
-                                    </div>
-                                    <div class="flex items-center gap-4 pt-6">
-                                        <label class="flex items-center gap-2">
-                                            <input type="checkbox" name="mark_completed" value="1" class="rounded">
-                                            <span class="text-sm">{{ __('Tandai Selesai') }}</span>
-                                        </label>
-                                        <label class="flex items-center gap-2">
-                                            <input type="checkbox" name="mark_picked_up" value="1" class="rounded">
-                                            <span class="text-sm">{{ __('Sudah Diambil') }}</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="mt-4">
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
-                                        {{ __('Simpan Pembayaran') }}
-                                    </button>
-                                </div>
-                            </form>
+                        <div class="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200">
+                            <p class="text-sm text-amber-800">{{ __('Untuk menambah material dan pembayaran, gunakan tombol Edit di atas.') }}</p>
                         </div>
-
-                        <div class="mt-4">
-                            <form method="POST" action="{{ route('services.complete', $service) }}">
-                                @csrf
-                                <input type="hidden" name="mark_picked_up" value="0">
-                                <button type="submit" class="inline-flex items-center px-4 py-2 rounded-lg bg-slate-600 text-white text-sm font-medium hover:bg-slate-700">
-                                    {{ __('Tandai Selesai (tanpa tambah pembayaran)') }}
-                                </button>
-                            </form>
-                        </div>
-
-                        @if ($service->pickup_status === 'belum_diambil' && $service->status === 'completed')
-                            <div class="mt-4">
-                                <form method="POST" action="{{ route('services.mark-picked-up', $service) }}">
-                                    @csrf
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-                                        {{ __('Tandai Sudah Diambil') }}
-                                    </button>
-                                </form>
-                            </div>
-                        @endif
                     @endif
                 </div>
             </div>
@@ -256,94 +179,4 @@
         </div>
     @endif
 
-    @php
-        $showPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
-        $saldoMapBranch = $saldoMapBranch ?? [];
-    @endphp
-    <script>
-        const showPaymentMethods = @json($showPaymentMethods);
-        const saldoMapBranch = @json($saldoMapBranch);
-        const fixedBranchId = @json($service->branch_id);
-        const addPaymentRows = document.getElementById('add-payment-rows');
-        let addPaymentIdx = 0;
-        function addPaymentRowHtml() {
-            return '<option value="">Pilih</option>' + showPaymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
-        }
-        function materialPaymentOptionsHtml() {
-            const branchId = String(fixedBranchId || '');
-            return '<option value="">Sumber dana</option>' + showPaymentMethods.map(m => {
-                const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
-                const disabled = branchId === '' || saldo <= 0;
-                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label}</option>`;
-            }).join('');
-        }
-        document.getElementById('add-payment-btn')?.addEventListener('click', function() {
-            if (!addPaymentRows) return;
-            const i = addPaymentIdx++;
-            const div = document.createElement('div');
-            div.className = 'flex gap-2 items-end';
-            div.innerHTML = `
-                <div class="flex-1">
-                    <select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>
-                        ${addPaymentRowHtml()}
-                    </select>
-                </div>
-                <div class="w-40">
-                    <input type="number" name="payments[${i}][amount]" step="0.01" min="0.01" class="block w-full rounded-md border-gray-300" placeholder="Nominal" required>
-                </div>
-                <button type="button" class="remove-add-payment px-3 py-2 bg-red-100 text-red-700 rounded">-</button>
-            `;
-            addPaymentRows.appendChild(div);
-            div.querySelector('.remove-add-payment')?.addEventListener('click', () => div.remove());
-        });
-        if (addPaymentRows && addPaymentRows.children.length === 0) {
-            document.getElementById('add-payment-btn')?.click();
-        }
-
-        const materialRows = document.getElementById('material-rows');
-        let materialIdx = 0;
-        function addMaterialRow(pref = {}) {
-            if (!materialRows) return;
-            const i = materialIdx++;
-            const div = document.createElement('div');
-            div.className = 'grid grid-cols-1 md:grid-cols-6 gap-2 items-end';
-            div.innerHTML = `
-                <div class="md:col-span-2">
-                    <input type="text" name="materials[${i}][name]" class="block w-full rounded-md border-gray-300" placeholder="Nama material" required>
-                </div>
-                <div>
-                    <input type="number" step="0.01" min="0.01" name="materials[${i}][quantity]" class="block w-full rounded-md border-gray-300" placeholder="Qty" required>
-                </div>
-                <div>
-                    <select name="materials[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>
-                        ${materialPaymentOptionsHtml()}
-                    </select>
-                </div>
-                <div>
-                    <input type="text" name="materials[${i}][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300" placeholder="Harga" required>
-                </div>
-                <div class="flex gap-2">
-                    <input type="text" name="materials[${i}][notes]" class="block w-full rounded-md border-gray-300" placeholder="Catatan">
-                    <button type="button" class="remove-material px-3 py-2 bg-red-100 text-red-700 rounded">-</button>
-                </div>
-            `;
-            materialRows.appendChild(div);
-            if (pref.name) div.querySelector('input[name*="[name]"]').value = pref.name;
-            if (pref.quantity) div.querySelector('input[name*="[quantity]"]').value = pref.quantity;
-            if (pref.payment_method_id) div.querySelector('select[name*="[payment_method_id]"]').value = pref.payment_method_id;
-            if (pref.price) div.querySelector('input[name*="[price]"]').value = pref.price;
-            if (pref.notes) div.querySelector('input[name*="[notes]"]').value = pref.notes;
-            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
-            div.querySelector('.remove-material')?.addEventListener('click', () => div.remove());
-        }
-        document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());
-        if (materialRows && materialRows.children.length === 0) {
-            addMaterialRow();
-        }
-        document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(select => {
-            const current = select.value;
-            select.innerHTML = materialPaymentOptionsHtml();
-            if (current) select.value = current;
-        });
-    </script>
 </x-app-layout>

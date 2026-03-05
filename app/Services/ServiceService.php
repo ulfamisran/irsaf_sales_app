@@ -12,7 +12,9 @@ use InvalidArgumentException;
 class ServiceService
 {
     /**
-     * Create a new service. Wajib DP (minimal pembayaran).
+     * Create a new service.
+     * Status open: hanya pelanggan & info laptop, tanpa material dan pembayaran.
+     * Status release: wajib pembayaran lengkap.
      */
     public function create(
         int $branchId,
@@ -26,16 +28,25 @@ class ServiceService
         array $payments,
         ?string $description = null,
         ?int $userId = null,
-        float $materialsTotalPrice = 0.0
+        float $materialsTotalPrice = 0.0,
+        string $status = 'open'
     ): Service {
-        if (empty($payments)) {
-            throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
+        $isRelease = $status === 'release';
+
+        if ($isRelease) {
+            if (empty($payments)) {
+                throw new InvalidArgumentException(__('Pembayaran wajib diisi untuk status Release.'));
+            }
+            $paymentSum = $this->sumPayments($payments);
+            if ($paymentSum < 0.01) {
+                throw new InvalidArgumentException(__('Pembayaran minimal Rp 0,01.'));
+            }
+        } else {
+            $paymentSum = 0.0;
+            $servicePrice = 0.0;
+            $materialsTotalPrice = 0.0;
         }
 
-        $paymentSum = $this->sumPayments($payments);
-        if ($paymentSum < 0.01) {
-            throw new InvalidArgumentException(__('DP minimal Rp 0,01.'));
-        }
         $totalPrice = $servicePrice + max(0, $materialsTotalPrice);
         if ($paymentSum > $totalPrice + 0.02) {
             throw new InvalidArgumentException(
@@ -47,6 +58,7 @@ class ServiceService
         }
 
         $branch = Branch::findOrFail($branchId);
+        $targetStatus = $isRelease ? Service::STATUS_COMPLETED : Service::STATUS_OPEN;
 
         return DB::transaction(function () use (
             $branch,
@@ -61,10 +73,11 @@ class ServiceService
             $paymentSum,
             $totalPrice,
             $description,
-            $userId
+            $userId,
+            $targetStatus
         ) {
             $invoiceNumber = $this->generateInvoiceNumber();
-            $isPaidOff = $paymentSum >= $totalPrice - 0.02;
+            $isPaidOff = $targetStatus === Service::STATUS_COMPLETED && $paymentSum >= $totalPrice - 0.02;
 
             $service = Service::create([
                 'invoice_number' => $invoiceNumber,
@@ -78,10 +91,10 @@ class ServiceService
                 'service_price' => $servicePrice,
                 'total_paid' => $paymentSum,
                 'entry_date' => $entryDate,
-                'exit_date' => null,
+                'exit_date' => $targetStatus === Service::STATUS_COMPLETED ? $entryDate : null,
                 'pickup_status' => Service::PICKUP_BELUM,
                 'payment_status' => $isPaidOff ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
-                'status' => Service::STATUS_OPEN,
+                'status' => $targetStatus,
                 'description' => $description,
             ]);
 
@@ -121,6 +134,7 @@ class ServiceService
 
     /**
      * Update service (only when status open).
+     * When $markAsReleased=true: wajib payments, set status ke completed.
      */
     public function update(
         Service $service,
@@ -133,19 +147,23 @@ class ServiceService
         string $entryDate,
         array $payments,
         ?string $description = null,
-        ?float $materialsTotalPrice = null
+        ?float $materialsTotalPrice = null,
+        bool $markAsReleased = false
     ): Service {
         if ($service->status !== Service::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Service sudah completed atau dibatalkan.'));
         }
 
-        if (empty($payments)) {
-            throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
-        }
-
-        $paymentSum = $this->sumPayments($payments);
-        if ($paymentSum < 0.01) {
-            throw new InvalidArgumentException(__('DP minimal Rp 0,01.'));
+        if ($markAsReleased || ! empty($payments)) {
+            if (empty($payments)) {
+                throw new InvalidArgumentException(__('Pembayaran wajib diisi saat ubah ke Release.'));
+            }
+            $paymentSum = $this->sumPayments($payments);
+            if ($paymentSum < 0.01) {
+                throw new InvalidArgumentException(__('Pembayaran minimal Rp 0,01.'));
+            }
+        } else {
+            $paymentSum = 0.0;
         }
         $materialTotal = $materialsTotalPrice !== null
             ? (float) $materialsTotalPrice
@@ -156,7 +174,7 @@ class ServiceService
         }
 
         $branch = Branch::findOrFail($service->branch_id);
-        $isPaidOff = $paymentSum >= $totalPrice - 0.02;
+        $isPaidOff = $markAsReleased && $paymentSum >= $totalPrice - 0.02;
 
         return DB::transaction(function () use (
             $service,
@@ -171,12 +189,13 @@ class ServiceService
             $payments,
             $paymentSum,
             $isPaidOff,
-            $description
+            $description,
+            $markAsReleased
         ) {
             $oldPayments = ServicePayment::where('service_id', $service->id)->get();
             $oldTotal = $oldPayments->sum('amount');
 
-            $service->update([
+            $updates = [
                 'customer_id' => $customerId,
                 'laptop_type' => $laptopType,
                 'laptop_detail' => $laptopDetail,
@@ -187,7 +206,12 @@ class ServiceService
                 'entry_date' => $entryDate,
                 'payment_status' => $isPaidOff ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
                 'description' => $description,
-            ]);
+            ];
+            if ($markAsReleased) {
+                $updates['status'] = Service::STATUS_COMPLETED;
+                $updates['exit_date'] = $entryDate;
+            }
+            $service->update($updates);
 
             ServicePayment::where('service_id', $service->id)->delete();
             foreach ($payments as $p) {
@@ -312,7 +336,7 @@ class ServiceService
 
             $updates = [
                 'total_paid' => $totalPaid,
-                'payment_status' => $totalPaid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
+                'payment_status' => $markCompleted && $totalPaid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
             ];
             if ($exitDate) {
                 $updates['exit_date'] = $exitDate;

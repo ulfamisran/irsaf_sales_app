@@ -17,9 +17,19 @@ class DistributorRepository
         $query = $this->model->orderBy('name');
         if ($user && ! $user->isSuperAdminOrAdminPusat()) {
             if ($user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
+                $query->where(function ($q) use ($user) {
+                    $q->where('warehouse_id', $user->warehouse_id)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             } elseif ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where(function ($q) use ($user) {
+                    $q->where('branch_id', $user->branch_id)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             } else {
                 $query->whereRaw('1 = 0');
             }
@@ -38,17 +48,37 @@ class DistributorRepository
 
         if ($user && ! $user->isSuperAdminOrAdminPusat()) {
             if ($user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
+                $query->where(function ($q) use ($user) {
+                    $q->where('warehouse_id', $user->warehouse_id)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             } elseif ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where(function ($q) use ($user) {
+                    $q->where('branch_id', $user->branch_id)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             } else {
                 $query->whereRaw('1 = 0');
             }
         } elseif ($locationType && $locationId) {
             if ($locationType === 'cabang') {
-                $query->where('branch_id', $locationId);
+                $query->where(function ($q) use ($locationId) {
+                    $q->where('branch_id', $locationId)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             } else {
-                $query->where('warehouse_id', $locationId);
+                $query->where(function ($q) use ($locationId) {
+                    $q->where('warehouse_id', $locationId)
+                        ->orWhere(function ($q2) {
+                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                        });
+                });
             }
         }
 

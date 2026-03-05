@@ -40,27 +40,30 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <x-input-label for="customer_id" :value="__('Pelanggan')" />
-                                    <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">{{ __('Pilih Pelanggan (atau isi pelanggan baru)') }}</option>
-                                        @foreach ($customers as $c)
-                                            <option value="{{ $c->id }}" {{ old('customer_id') == $c->id ? 'selected' : '' }}>
-                                                {{ $c->name }}{{ $c->phone ? ' - '.$c->phone : '' }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    <x-input-error :messages="$errors->get('customer_id')" class="mt-2" />
+                            <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                                <x-input-label :value="__('Status')" class="font-semibold" />
+                                <div class="mt-2 flex gap-6">
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="status" value="open" {{ old('status', 'open') === 'open' ? 'checked' : '' }} id="status_open" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Open') }}</span>
+                                    </label>
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="status" value="released" {{ old('status') === 'released' ? 'checked' : '' }} id="status_released" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Release') }}</span>
+                                    </label>
                                 </div>
-                                <div>
-                                    <x-input-label for="status" :value="__('Status')" />
-                                    <select id="status" name="status" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="open" {{ old('status', 'open') === 'open' ? 'selected' : '' }}>{{ __('Open (Draft)') }}</option>
-                                        <option value="released" {{ old('status') === 'released' ? 'selected' : '' }}>{{ __('Release') }}</option>
-                                    </select>
-                                    <x-input-error :messages="$errors->get('status')" class="mt-2" />
-                                </div>
+                            </div>
+                            <div>
+                                <x-input-label for="customer_id" :value="__('Pelanggan')" />
+                                <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">{{ __('Pilih Pelanggan (atau isi pelanggan baru)') }}</option>
+                                    @foreach ($customers as $c)
+                                        <option value="{{ $c->id }}" {{ old('customer_id') == $c->id ? 'selected' : '' }}>
+                                            {{ $c->name }}{{ $c->phone ? ' - '.$c->phone : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('customer_id')" class="mt-2" />
                             </div>
 
                             <div id="new-customer-fields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -829,7 +832,7 @@
         document.getElementById('tax_amount')?.addEventListener('input', refreshTotals);
 
         // Payments
-        const statusEl = document.getElementById('status');
+        const getStatusValue = () => document.querySelector('input[name="status"]:checked')?.value || 'open';
         const paymentsSection = document.getElementById('payments-section');
         const paymentRows = document.getElementById('payment-rows');
         let paymentIndex = 0;
@@ -1052,7 +1055,7 @@
         document.getElementById('add-payment')?.addEventListener('click', () => addPaymentRow());
 
         function togglePayments() {
-            const released = (statusEl?.value === 'released');
+            const released = (getStatusValue() === 'released');
             const draftHint = document.getElementById('paymentsDraftHint');
             const releasedHint = document.getElementById('paymentsReleasedHint');
             if (draftHint) draftHint.classList.toggle('hidden', released);
@@ -1074,7 +1077,7 @@
                 addPaymentRow();
             }
         }
-        statusEl?.addEventListener('change', togglePayments);
+        document.querySelectorAll('input[name="status"]').forEach(el => el.addEventListener('change', togglePayments));
 
         // Restore old payments if validation failed
         const oldPayments = @json(old('payments', []));

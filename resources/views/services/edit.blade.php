@@ -19,6 +19,12 @@
                         @method('PATCH')
                         <input type="hidden" name="branch_id" value="{{ $service->branch_id }}">
                         <div class="space-y-4">
+                            <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" name="mark_release" value="1" id="mark_release" {{ old('mark_release') ? 'checked' : '' }} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                    <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Ubah ke Release (wajib input material dan pembayaran)') }}</span>
+                                </label>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <x-input-label for="branch_display" :value="__('Cabang')" />
@@ -89,8 +95,16 @@
                                 <textarea id="description" name="description" class="block mt-1 w-full rounded-md border-gray-300" rows="2">{{ old('description', $service->description) }}</textarea>
                             </div>
 
+                            <div class="rounded-lg border border-gray-200 p-4 bg-slate-50/50">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" name="mark_picked_up" value="1" {{ old('mark_picked_up', $service->pickup_status === 'sudah_diambil') ? 'checked' : '' }} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                    <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Sudah Diambil') }}</span>
+                                </label>
+                                <p class="mt-1 text-xs text-slate-500">{{ __('Status Pengambilan') }}</p>
+                            </div>
+
                             <div class="border rounded-lg p-4 bg-slate-50">
-                                <p class="font-semibold">{{ __('Pembayaran DP') }}</p>
+                                <p class="font-semibold">{{ __('Metode Pembayaran') }}</p>
                                 <div id="payment-rows" class="mt-3 space-y-2"></div>
                                 <button type="button" id="add-payment" class="mt-2 inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
                                 <div class="mt-3 text-sm">
@@ -127,12 +141,12 @@
         function paymentOpts() {
             return '<option value="">Pilih</option>' + editPaymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
         }
-        function materialPaymentOpts() {
+        function materialPaymentOpts(selectedPmId = null) {
             const branchId = String(fixedBranchId || '');
             return '<option value="">Sumber dana</option>' + editPaymentMethods.map(m => {
                 const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
-                const disabled = branchId === '' || saldo <= 0;
-                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label}</option>`;
+                const canSelect = saldo > 0 || (selectedPmId && m.id == selectedPmId);
+                return `<option value="${m.id}" ${!canSelect ? 'disabled' : ''}>${m.label} (Saldo: ${Number(saldo).toLocaleString('id-ID')})</option>`;
             }).join('');
         }
         function addPayRow(p = {}) {
@@ -215,7 +229,7 @@
                 </div>
                 <div>
                     <select name="materials[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>
-                        ${materialPaymentOpts()}
+                        ${materialPaymentOpts(pref.payment_method_id)}
                     </select>
                 </div>
                 <div>
@@ -243,7 +257,9 @@
         refresh();
         document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(select => {
             const current = select.value;
-            select.innerHTML = materialPaymentOpts();
+            const row = select.closest('.grid');
+            const pref = row ? { payment_method_id: current } : {};
+            select.innerHTML = materialPaymentOpts(pref.payment_method_id);
             if (current) select.value = current;
         });
 
@@ -251,5 +267,19 @@
             document.getElementById('new-customer-fields').style.display = this.value ? 'none' : '';
         });
         document.getElementById('new-customer-fields').style.display = document.getElementById('customer_id')?.value ? 'none' : '';
+
+        document.getElementById('mark_release')?.addEventListener('change', function() {
+            const required = this.checked;
+            document.querySelectorAll('#payment-rows select[name*="payment_method_id"], #payment-rows input[name*="[amount]"]').forEach(el => {
+                el.toggleAttribute('required', required);
+            });
+            document.getElementById('service_fee')?.toggleAttribute('required', required);
+        });
+        if (document.getElementById('mark_release')?.checked) {
+            document.querySelectorAll('#payment-rows select[name*="payment_method_id"], #payment-rows input[name*="[amount]"]').forEach(el => {
+                el.setAttribute('required', 'required');
+            });
+            document.getElementById('service_fee')?.setAttribute('required', 'required');
+        }
     </script>
 </x-app-layout>

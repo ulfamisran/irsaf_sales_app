@@ -13,7 +13,16 @@ class ServiceRequest extends FormRequest
 
     public function rules(): array
     {
+        $isRelease = false;
+        if ($this->routeIs('services.store')) {
+            $isRelease = $this->input('status', 'open') === 'release';
+        } elseif ($this->routeIs('services.update')) {
+            $isRelease = (bool) $this->input('mark_release');
+        }
+
         return [
+            'status' => [$this->routeIs('services.store') ? 'required' : 'nullable', 'in:open,release'],
+            'mark_release' => ['nullable', 'boolean'],
             'branch_id' => ['required', 'exists:branches,id'],
             'customer_id' => ['nullable', 'exists:customers,id'],
             'customer_new_name' => ['nullable', 'string', 'max:255', 'required_without:customer_id'],
@@ -23,13 +32,13 @@ class ServiceRequest extends FormRequest
             'laptop_type' => ['required', 'string', 'max:100'],
             'laptop_detail' => ['nullable', 'string'],
             'damage_description' => ['nullable', 'string'],
-            'service_fee' => ['required', 'numeric', 'min:0'],
+            'service_fee' => [$isRelease ? 'required' : 'nullable', 'numeric', 'min:0'],
             'entry_date' => ['required', 'date'],
             'description' => ['nullable', 'string'],
 
-            'payments' => ['required', 'array', 'min:1'],
-            'payments.*.payment_method_id' => ['required', 'exists:payment_methods,id'],
-            'payments.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'payments' => array_filter([$isRelease ? 'required' : 'nullable', 'array', $isRelease ? 'min:1' : null]),
+            'payments.*.payment_method_id' => array_filter(['nullable', 'exists:payment_methods,id', $isRelease ? 'required' : null]),
+            'payments.*.amount' => array_filter(['nullable', 'numeric', $isRelease ? 'min:0.01' : 'min:0', $isRelease ? 'required' : null]),
             'payments.*.notes' => ['nullable', 'string'],
 
             'materials' => ['nullable', 'array'],

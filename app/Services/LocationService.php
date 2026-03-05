@@ -98,6 +98,13 @@ class LocationService
                     'warehouse_id' => $input['warehouse_id'] ?? null,
                 ];
             }
+            if ($placementType === 'semua') {
+                return [
+                    'placement_type' => 'semua',
+                    'branch_id' => null,
+                    'warehouse_id' => null,
+                ];
+            }
             return [
                 'placement_type' => null,
                 'branch_id' => null,

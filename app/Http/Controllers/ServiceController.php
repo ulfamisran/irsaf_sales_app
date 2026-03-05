@@ -145,12 +145,14 @@ class ServiceController extends Controller
             }
 
             $customerId = $this->resolveCustomerId($request);
+            $status = $request->input('status', 'open');
+            $isRelease = $status === 'release';
 
-            $materialsInput = $request->input('materials', []);
+            $materialsInput = $isRelease ? ($request->input('materials', []) ?? []) : [];
             if (is_array($materialsInput) && ! empty($materialsInput)) {
                 $this->ensureMaterialSaldo($branchId, $materialsInput);
             }
-            $materialsTotal = $this->sumMaterialsTotalPrice($materialsInput);
+            $materialsTotal = $isRelease ? $this->sumMaterialsTotalPrice($materialsInput) : 0.0;
 
             $service = $this->serviceService->create(
                 $branchId,
@@ -159,15 +161,16 @@ class ServiceController extends Controller
                 $request->laptop_detail,
                 $request->damage_description,
                 0.0,
-                (float) $request->service_fee,
+                (float) ($request->service_fee ?? 0),
                 $request->entry_date,
                 $request->input('payments', []),
                 $request->description,
                 $user->id,
-                $materialsTotal
+                $materialsTotal,
+                $status
             );
 
-            if (is_array($materialsInput) && ! empty($materialsInput)) {
+            if ($isRelease && is_array($materialsInput) && ! empty($materialsInput)) {
                 $this->storeMaterials($service, $materialsInput, replace: true, userId: $user->id);
                 $this->refreshPaymentStatus($service);
             }
@@ -189,6 +192,7 @@ class ServiceController extends Controller
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($service->branch_id, null)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -224,6 +228,7 @@ class ServiceController extends Controller
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($service->branch_id, null)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -256,6 +261,8 @@ class ServiceController extends Controller
                 $this->ensureMaterialSaldo((int) $service->branch_id, $materialsInput);
             }
 
+            $markAsReleased = (bool) $request->input('mark_release');
+
             $this->serviceService->update(
                 $service,
                 $customerId,
@@ -267,13 +274,18 @@ class ServiceController extends Controller
                 $request->entry_date,
                 $request->input('payments', []),
                 $request->description,
-                $materialsTotal
+                $materialsTotal,
+                $markAsReleased
             );
 
             if (is_array($materialsInput)) {
                 $this->storeMaterials($service, $materialsInput, replace: true, userId: $user->id);
                 $this->refreshPaymentStatus($service);
             }
+
+            $pickupStatus = $request->boolean('mark_picked_up') ? Service::PICKUP_SUDAH : Service::PICKUP_BELUM;
+            $service->update(['pickup_status' => $pickupStatus]);
+
             AuditLog::create([
                 'user_id' => $user->id,
                 'action' => 'service.update',
@@ -364,11 +376,7 @@ class ServiceController extends Controller
         }
 
         $service->refresh();
-        $totalPrice = (float) $service->total_service_price;
-        $paid = (float) $service->total_paid;
-        $service->update([
-            'payment_status' => $paid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
-        ]);
+        $service->update(['payment_status' => Service::PAYMENT_BELUM_LUNAS]);
 
         return redirect()->route('services.show', $service)->with('success', __('Material service berhasil disimpan.'));
     }
@@ -393,11 +401,7 @@ class ServiceController extends Controller
         $material->delete();
 
         $service->refresh();
-        $totalPrice = (float) $service->total_service_price;
-        $paid = (float) $service->total_paid;
-        $service->update([
-            'payment_status' => $paid >= $totalPrice - 0.02 ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
-        ]);
+        $service->update(['payment_status' => Service::PAYMENT_BELUM_LUNAS]);
 
         return redirect()->route('services.show', $service)->with('success', __('Material service berhasil dihapus.'));
     }
@@ -648,6 +652,10 @@ class ServiceController extends Controller
     private function refreshPaymentStatus(Service $service): void
     {
         $service->refresh();
+        if ($service->status === Service::STATUS_OPEN) {
+            $service->update(['payment_status' => Service::PAYMENT_BELUM_LUNAS]);
+            return;
+        }
         $totalPrice = (float) $service->total_service_price;
         $paid = (float) $service->total_paid;
         $service->update([

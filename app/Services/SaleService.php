@@ -99,6 +99,10 @@ class SaleService
                     'serial_number' => $ti['serial_number'],
                     'brand' => $ti['brand'],
                     'series' => $ti['series'] ?? null,
+                    'processor' => $ti['processor'] ?? null,
+                    'ram' => $ti['ram'] ?? null,
+                    'storage' => $ti['storage'] ?? null,
+                    'color' => $ti['color'] ?? null,
                     'specs' => $ti['specs'] ?? null,
                     'category_id' => $ti['category_id'],
                     'trade_in_value' => $ti['trade_in_value'],
@@ -243,6 +247,10 @@ class SaleService
                     'serial_number' => $ti['serial_number'],
                     'brand' => $ti['brand'],
                     'series' => $ti['series'] ?? null,
+                    'processor' => $ti['processor'] ?? null,
+                    'ram' => $ti['ram'] ?? null,
+                    'storage' => $ti['storage'] ?? null,
+                    'color' => $ti['color'] ?? null,
                     'specs' => $ti['specs'] ?? null,
                     'category_id' => $ti['category_id'],
                     'trade_in_value' => $ti['trade_in_value'],
@@ -422,6 +430,7 @@ class SaleService
                 );
 
                 // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
+                // Lokasi mengikuti cabang penjualan
                 $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
                 $newProduct = Product::create([
                     'category_id' => $tradeIn->category_id,
@@ -439,6 +448,8 @@ class SaleService
                     'purchase_price' => $hpp,
                     'selling_price' => $hpp,
                     'is_active' => false,
+                    'location_type' => Stock::LOCATION_BRANCH,
+                    'location_id' => (int) $branch->id,
                 ]);
 
                 $tradeIn->update(['product_id' => $newProduct->id]);

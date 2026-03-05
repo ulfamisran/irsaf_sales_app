@@ -156,7 +156,9 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">
-                                    @if ($sale->status === 'released')
+                                    @if ($sale->status === \App\Models\Sale::STATUS_OPEN)
+                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-amber-100 text-amber-800">{{ __('Belum Lunas') }}</span>
+                                    @elseif ($sale->status === \App\Models\Sale::STATUS_RELEASED)
                                         @php $paid = (float)$sale->total_paid; @endphp
                                         <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $paid >= (float)$sale->total - 0.02 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
                                             {{ $paid >= (float)$sale->total - 0.02 ? __('Lunas') : __('Belum Lunas') }}

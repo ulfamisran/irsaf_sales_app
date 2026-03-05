@@ -14,6 +14,15 @@ class Distributor extends Model
 
     public const PLACEMENT_CABANG = 'cabang';
     public const PLACEMENT_GUDANG = 'gudang';
+    public const PLACEMENT_SEMUA = 'semua';
+
+    /**
+     * Distributor digunakan oleh seluruh cabang dan gudang.
+     */
+    public function isGlobal(): bool
+    {
+        return $this->branch_id === null && $this->warehouse_id === null;
+    }
 
     protected $fillable = [
         'placement_type',

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\CashFlow;
 use App\Models\PaymentMethod;
+use App\Models\Sale;
+use App\Models\Service;
 use Illuminate\Support\Facades\DB;
 
 class KasBalanceService
@@ -67,66 +69,80 @@ class KasBalanceService
     }
 
     /**
-     * @return array<int, float>
+     * Hitung saldo per payment_method_id.
+     * Untuk branch: sale_payments (released) + service_payments (completed) + cash_flows IN - cash_flows OUT.
+     * Untuk warehouse: cash_flows saja (tidak ada sale/service di gudang).
+     * Konsisten dengan Monitoring Kas.
+     *
+     * @return array<int, float> [payment_method_id => saldo]
      */
     private function getSaldoPerPaymentMethodForLocation(string $locationType, int $locationId): array
     {
-        $keyFromPm = function ($pm) {
-            $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? '')));
-            $bank = trim((string) ($pm->nama_bank ?? ''));
-            $rek = trim((string) ($pm->no_rekening ?? ''));
-            if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
-                return 'Tunai';
-            }
-
-            return $bank . '|' . $rek;
-        };
-
-        $keyFromRow = function ($row) {
-            $jenis = strtolower(trim((string) ($row->jenis_pembayaran ?? '')));
-            $bank = trim((string) ($row->nama_bank ?? ''));
-            $rek = trim((string) ($row->no_rekening ?? ''));
-            if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
-                return 'Tunai';
-            }
-
-            return $bank . '|' . $rek;
-        };
-
         $totals = [];
 
+        if ($locationType === 'branch') {
+            $salePayments = DB::table('sale_payments')
+                ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+                ->where('sales.status', Sale::STATUS_RELEASED)
+                ->where('sales.branch_id', $locationId)
+                ->selectRaw('payment_method_id, SUM(amount) as total')
+                ->groupBy('payment_method_id')
+                ->get();
+
+            foreach ($salePayments as $row) {
+                $pmId = (int) $row->payment_method_id;
+                if ($pmId > 0) {
+                    $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
+                }
+            }
+
+            $servicePayments = DB::table('service_payments')
+                ->join('services', 'service_payments.service_id', '=', 'services.id')
+                ->where('services.status', Service::STATUS_COMPLETED)
+                ->where('services.branch_id', $locationId)
+                ->selectRaw('payment_method_id, SUM(amount) as total')
+                ->groupBy('payment_method_id')
+                ->get();
+
+            foreach ($servicePayments as $row) {
+                $pmId = (int) $row->payment_method_id;
+                if ($pmId > 0) {
+                    $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
+                }
+            }
+        }
+
         $cashFlowIn = DB::table('cash_flows')
-            ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
             ->where('cash_flows.type', CashFlow::TYPE_IN)
+            ->whereNotNull('cash_flows.payment_method_id')
             ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
             ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
-            ->selectRaw('payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
-            ->groupBy('payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
             ->get();
 
         foreach ($cashFlowIn as $row) {
-            $key = $keyFromRow($row);
-            $totals[$key] = ($totals[$key] ?? 0) + (float) $row->total;
+            $pmId = (int) $row->payment_method_id;
+            $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
         }
 
         $cashFlowOut = DB::table('cash_flows')
-            ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
             ->where('cash_flows.type', CashFlow::TYPE_OUT)
+            ->whereNotNull('cash_flows.payment_method_id')
             ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
             ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
-            ->selectRaw('payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
-            ->groupBy('payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
             ->get();
 
         foreach ($cashFlowOut as $row) {
-            $key = $keyFromRow($row);
-            $totals[$key] = ($totals[$key] ?? 0) - (float) $row->total;
+            $pmId = (int) $row->payment_method_id;
+            $totals[$pmId] = ($totals[$pmId] ?? 0) - (float) $row->total;
         }
 
         $result = [];
         foreach (PaymentMethod::all() as $pm) {
-            $key = $keyFromPm($pm);
-            $result[$pm->id] = round($totals[$key] ?? 0, 2);
+            $result[$pm->id] = round($totals[$pm->id] ?? 0, 2);
         }
 
         return $result;

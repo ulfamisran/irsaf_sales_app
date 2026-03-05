@@ -72,7 +72,8 @@ class DistributorController extends Controller
     {
         $user = $request->user();
         if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            $match = ($user->branch_id && $distributor->branch_id === $user->branch_id)
+            $match = $distributor->isGlobal()
+                || ($user->branch_id && $distributor->branch_id === $user->branch_id)
                 || ($user->warehouse_id && $distributor->warehouse_id === $user->warehouse_id);
             if (! $match) {
                 abort(403, __('Anda tidak memiliki akses ke data ini.'));
@@ -82,7 +83,7 @@ class DistributorController extends Controller
         if (! $locationOptions['canChoose'] && $locationOptions['branches']->isEmpty() && $locationOptions['warehouses']->isEmpty()) {
             abort(403, __('Anda harus memiliki cabang atau gudang yang ditetapkan.'));
         }
-        $locationOptions['oldPlacementType'] = $distributor->placement_type;
+        $locationOptions['oldPlacementType'] = $distributor->isGlobal() ? Distributor::PLACEMENT_SEMUA : $distributor->placement_type;
         $locationOptions['oldBranchId'] = $distributor->branch_id;
         $locationOptions['oldWarehouseId'] = $distributor->warehouse_id;
 
@@ -96,7 +97,8 @@ class DistributorController extends Controller
     {
         $user = $request->user();
         if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            $match = ($user->branch_id && $distributor->branch_id === $user->branch_id)
+            $match = $distributor->isGlobal()
+                || ($user->branch_id && $distributor->branch_id === $user->branch_id)
                 || ($user->warehouse_id && $distributor->warehouse_id === $user->warehouse_id);
             if (! $match) {
                 abort(403, __('Anda tidak memiliki akses ke data ini.'));
@@ -118,7 +120,8 @@ class DistributorController extends Controller
     {
         $user = $request->user();
         if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            $match = ($user->branch_id && $distributor->branch_id === $user->branch_id)
+            $match = $distributor->isGlobal()
+                || ($user->branch_id && $distributor->branch_id === $user->branch_id)
                 || ($user->warehouse_id && $distributor->warehouse_id === $user->warehouse_id);
             if (! $match) {
                 abort(403, __('Anda tidak memiliki akses ke data ini.'));

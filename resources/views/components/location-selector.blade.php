@@ -2,6 +2,7 @@
     'branches' => collect(),
     'warehouses' => collect(),
     'canChoose' => true,
+    'allowSemuaCabang' => false,
     'defaultPlacementType' => null,
     'defaultBranchId' => null,
     'defaultWarehouseId' => null,
@@ -30,11 +31,18 @@
                     class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
                 <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Gudang') }}</span>
             </label>
+            @if($allowSemuaCabang ?? false)
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="radio" name="placement_type" value="semua" x-model="locType"
+                    class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Semua Cabang & Gudang') }}</span>
+            </label>
+            @endif
         </div>
         <template x-if="locType === 'cabang'">
             <div class="mt-3">
                 <x-input-label for="branch_id" :value="__('Cabang')" />
-                <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" {{ $placementType === 'cabang' ? 'required' : '' }}>
+                <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" :required="locType === 'cabang'">
                     <option value="">{{ __('Pilih Cabang') }}</option>
                     @foreach ($branches as $b)
                         <option value="{{ $b->id }}" {{ $branchId == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
@@ -46,7 +54,7 @@
         <template x-if="locType === 'gudang'">
             <div class="mt-3">
                 <x-input-label for="warehouse_id" :value="__('Gudang')" />
-                <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" {{ $placementType === 'gudang' ? 'required' : '' }}>
+                <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" :required="locType === 'gudang'">
                     <option value="">{{ __('Pilih Gudang') }}</option>
                     @foreach ($warehouses as $w)
                         <option value="{{ $w->id }}" {{ $warehouseId == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
@@ -55,6 +63,13 @@
                 <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
             </div>
         </template>
+        @if($allowSemuaCabang ?? false)
+        <template x-if="locType === 'semua'">
+            <div class="mt-3">
+                <p class="text-sm text-slate-600">{{ __('Distributor ini akan tampil di dropdown seluruh cabang dan gudang.') }}</p>
+            </div>
+        </template>
+        @endif
         <script>
             document.addEventListener('DOMContentLoaded', function() {
                 const form = document.querySelector('form');
@@ -66,11 +81,11 @@
                     const whSelect = form.querySelector('select[name="warehouse_id"]');
                     if (branchSelect) {
                         branchSelect.required = val === 'cabang';
-                        if (val === 'gudang') branchSelect.value = '';
+                        if (val !== 'cabang') branchSelect.value = '';
                     }
                     if (whSelect) {
                         whSelect.required = val === 'gudang';
-                        if (val === 'cabang') whSelect.value = '';
+                        if (val !== 'gudang') whSelect.value = '';
                     }
                 }
                 locRadios.forEach(r => r.addEventListener('change', syncLocation));

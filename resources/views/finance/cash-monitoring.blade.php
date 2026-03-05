@@ -170,8 +170,11 @@
                         <p class="text-xs text-slate-500">{{ __('Cabang') }}</p>
                     </div>
                     <div class="p-6">
+                        @php
+                            $branchKeys = $branchKasKeys[$branch->id] ?? [];
+                        @endphp
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
-                            @forelse ($kasKeys as $key)
+                            @forelse ($branchKeys as $key)
                                 @php
                                     $amount = $totals[$key] ?? 0;
                                     $info = $kasLabels[$key] ?? ['label' => $key, 'subtitle' => null];
@@ -191,7 +194,7 @@
                                 </a>
                             @empty
                                 <div class="col-span-full text-center py-4 text-slate-500">
-                                    {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran.') }}
+                                    {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran untuk cabang ini.') }}
                                 </div>
                             @endforelse
                         </div>
@@ -235,8 +238,11 @@
                         <p class="text-xs text-slate-500">{{ __('Gudang') }}</p>
                     </div>
                     <div class="p-6">
+                        @php
+                            $warehouseKeys = $warehouseKasKeys[$warehouse->id] ?? [];
+                        @endphp
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
-                            @forelse ($kasKeys as $key)
+                            @forelse ($warehouseKeys as $key)
                                 @php
                                     $amount = $totals[$key] ?? 0;
                                     $info = $kasLabels[$key] ?? ['label' => $key, 'subtitle' => null];
@@ -256,7 +262,7 @@
                                 </a>
                             @empty
                                 <div class="col-span-full text-center py-4 text-slate-500">
-                                    {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran.') }}
+                                    {{ __('Belum ada metode pembayaran. Tambahkan di Data Master > Metode Pembayaran untuk gudang ini.') }}
                                 </div>
                             @endforelse
                         </div>

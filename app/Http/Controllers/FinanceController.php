@@ -400,9 +400,51 @@ class FinanceController extends Controller
             return strcmp($a, $b);
         });
 
+        // Metode pembayaran per cabang/gudang: setiap card hanya menampilkan PM yang sesuai lokasinya
+        $branchKasKeys = [];
+        $warehouseKasKeys = [];
+        $pmToKey = function ($pm) {
+            $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? '')));
+            $bank = trim((string) ($pm->nama_bank ?? ''));
+            $rek = trim((string) ($pm->no_rekening ?? ''));
+            if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
+                return 'Tunai';
+            }
+            return $bank . '|' . $rek;
+        };
+        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('branch_id')->get(['branch_id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']) as $pm) {
+            $key = $pmToKey($pm);
+            $bid = $pm->branch_id;
+            if (! isset($branchKasKeys[$bid])) {
+                $branchKasKeys[$bid] = [];
+            }
+            $branchKasKeys[$bid][$key] = true;
+        }
+        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('warehouse_id')->get(['warehouse_id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']) as $pm) {
+            $key = $pmToKey($pm);
+            $wid = $pm->warehouse_id;
+            if (! isset($warehouseKasKeys[$wid])) {
+                $warehouseKasKeys[$wid] = [];
+            }
+            $warehouseKasKeys[$wid][$key] = true;
+        }
+        foreach ($branchKasKeys as $bid => $keys) {
+            $branchKasKeys[$bid] = array_keys($keys);
+            usort($branchKasKeys[$bid], fn ($a, $b) => ($a === 'Tunai' ? -1 : ($b === 'Tunai' ? 1 : strcmp($a, $b))));
+        }
+        foreach ($warehouseKasKeys as $wid => $keys) {
+            $warehouseKasKeys[$wid] = array_keys($keys);
+            usort($warehouseKasKeys[$wid], fn ($a, $b) => ($a === 'Tunai' ? -1 : ($b === 'Tunai' ? 1 : strcmp($a, $b))));
+        }
+
         // Label per key untuk tampilan: nama bank + nomor rekening
+        $allKeysForLabels = array_unique(array_merge(
+            $kasKeys,
+            ...array_values($branchKasKeys),
+            ...array_values($warehouseKasKeys)
+        ));
         $kasLabels = [];
-        foreach ($kasKeys as $key) {
+        foreach ($allKeysForLabels as $key) {
             if ($key === 'Tunai') {
                 $kasLabels[$key] = ['label' => 'Tunai', 'subtitle' => null];
             } else {
@@ -504,6 +546,8 @@ class FinanceController extends Controller
             'warehouseTotals' => $warehouseTotals,
             'warehouseExpense' => $warehouseExpense,
             'kasKeys' => $kasKeys,
+            'branchKasKeys' => $branchKasKeys,
+            'warehouseKasKeys' => $warehouseKasKeys,
             'kasLabels' => $kasLabels,
             'overallCash' => $overallCash,
             'overallTotals' => $overallTotals,
