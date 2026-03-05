@@ -45,15 +45,21 @@
                                     </button>
                                     <div id="product_dropdown" class="hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                                         <div class="p-2 border-b border-gray-100">
-                                            <input type="text" id="product_search" placeholder="{{ __('Cari SKU, brand, atau series...') }}"
+                                            <input type="text" id="product_search" placeholder="{{ __('Cari SKU, brand, series, atau warna...') }}"
                                                 class="w-full rounded-md border border-gray-300 py-2 px-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:ring-indigo-500">
                                         </div>
                                         <div id="product_dropdown_list" class="max-h-60 overflow-auto py-1">
                                             @foreach ($products as $product)
-                                                <div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="{{ $product->id }}" data-brand="{{ $product->brand ?? '' }}" data-series="{{ $product->series ?? '' }}" data-sku="{{ $product->sku ?? '' }}">
-                                                    <span class="text-xs text-slate-500">{{ $product->sku }}</span>
-                                                    <span class="text-slate-800"> {{ $product->brand }} {{ $product->series }}</span>
-                                                    <span class="text-slate-500"> ({{ $product->in_stock_count ?? 0 }} unit)</span>
+                                                <div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="{{ $product->id }}" data-brand="{{ $product->brand ?? '' }}" data-series="{{ $product->series ?? '' }}" data-sku="{{ $product->sku ?? '' }}" data-color="{{ $product->color ?? '' }}">
+                                                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                                        <span class="text-xs text-slate-500">{{ $product->sku }}</span>
+                                                        <span class="text-slate-800">{{ $product->brand }} {{ $product->series }}</span>
+                                                        @if($product->color)
+                                                            <span class="text-xs text-slate-600">• {{ $product->color }}</span>
+                                                        @endif
+                                                        <span class="text-emerald-600 font-medium ml-auto">{{ number_format($product->selling_price ?? 0, 0, ',', '.') }}</span>
+                                                    </div>
+                                                    <span class="text-xs text-slate-500">({{ $product->in_stock_count ?? 0 }} unit)</span>
                                                 </div>
                                             @endforeach
                                         </div>
@@ -396,9 +402,10 @@
                 const optBrand = opt.getAttribute('data-brand') || '';
                 const optSeries = opt.getAttribute('data-series') || '';
                 const optSku = opt.getAttribute('data-sku') || '';
+                const optColor = opt.getAttribute('data-color') || '';
                 const matchBrand = brandVal === '' || optBrand === brandVal;
                 const matchSeries = seriesVal === '' || optSeries === seriesVal;
-                const searchStr = `${optSku} ${optBrand} ${optSeries}`.toLowerCase();
+                const searchStr = `${optSku} ${optBrand} ${optSeries} ${optColor}`.toLowerCase();
                 const matchSearch = !searchVal || searchStr.includes(searchVal);
                 const visible = matchBrand && matchSeries && matchSearch;
                 opt.classList.toggle('hidden', !visible);
