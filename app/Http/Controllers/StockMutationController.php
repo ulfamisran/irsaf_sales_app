@@ -161,20 +161,22 @@ class StockMutationController extends Controller
 
         $products = Product::withCount([
             'units as in_stock_count' => fn ($q) => $q->where('status', ProductUnit::STATUS_IN_STOCK),
-        ])->having('in_stock_count', '>', 0)->orderBy('sku')->get();
+        ])->having('in_stock_count', '>', 0)->orderBy('brand')->orderBy('series')->orderBy('sku')->get();
 
         $productsForDropdown = $products->map(fn ($p) => [
             'id' => $p->id,
             'sku' => $p->sku,
-            'brand' => $p->brand,
+            'brand' => $p->brand ?? '',
             'series' => $p->series ?? '',
             'in_stock_count' => $p->in_stock_count ?? 0,
         ])->values();
 
+        $brands = $products->pluck('brand')->unique()->filter()->sort()->values();
+
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        return view('stock-mutations.create', compact('products', 'productsForDropdown', 'warehouses', 'branches'));
+        return view('stock-mutations.create', compact('products', 'productsForDropdown', 'brands', 'warehouses', 'branches'));
     }
 
     public function availableSerials(Request $request): JsonResponse
