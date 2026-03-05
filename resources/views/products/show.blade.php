@@ -23,6 +23,22 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
+        @if (session('error'))
+            <div class="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-800 flex items-center gap-3">
+                <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+                {{ session('error') }}
+            </div>
+        @endif
+        @if (session('success'))
+            <div class="mb-6 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-800 flex items-center gap-3">
+                <svg class="w-5 h-5 text-emerald-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                {{ session('success') }}
+            </div>
+        @endif
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -114,6 +130,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sold') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -139,10 +156,27 @@
                                 <td class="px-4 py-3">{{ $u->received_date?->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $u->sold_at?->format('d/m/Y H:i') }}</td>
                                 <td class="px-4 py-3">{{ $u->user?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">
+                                    @php
+                                        $canDeleteUnit = $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK
+                                            && (auth()->user()?->isSuperAdmin()
+                                                || auth()->user()?->isAdminPusat()
+                                                || (auth()->user()?->hasRole(\App\Models\Role::ADMIN_CABANG) && auth()->user()?->branch_id && $u->location_type === \App\Models\Stock::LOCATION_BRANCH && (int) $u->location_id === (int) auth()->user()->branch_id));
+                                    @endphp
+                                    @if ($canDeleteUnit)
+                                        <form action="{{ route('products.units.destroy', [$product, $u]) }}" method="POST" class="inline">
+                                            @csrf
+                                            @method('DELETE')
+                                            <x-icon-btn-delete :label="__('Hapus')" />
+                                        </form>
+                                    @else
+                                        <span class="text-slate-400 text-sm">-</span>
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada unit/serial untuk produk ini.') }}</td>
+                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada unit/serial untuk produk ini.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

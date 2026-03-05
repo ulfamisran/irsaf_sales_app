@@ -153,6 +153,9 @@ Route::middleware('auth')->group(function () {
     Route::patch('products/{product}/toggle-active', [ProductController::class, 'toggleActive'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('products.toggle-active');
+    Route::delete('products/{product}/units/{unit}', [ProductController::class, 'destroyUnit'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('products.units.destroy');
     Route::resource('products', ProductController::class)
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
     Route::resource('customers', CustomerController::class)

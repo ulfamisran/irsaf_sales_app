@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Role;
+use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Repositories\CategoryRepository;
@@ -263,5 +264,36 @@ class ProductController extends Controller
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
         return view('products.show', compact('product', 'units', 'warehouses', 'branches'));
+    }
+
+    /**
+     * Hapus product unit yang belum terjual (status in_stock).
+     */
+    public function destroyUnit(Request $request, Product $product, ProductUnit $unit): RedirectResponse
+    {
+        if ($unit->product_id !== (int) $product->id) {
+            abort(404, __('Unit tidak termasuk dalam produk ini.'));
+        }
+
+        if ($unit->status !== ProductUnit::STATUS_IN_STOCK) {
+            return redirect()->route('products.show', $product)
+                ->with('error', __('Hanya unit dengan status In Stock yang dapat dihapus.'));
+        }
+
+        $user = $request->user();
+        if (! $user->isSuperAdmin() && ! $user->isAdminPusat()) {
+            if ($user->hasRole(Role::ADMIN_CABANG) && $user->branch_id) {
+                if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+                    abort(403, __('Anda tidak dapat menghapus unit di cabang lain.'));
+                }
+            } else {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        $serialNumber = $unit->serial_number;
+        $unit->delete();
+
+        return redirect()->back()->with('success', __('Product unit :serial berhasil dihapus.', ['serial' => $serialNumber]));
     }
 }
