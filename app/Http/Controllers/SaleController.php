@@ -163,6 +163,8 @@ class SaleController extends Controller
 
             $products = Product::with('category')
                 ->whereIn('id', $productIds)
+                ->orderBy('brand')
+                ->orderBy('series')
                 ->orderBy('sku')
                 ->get();
         }
@@ -170,9 +172,10 @@ class SaleController extends Controller
         $productsForJs = $products->map(function ($p) {
             return [
                 'id' => $p->id,
-                'sku' => $p->sku,
-                'brand' => $p->brand,
-                'series' => $p->series,
+                'sku' => $p->sku ?? '',
+                'brand' => $p->brand ?? '',
+                'series' => $p->series ?? '',
+                'color' => $p->color ?? '',
                 'price' => $p->selling_price,
             ];
         })->values();
@@ -525,17 +528,20 @@ class SaleController extends Controller
 
         $products = Product::query()
             ->whereIn('id', $productIds)
+            ->orderBy('brand')
+            ->orderBy('series')
             ->orderBy('sku')
             ->limit(500)
-            ->get(['id', 'sku', 'brand', 'series', 'selling_price']);
+            ->get(['id', 'sku', 'brand', 'series', 'color', 'selling_price']);
 
         return response()->json([
             'products' => $products->map(function ($p) {
                 return [
                     'id' => $p->id,
-                    'sku' => $p->sku,
-                    'brand' => $p->brand,
-                    'series' => $p->series,
+                    'sku' => $p->sku ?? '',
+                    'brand' => $p->brand ?? '',
+                    'series' => $p->series ?? '',
+                    'color' => $p->color ?? '',
                     'price' => $p->selling_price,
                 ];
             })->values(),

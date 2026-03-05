@@ -86,11 +86,34 @@
                                 <div id="sale-items" class="space-y-4">
                                     <div class="sale-item relative rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                                         <div class="space-y-4">
-                                            <div>
-                                                <x-input-label :value="__('Produk')" class="mb-1" />
-                                                <select name="items[0][product_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 product-select" required>
-                                                    <option value="">{{ __('Select Product') }}</option>
-                                                </select>
+                                            <div class="product-selector-block">
+                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                                    <div>
+                                                        <x-input-label :value="__('Brand')" class="mb-1" />
+                                                        <select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select>
+                                                    </div>
+                                                    <div>
+                                                        <x-input-label :value="__('Series')" class="mb-1" />
+                                                        <select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <x-input-label :value="__('Produk')" class="mb-1" />
+                                                    <input type="hidden" name="items[0][product_id]" class="product-id-input" value="" required>
+                                                    <div class="product-dropdown-wrapper relative">
+                                                        <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                            <span class="product-select-label text-slate-500">{{ __('Pilih Produk') }}</span>
+                                                            <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                                                        </button>
+                                                        <div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                                            <div class="p-2 border-b border-gray-100">
+                                                                <input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="{{ __('Cari SKU, brand, series, atau warna...') }}">
+                                                            </div>
+                                                            <div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>
+                                                            <div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">{{ __('Tidak ada produk yang cocok.') }}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div>
                                                 <x-input-label :value="__('Nomor Serial')" class="mb-1" />
@@ -217,6 +240,27 @@
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
         const categories = @json($categories ?? []);
+        @php
+            $i18n = [
+                'brand' => __('Brand'),
+                'series' => __('Series'),
+                'produk' => __('Produk'),
+                'pilihProduk' => __('Pilih Produk'),
+                'cariProduk' => __('Cari SKU, brand, series, atau warna...'),
+                'tidakAdaProduk' => __('Tidak ada produk yang cocok.'),
+                'nomorSerial' => __('Nomor Serial'),
+                'searchSerial' => __('Search serial...'),
+                'scanSerial' => __('Scan barcode/QR serial + Enter'),
+                'daftarSerial' => __('Daftar serial dipilih'),
+                'pilihSerialInfo' => __('Pilih serial jika stok serial-based.'),
+                'quantity' => __('Quantity'),
+                'hargaJual' => __('Harga Jual'),
+                'hapusItem' => __('Hapus Item'),
+                'pilihCabangDulu' => __('Pilih cabang dulu'),
+                'pilihPelanggan' => __('Pilih Pelanggan (atau isi pelanggan baru)'),
+            ];
+        @endphp
+        const i18n = @json($i18n);
         const laptopCategoryId = (() => {
             const byCode = (categories || []).find(c => String(c.code || '').toUpperCase() === 'LAP');
             if (byCode?.id) return byCode.id;
@@ -233,20 +277,56 @@
                 : (type === 'ok' ? 'text-emerald-600' : 'text-slate-500'));
         }
 
-        function productOptionsHtml() {
-            return '<option value="">Select Product</option>' + products.map(p =>
-                '<option value="' + p.id + '" data-price="' + p.price + '">' +
-                p.sku + ' - ' + p.brand + ' ' + (p.series || '') + ' (' + Number(p.price).toLocaleString('id-ID') + ')</option>'
-            ).join('');
+        function productOptionDivHtml(p) {
+            const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const sku = esc(p.sku);
+            const brand = esc(p.brand);
+            const series = esc(p.series || '');
+            const color = esc(p.color || '');
+            const price = Number(p.price || 0).toLocaleString('id-ID');
+            let colorPart = '';
+            if (color) colorPart = ' <span class="text-slate-400">-</span> <span class="text-xs text-slate-600">' + color + '</span>';
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series || '') + '" data-sku="' + esc(p.sku) + '" data-color="' + esc(p.color || '') + '" data-price="' + (p.price || 0) + '">' +
+                '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">' +
+                '<span class="text-xs text-slate-500">' + sku + '</span>' +
+                '<span class="text-slate-400">-</span>' +
+                '<span class="text-slate-800">' + brand + ' ' + series + '</span>' + colorPart +
+                '<span class="text-slate-400">-</span>' +
+                '<span class="text-emerald-600 font-medium ml-auto">' + price + '</span>' +
+                '</div></div>';
+        }
+
+        function productSelectorHtml(itemIndex) {
+            return '<div class="product-selector-block">' +
+                '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">' +
+                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.brand + '</label>' +
+                '<select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
+                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.series + '</label>' +
+                '<select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
+                '</div>' +
+                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.produk + '</label>' +
+                '<input type="hidden" name="items[' + itemIndex + '][product_id]" class="product-id-input" value="" required>' +
+                '<div class="product-dropdown-wrapper relative">' +
+                '<button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">' +
+                '<span class="product-select-label text-slate-500">' + i18n.pilihProduk + '</span>' +
+                '<svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>' +
+                '</button>' +
+                '<div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">' +
+                '<div class="p-2 border-b border-gray-100">' +
+                '<input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="' + i18n.cariProduk + '">' +
+                '</div>' +
+                '<div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>' +
+                '<div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">' + i18n.tidakAdaProduk + '</div>' +
+                '</div></div></div></div>';
         }
 
         function createSerialSelectHtml(name) {
-            return '<label class="block text-sm font-medium text-gray-700 mb-1">' + @json(__('Nomor Serial')) + '</label>' +
-                '<input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + @json(__('Search serial...')) + '" disabled>' +
-                '<input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + @json(__('Scan barcode/QR serial + Enter')) + '" disabled>' +
-                '<label class="block text-xs font-medium text-gray-600 mb-1">' + @json(__('Daftar serial dipilih')) + '</label>' +
+            return '<label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.nomorSerial + '</label>' +
+                '<input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + i18n.searchSerial + '" disabled>' +
+                '<input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + i18n.scanSerial + '" disabled>' +
+                '<label class="block text-xs font-medium text-gray-600 mb-1">' + i18n.daftarSerial + '</label>' +
                 '<select name="' + name + '" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 serial-select text-sm" multiple size="3" disabled></select>' +
-                '<p class="mt-1 text-xs text-gray-500">' + @json(__('Pilih serial jika stok serial-based.')) + '</p>';
+                '<p class="mt-1 text-xs text-gray-500">' + i18n.pilihSerialInfo + '</p>';
         }
 
         let itemIndex = 1;
@@ -257,15 +337,16 @@
             div.className = 'sale-item relative rounded-lg border border-slate-200 bg-slate-50/50 p-4';
             div.innerHTML =
                 '<div class="space-y-4">' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + @json(__('Produk')) + '</label><select name="items[' + itemIndex + '][product_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 product-select">' + productOptionsHtml() + '</select></div>' +
+                productSelectorHtml(itemIndex) +
                 '<div>' + createSerialSelectHtml('items[' + itemIndex + '][serial_numbers][]') + '</div>' +
                 '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + @json(__('Quantity')) + '</label><input type="number" name="items[' + itemIndex + '][quantity]" min="1" value="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required></div>' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + @json(__('Harga Jual')) + '</label><input type="text" name="items[' + itemIndex + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Harga" required></div>' +
+                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.quantity + '</label><input type="number" name="items[' + itemIndex + '][quantity]" min="1" value="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required></div>' +
+                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.hargaJual + '</label><input type="text" name="items[' + itemIndex + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Harga" required></div>' +
                 '</div>' +
                 '</div>' +
-                '<div class="absolute top-3 right-3"><button type="button" class="remove-item inline-flex items-center px-3 py-2 rounded-md text-sm bg-red-100 text-red-700 hover:bg-red-200">' + @json(__('Hapus Item')) + '</button></div>';
+                '<div class="absolute top-3 right-3"><button type="button" class="remove-item inline-flex items-center px-3 py-2 rounded-md text-sm bg-red-100 text-red-700 hover:bg-red-200">' + i18n.hapusItem + '</button></div>';
             container.appendChild(div);
+            populateRowProductDropdown(div);
             itemIndex++;
             toggleRemoveButtons();
         });
@@ -279,22 +360,115 @@
 
         const rowSerials = new WeakMap(); // row -> full serial array
 
-        function updateProductSelectOptions(selectEl) {
-            if (!selectEl) return;
-            const old = selectEl.value;
-            selectEl.innerHTML = productOptionsHtml();
-            if (old && Array.from(selectEl.options).some(o => o.value === old)) {
-                selectEl.value = old;
-            } else {
-                selectEl.value = '';
-            }
+        function getBrandsFromProducts() {
+            const set = new Set();
+            products.forEach(p => { if (p.brand) set.add(p.brand); });
+            return Array.from(set).sort();
+        }
+        function getSeriesFromProducts(brandVal) {
+            const set = new Set();
+            products.forEach(p => {
+                if ((!brandVal || (p.brand || '') === brandVal) && p.series) set.add(p.series);
+            });
+            return Array.from(set).sort();
+        }
+        function updateRowSeriesFilter(row) {
+            const brandVal = row.querySelector('.brand-filter')?.value || '';
+            const seriesSel = row.querySelector('.series-filter');
+            if (!seriesSel) return;
+            const list = getSeriesFromProducts(brandVal);
+            seriesSel.innerHTML = '<option value="">Semua Series</option>' + list.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+        }
+        function filterRowProductOptions(row) {
+            const brandVal = row.querySelector('.brand-filter')?.value || '';
+            const seriesVal = row.querySelector('.series-filter')?.value || '';
+            const searchVal = (row.querySelector('.product-search')?.value || '').trim().toLowerCase();
+            const options = row.querySelectorAll('.product-option');
+            const listEl = row.querySelector('.product-dropdown-list');
+            const emptyEl = row.querySelector('.product-dropdown-empty');
+            let visibleCount = 0;
+            let firstId = '';
+            options.forEach(opt => {
+                const matchBrand = !brandVal || (opt.getAttribute('data-brand') || '') === brandVal;
+                const matchSeries = !seriesVal || (opt.getAttribute('data-series') || '') === seriesVal;
+                const searchStr = ((opt.getAttribute('data-sku') || '') + ' ' + (opt.getAttribute('data-brand') || '') + ' ' + (opt.getAttribute('data-series') || '') + ' ' + (opt.getAttribute('data-color') || '')).toLowerCase();
+                const matchSearch = !searchVal || searchStr.includes(searchVal);
+                const visible = matchBrand && matchSeries && matchSearch;
+                opt.classList.toggle('hidden', !visible);
+                if (visible) { visibleCount++; if (!firstId) firstId = opt.getAttribute('data-id'); }
+            });
+            if (listEl) listEl.classList.toggle('hidden', visibleCount === 0);
+            if (emptyEl) emptyEl.classList.toggle('hidden', visibleCount > 0);
+        }
+        function populateRowProductDropdown(row) {
+            const listEl = row.querySelector('.product-dropdown-list');
+            if (!listEl) return;
+            listEl.innerHTML = products.map(p => productOptionDivHtml(p)).join('');
+            const brandSel = row.querySelector('.brand-filter');
+            const brands = getBrandsFromProducts();
+            if (brandSel) brandSel.innerHTML = '<option value="">Semua Brand</option>' + brands.map(b => '<option value="' + b + '">' + b + '</option>').join('');
+            updateRowSeriesFilter(row);
+            filterRowProductOptions(row);
+            attachProductOptionHandlers(row);
+        }
+        function attachProductOptionHandlers(row) {
+            const trigger = row.querySelector('.product-select-trigger');
+            const dropdown = row.querySelector('.product-dropdown');
+            const searchInput = row.querySelector('.product-search');
+            const productIdInput = row.querySelector('.product-id-input');
+            if (!trigger || !dropdown) return;
+            dropdown.addEventListener('click', e => e.stopPropagation());
+            trigger.onclick = (e) => {
+                e.stopPropagation();
+                const wasHidden = dropdown.classList.contains('hidden');
+                document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden'));
+                dropdown.classList.toggle('hidden');
+                if (wasHidden && searchInput) { searchInput.focus(); searchInput.value = ''; filterRowProductOptions(row); }
+            };
+            if (searchInput) searchInput.oninput = () => filterRowProductOptions(row);
+            if (searchInput) searchInput.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Escape') dropdown.classList.add('hidden'); };
+            row.querySelectorAll('.product-option').forEach(opt => {
+                opt.onclick = (e) => {
+                    e.stopPropagation();
+                    const id = opt.getAttribute('data-id');
+                    const price = opt.getAttribute('data-price');
+                    if (productIdInput) { productIdInput.value = id; productIdInput.dispatchEvent(new Event('change', { bubbles: true })); }
+                    const label = row.querySelector('.product-select-label');
+                    if (label) {
+                        const p = products.find(x => String(x.id) === String(id));
+                        if (p) label.innerHTML = '<span class="text-xs text-slate-500">' + (p.sku || '') + '</span> <span class="text-slate-800">' + (p.brand || '') + ' ' + (p.series || '') + '</span>';
+                        label.classList.remove('text-slate-500');
+                    }
+                    const priceInput = row.querySelector('input[name*="[price]"]');
+                    if (priceInput && price) {
+                        priceInput.value = price;
+                        if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+                        if (typeof refreshTotals === 'function') refreshTotals();
+                    }
+                    dropdown.classList.add('hidden');
+                    loadSerialsForRow(row);
+                };
+            });
+            const brandEl = row.querySelector('.brand-filter');
+            const seriesEl = row.querySelector('.series-filter');
+            if (brandEl) brandEl.onchange = () => { updateRowSeriesFilter(row); filterRowProductOptions(row); };
+            if (seriesEl) seriesEl.onchange = () => filterRowProductOptions(row);
+        }
+        document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+        document.querySelectorAll('.sale-item').forEach(row => row.querySelector('.product-dropdown')?.addEventListener('click', e => e.stopPropagation()));
+
+        function updateAllProductSelectors() {
+            document.querySelectorAll('.sale-item').forEach(row => {
+                const block = row.querySelector('.product-selector-block');
+                if (block) populateRowProductDropdown(row);
+            });
         }
 
         async function loadProductsForBranch() {
             const branchId = document.getElementById('branch_id')?.value;
             if (!branchId) {
                 products = [];
-                document.querySelectorAll('.product-select').forEach(sel => updateProductSelectOptions(sel));
+                updateAllProductSelectors();
                 setProductsStatus('');
                 return;
             }
@@ -310,25 +484,28 @@
                 const data = await res.json();
                 products = Array.isArray(data.products) ? data.products : [];
 
-                // Update all product selects immediately (more robust)
-                document.querySelectorAll('.product-select').forEach(sel => updateProductSelectOptions(sel));
+                updateAllProductSelectors();
                 setProductsStatus(
                     products.length > 0 ? `Produk tersedia: ${products.length}` : 'Tidak ada produk in stock untuk cabang ini.',
                     products.length > 0 ? 'ok' : 'info'
                 );
 
                 document.querySelectorAll('.sale-item').forEach(row => {
-                    const productSelect = row.querySelector('.product-select');
-                    const before = productSelect?.value;
+                    const productIdInput = row.querySelector('.product-id-input');
+                    const before = productIdInput?.value;
 
                     // If selected product is no longer available, clear serials and qty readonly state.
-                    if (before && productSelect && productSelect.value !== before) {
+                    const stillAvailable = before && products.some(p => String(p.id) === String(before));
+                    if (before && !stillAvailable) {
                         const serialSelect = row.querySelector('.serial-select');
                         const searchInput = row.querySelector('.serial-search');
                         const scanInput = row.querySelector('.serial-scan');
                         if (serialSelect) serialSelect.innerHTML = '';
                         if (searchInput) searchInput.value = '';
                         if (scanInput) scanInput.value = '';
+                        if (productIdInput) productIdInput.value = '';
+                        const label = row.querySelector('.product-select-label');
+                        if (label) { label.textContent = 'Pilih Produk'; label.classList.add('text-slate-500'); }
                         rowSerials.set(row, []);
                         setSerialInputsEnabled(row, false);
                         syncQtyFromSerials(row);
@@ -371,11 +548,11 @@
 
         async function loadSerialsForRow(row) {
             const branchId = document.getElementById('branch_id')?.value;
-            const productSelect = row.querySelector('.product-select');
+            const productIdInput = row.querySelector('.product-id-input');
             const serialSelect = row.querySelector('.serial-select');
             if (!serialSelect) return;
 
-            const productId = productSelect?.value;
+            const productId = productIdInput?.value;
             if (!branchId || !productId) {
                 rowSerials.set(row, []);
                 serialSelect.innerHTML = '';
@@ -426,7 +603,7 @@
             if (!branchId) {
                 paymentMethods = [];
                 const custSel = document.getElementById('customer_id');
-                if (custSel) { custSel.innerHTML = '<option value="">' + @json(__('Pilih cabang dulu')) + '</option>'; }
+                if (custSel) { custSel.innerHTML = '<option value="">' + i18n.pilihCabangDulu + '</option>'; }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
                 return;
             }
@@ -441,7 +618,7 @@
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
-                    custSel.innerHTML = '<option value="">' + @json(__('Pilih Pelanggan (atau isi pelanggan baru)')) + '</option>' +
+                    custSel.innerHTML = '<option value="">' + i18n.pilihPelanggan + '</option>' +
                         customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
                 }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
@@ -464,11 +641,7 @@
             const row = e.target.closest('.sale-item');
             if (!row) return;
 
-            if (e.target.classList.contains('product-select')) {
-                const opt = e.target.options[e.target.selectedIndex];
-                const price = opt?.dataset?.price;
-                const priceInput = row.querySelector('input[name*="[price]"]');
-                if (price && priceInput) priceInput.value = price;
+            if (e.target.classList.contains('product-id-input')) {
                 loadSerialsForRow(row);
             }
 
