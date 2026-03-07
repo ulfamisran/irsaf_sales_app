@@ -90,19 +90,15 @@ class IncomingGoodsController extends Controller
             abort(403, __('User branch not set.'));
         }
 
-        $productsQuery = Product::orderBy('sku');
         $selectedProduct = null;
         if ($request->filled('product_id')) {
-            $selectedProduct = (clone $productsQuery)->whereKey($request->product_id)->first();
+            $selectedProduct = Product::whereKey($request->product_id)->first();
             if (! $selectedProduct) {
                 abort(404, __('Product not found.'));
             }
             if (! $selectedProduct->is_active) {
                 abort(403, __('Produk nonaktif tidak bisa ditambah unit.'));
             }
-            $products = collect([$selectedProduct]);
-        } else {
-            $products = $productsQuery->get();
         }
         $warehouses = Warehouse::orderBy('name')->get();
         $branches = $isBranchUser ? collect() : Branch::orderBy('name')->get();
@@ -123,8 +119,48 @@ class IncomingGoodsController extends Controller
             }
         }
         $branch = $isBranchUser ? Branch::find($user->branch_id) : null;
+        $categories = Category::orderBy('name')->get(['id', 'name']);
 
-        return view('incoming-goods.create', compact('products', 'warehouses', 'branches', 'isBranchUser', 'branch', 'selectedProduct', 'selectedWarehouse', 'selectedBranch'));
+        return view('incoming-goods.create', compact('warehouses', 'branches', 'categories', 'isBranchUser', 'branch', 'selectedProduct', 'selectedWarehouse', 'selectedBranch'));
+    }
+
+    public function availableProducts(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+
+        $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : $request->input('location_type');
+        $locationId = $isBranchUser ? (int) $user->branch_id : (int) $request->input('location_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->category_id : null;
+
+        if (! $locationType || ! $locationId) {
+            return response()->json(['products' => []]);
+        }
+
+        $locType = $locationType === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
+
+        $query = Product::query()
+            ->where('is_active', true)
+            ->where('location_type', $locType)
+            ->where('location_id', $locationId)
+            ->orderBy('brand')
+            ->orderBy('series')
+            ->orderBy('sku');
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $products = $query->limit(500)->get(['id', 'sku', 'brand', 'series', 'category_id']);
+
+        return response()->json([
+            'products' => $products->map(fn ($p) => [
+                'id' => $p->id,
+                'sku' => $p->sku ?? '',
+                'brand' => $p->brand ?? '',
+                'series' => $p->series ?? '',
+            ])->values(),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse

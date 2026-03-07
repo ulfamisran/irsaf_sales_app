@@ -41,6 +41,10 @@ class ProductRepository
             $query->where('category_id', $filters['category_id']);
         }
 
+        if (isset($filters['status']) && $filters['status'] !== '') {
+            $query->where('is_active', (bool) $filters['status']);
+        }
+
         if (! empty($filters['location_type']) && ! empty($filters['location_id'])) {
             $query->where('location_type', $filters['location_type'])
                 ->where('location_id', (int) $filters['location_id']);

@@ -527,6 +527,7 @@ class SaleController extends Controller
             ->values();
 
         $products = Product::query()
+            ->where('is_active', true)
             ->whereIn('id', $productIds)
             ->orderBy('brand')
             ->orderBy('series')

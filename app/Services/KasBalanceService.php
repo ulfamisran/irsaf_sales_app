@@ -20,6 +20,15 @@ class KasBalanceService
     }
 
     /**
+     * Saldo per payment_method_id untuk suatu gudang.
+     * Return: [payment_method_id => saldo]
+     */
+    public function getSaldoPerPaymentMethodForWarehouse(int $warehouseId): array
+    {
+        return $this->getSaldoPerPaymentMethodForLocation('warehouse', $warehouseId);
+    }
+
+    /**
      * Saldo untuk (branch_id, payment_method_id).
      */
     public function getSaldo(int $branchId, int $paymentMethodId): float

@@ -1,0 +1,534 @@
+<x-app-layout>
+    <x-slot name="title">{{ __('Catat Pembelian') }}</x-slot>
+    <x-slot name="header">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            {{ __('Catat Pembelian') }}
+        </h2>
+    </x-slot>
+
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            @if (session('error'))
+                <div class="mb-4 rounded-md bg-red-50 p-4 text-red-800">{{ session('error') }}</div>
+            @endif
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6">
+                    <form method="POST" action="{{ route('purchases.store') }}" id="purchase-form">
+                        @csrf
+                        <div class="space-y-6">
+                            {{-- Lokasi --}}
+                            <div x-data="{ locationType: '{{ old('location_type', $defaultLocationType) }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
+                                <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
+                                <div class="mt-2 flex gap-6">
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="location_type" value="warehouse" x-model="locationType"
+                                            {{ $isWarehouseUser && !$isBranchUser ? 'checked' : '' }}
+                                            {{ $isBranchUser ? 'disabled' : '' }}
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">Gudang</span>
+                                    </label>
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="radio" name="location_type" value="branch" x-model="locationType"
+                                            {{ $isBranchUser ? 'checked' : '' }}
+                                            {{ $isWarehouseUser && !$isBranchUser ? 'disabled' : '' }}
+                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">Cabang</span>
+                                    </label>
+                                </div>
+                                <div x-show="locationType === 'warehouse'" x-cloak x-transition class="mt-3">
+                                    <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                                    <select id="warehouse_id" name="warehouse_id"
+                                        class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                        :required="locationType === 'warehouse'" :disabled="locationType !== 'warehouse'"
+                                        @change="window.loadPurchaseDistributors?.()">
+                                        <option value="">Pilih Gudang</option>
+                                        @foreach ($warehouses as $w)
+                                            <option value="{{ $w->id }}" {{ old('warehouse_id', $isWarehouseUser ? $defaultLocationId : null) == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div x-show="locationType === 'branch'" x-cloak x-transition class="mt-3">
+                                    <x-input-label for="branch_id" :value="__('Cabang')" />
+                                    <select id="branch_id" name="branch_id"
+                                        class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                        :required="locationType === 'branch'" :disabled="locationType !== 'branch'"
+                                        @change="window.loadPurchaseDistributors?.()">
+                                        <option value="">Pilih Cabang</option>
+                                        @foreach ($branches as $b)
+                                            <option value="{{ $b->id }}" {{ old('branch_id', $isBranchUser ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            {{-- No. Invoice --}}
+                            <div>
+                                <x-input-label for="invoice_number" :value="__('No. Invoice Pembelian')" />
+                                <x-text-input id="invoice_number" name="invoice_number" type="text" :value="old('invoice_number')" placeholder="Opsional - kosongkan untuk auto-generate (PBL-YYYYMMDD-0001)" />
+                                <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan untuk generate otomatis.') }}</p>
+                            </div>
+
+                            {{-- Distributor --}}
+                            <div>
+                                <x-input-label for="distributor_id" :value="__('Distributor')" />
+                                <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="">Pilih Distributor</option>
+                                    @foreach ($distributors as $d)
+                                        <option value="{{ $d->id }}" {{ old('distributor_id') == $d->id ? 'selected' : '' }}>{{ $d->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- Tanggal, Termin, Jatuh Tempo --}}
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <x-input-label for="purchase_date" :value="__('Tanggal Pembelian')" />
+                                    <x-text-input id="purchase_date" class="block mt-1 w-full" type="date" name="purchase_date" :value="old('purchase_date', date('Y-m-d'))" required />
+                                </div>
+                                <div>
+                                    <x-input-label for="termin" :value="__('Termin')" />
+                                    <x-text-input id="termin" class="block mt-1 w-full" type="text" name="termin" :value="old('termin')" placeholder="NET 30, Tunai, dll" />
+                                </div>
+                                <div>
+                                    <x-input-label for="due_date" :value="__('Jatuh Tempo')" />
+                                    <x-text-input id="due_date" class="block mt-1 w-full" type="date" name="due_date" :value="old('due_date')" />
+                                </div>
+                            </div>
+
+                            {{-- Deskripsi --}}
+                            <div>
+                                <x-input-label for="description" :value="__('Deskripsi Transaksi')" />
+                                <textarea id="description" name="description" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="2" placeholder="Catatan pembelian...">{{ old('description') }}</textarea>
+                            </div>
+
+                            {{-- Barang --}}
+                            <div>
+                                <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
+                                    <div class="flex-1 min-w-[200px] space-y-2">
+                                        <x-input-label :value="__('Barang yang Dibeli')" class="font-semibold" />
+                                        <p class="text-xs text-slate-500">{{ __('Pilih lokasi & kategori, lalu pilih produk. Filter merk & series untuk mempermudah pencarian.') }}</p>
+                                        <div class="flex flex-wrap gap-3 mt-2">
+                                            <div class="min-w-[160px]">
+                                                <x-input-label for="purchase_category_id" :value="__('Kategori Barang')" class="text-xs" />
+                                                <select id="purchase_category_id" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                    <option value="">{{ __('Semua Kategori') }}</option>
+                                                    @foreach ($categories as $cat)
+                                                        <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="button" id="refresh-products-btn" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-100 text-indigo-800 border border-indigo-200 text-sm font-medium hover:bg-indigo-200" title="{{ __('Muat ulang daftar produk tanpa kehilangan data yang sudah diinput') }}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                            {{ __('Muat Ulang Produk') }}
+                                        </button>
+                                        <a href="{{ route('products.create') }}" target="_blank" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-sm font-medium hover:bg-amber-200" title="{{ __('Buka di tab baru. Setelah menambah produk, klik Muat Ulang Produk.') }}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                            {{ __('Tambah Produk') }}
+                                        </a>
+                                    </div>
+                                </div>
+                                <div id="purchase-items" class="space-y-4">
+                                    <div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                        <div class="product-selector-block mb-3">
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                                <div>
+                                                    <x-input-label :value="__('Merk')" class="mb-1" />
+                                                    <select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                        <option value="">Semua Merk</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <x-input-label :value="__('Series')" class="mb-1" />
+                                                    <select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                        <option value="">Semua Series</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <x-input-label :value="__('Produk')" class="mb-1" />
+                                                <input type="hidden" name="items[0][product_id]" class="product-id-input" value="" required>
+                                                <div class="product-dropdown-wrapper relative">
+                                                    <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                        <span class="product-select-label text-slate-500">Pilih Produk</span>
+                                                        <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                                                    </button>
+                                                    <div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                                        <div class="p-2 border-b border-gray-100">
+                                                            <input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="Cari SKU, merk, series...">
+                                                        </div>
+                                                        <div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>
+                                                        <div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">Tidak ada produk yang cocok.</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3">
+                                            <div class="md:col-span-2">
+                                                <x-input-label :value="__('Qty')" />
+                                                <x-text-input type="number" name="items[0][quantity]" min="1" value="1" class="item-qty" required />
+                                            </div>
+                                            <div class="md:col-span-2">
+                                                <x-input-label :value="__('Harga Beli')" />
+                                                <x-text-input type="text" name="items[0][unit_price]" data-rupiah="true" class="item-price" placeholder="0" required />
+                                            </div>
+                                            <div class="md:col-span-8">
+                                                <x-input-label :value="__('Serial (1 per baris, opsional)')" />
+                                                <textarea name="items[0][serial_numbers_text]" class="item-serials block mt-1 w-full rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002"></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2 flex justify-end">
+                                            <button type="button" class="remove-item text-sm text-red-600 hover:text-red-800" style="display:none">Hapus</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="button" id="add-item" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium">+ Tambah Barang</button>
+                            </div>
+
+                            {{-- Total Pembelian --}}
+                            <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                                <p class="text-sm font-semibold text-slate-800">{{ __('Total Pembelian') }}</p>
+                                <p class="text-2xl font-bold text-indigo-600 mt-1" id="purchase-total-text">0</p>
+                            </div>
+
+                            {{-- Pembayaran (opsional - bisa kosong untuk termin) --}}
+                            <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                <x-input-label :value="__('Pembayaran (Opsional)')" class="font-semibold" />
+                                <p class="mt-1 mb-3 text-xs text-slate-500">{{ __('Bisa langsung lunasi atau bayar sebagian. Kosongkan jika akan bayar nanti sesuai termin. Setiap pembayaran tercatat dari sumber kas yang dipilih.') }}</p>
+                                <div id="payment-rows" class="space-y-2"></div>
+                                <button type="button" id="add-payment" class="mt-2 inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ Tambah Pembayaran</button>
+                                <div class="mt-3 space-y-1 text-sm text-slate-700">
+                                    <div class="flex justify-between">
+                                        <span>{{ __('Total Pembelian') }}:</span>
+                                        <span id="payment-section-total-pembelian" class="font-medium">0</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>{{ __('Total Pembayaran') }}:</span>
+                                        <span id="payment-sum-text" class="font-semibold">0</span>
+                                    </div>
+                                    <div class="flex justify-between pt-1 border-t border-slate-200">
+                                        <span class="font-medium">{{ __('Selisih') }}:</span>
+                                        <span id="payment-diff-text" class="font-bold">0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4">
+                                <x-primary-button>Simpan Pembelian</x-primary-button>
+                                <a href="{{ route('purchases.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">Batal</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @push('scripts')
+    @php
+        $paymentMethodsJson = $paymentMethods->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values();
+        $productsJson = $products->map(fn ($p) => ['id' => $p->id, 'sku' => $p->sku ?? '', 'brand' => $p->brand ?? '', 'series' => $p->series ?? '', 'purchase_price' => (float) ($p->purchase_price ?? 0)])->values();
+    @endphp
+    <script>
+        let paymentMethods = @json($paymentMethodsJson);
+        let products = @json($productsJson);
+        const formDataUrl = @json(route('purchases.form-data', [], false));
+        const baseUrl = '{{ url("") }}';
+
+        function productOptionHtml(p) {
+            const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const sku = esc(p.sku); const brand = esc(p.brand); const series = esc(p.series);
+            const price = Number(p.purchase_price || 0).toLocaleString('id-ID');
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series) + '" data-sku="' + esc(p.sku) + '" data-price="' + (p.purchase_price || 0) + '">' +
+                '<span class="text-xs text-slate-500">' + sku + '</span> <span class="text-slate-400">-</span> <span class="text-slate-800">' + brand + ' ' + series + '</span> <span class="text-emerald-600 font-medium ml-1">' + price + '</span></div>';
+        }
+        function getBrands() { const s = new Set(); products.forEach(p => { if (p.brand) s.add(p.brand); }); return Array.from(s).sort(); }
+        function getSeries(brandVal) { const s = new Set(); products.forEach(p => { if ((!brandVal || p.brand === brandVal) && p.series) s.add(p.series); }); return Array.from(s).sort(); }
+        function populateProductDropdown(row) {
+            const listEl = row.querySelector('.product-dropdown-list'); if (!listEl) return;
+            listEl.innerHTML = products.map(p => productOptionHtml(p)).join('');
+            const brandSel = row.querySelector('.brand-filter');
+            if (brandSel) brandSel.innerHTML = '<option value="">Semua Merk</option>' + getBrands().map(b => '<option value="' + b + '">' + b + '</option>').join('');
+            const seriesSel = row.querySelector('.series-filter');
+            if (seriesSel) { const seriesList = getSeries(brandSel?.value || ''); seriesSel.innerHTML = '<option value="">Semua Series</option>' + seriesList.map(s => '<option value="' + s + '">' + s + '</option>').join(''); }
+            filterProductOptions(row);
+            attachProductHandlers(row);
+        }
+        function filterProductOptions(row) {
+            const brandVal = row.querySelector('.brand-filter')?.value || '';
+            const seriesVal = row.querySelector('.series-filter')?.value || '';
+            const searchVal = (row.querySelector('.product-search')?.value || '').trim().toLowerCase();
+            const opts = row.querySelectorAll('.product-option');
+            const listEl = row.querySelector('.product-dropdown-list');
+            const emptyEl = row.querySelector('.product-dropdown-empty');
+            let visible = 0;
+            opts.forEach(o => {
+                const matchBrand = !brandVal || (o.getAttribute('data-brand') || '') === brandVal;
+                const matchSeries = !seriesVal || (o.getAttribute('data-series') || '') === seriesVal;
+                const searchStr = ((o.getAttribute('data-sku') || '') + ' ' + (o.getAttribute('data-brand') || '') + ' ' + (o.getAttribute('data-series') || '')).toLowerCase();
+                const matchSearch = !searchVal || searchStr.includes(searchVal);
+                const show = matchBrand && matchSeries && matchSearch;
+                o.classList.toggle('hidden', !show); if (show) visible++;
+            });
+            if (listEl) listEl.classList.toggle('hidden', visible === 0);
+            if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0);
+        }
+        function attachProductHandlers(row) {
+            const trigger = row.querySelector('.product-select-trigger'), dropdown = row.querySelector('.product-dropdown'), searchInput = row.querySelector('.product-search');
+            const productIdInput = row.querySelector('.product-id-input'), brandEl = row.querySelector('.brand-filter'), seriesEl = row.querySelector('.series-filter');
+            if (!trigger || !dropdown) return;
+            dropdown.onclick = e => e.stopPropagation();
+            trigger.onclick = (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden'));
+                const wasHidden = dropdown.classList.contains('hidden');
+                dropdown.classList.toggle('hidden');
+                if (wasHidden && searchInput) { searchInput.focus(); searchInput.value = ''; filterProductOptions(row); }
+            };
+            if (searchInput) { searchInput.oninput = () => filterProductOptions(row); searchInput.onkeydown = e => { if (e.key === 'Escape') dropdown.classList.add('hidden'); }; }
+            if (brandEl) brandEl.onchange = () => { const v = brandEl.value; seriesEl.innerHTML = '<option value="">Semua Series</option>' + getSeries(v).map(s => '<option value="' + s + '">' + s + '</option>').join(''); filterProductOptions(row); };
+            if (seriesEl) seriesEl.onchange = () => filterProductOptions(row);
+            row.querySelectorAll('.product-option').forEach(opt => {
+                opt.onclick = (e) => {
+                    e.stopPropagation();
+                    const id = opt.getAttribute('data-id'), price = opt.getAttribute('data-price');
+                    if (productIdInput) productIdInput.value = id;
+                    const label = row.querySelector('.product-select-label');
+                    if (label) { const p = products.find(x => String(x.id) === String(id)); if (p) label.innerHTML = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || ''); label.classList.remove('text-slate-500'); }
+                    const priceInp = row.querySelector('.item-price'); if (priceInp && price) { priceInp.value = new Intl.NumberFormat('id-ID').format(price); updateAllTotals(); }
+                    dropdown.classList.add('hidden');
+                };
+            });
+        }
+        document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+
+        function addPaymentRow(idx, pref = {}) {
+            const html = `<div class="payment-row flex flex-wrap gap-2 items-end">
+                <div class="flex-1 min-w-[200px]">
+                    <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                        <option value="">Pilih Kas</option>
+                        ${paymentMethods.map(m => `<option value="${m.id}" ${pref.payment_method_id == m.id ? 'selected' : ''}>${m.label}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="w-40">
+                    <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="payment-amount block w-full rounded-md border-gray-300 shadow-sm text-sm" placeholder="Nominal" value="${pref.amount || ''}">
+                </div>
+                <button type="button" class="remove-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm">-</button>
+            </div>`;
+            document.getElementById('payment-rows').insertAdjacentHTML('beforeend', html);
+            const row = document.getElementById('payment-rows').lastElementChild;
+            row.querySelector('.remove-payment')?.addEventListener('click', () => { row.remove(); updateAllTotals(); });
+            if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
+            row.querySelector('.payment-amount')?.addEventListener('input', updateAllTotals);
+        }
+
+        function getPurchaseTotal() {
+            let total = 0;
+            document.querySelectorAll('.purchase-item').forEach(row => {
+                const qtyInp = row.querySelector('.item-qty');
+                const priceInp = row.querySelector('.item-price');
+                const qty = parseInt(qtyInp?.value || '0', 10) || 0;
+                const price = parseInt((priceInp?.value || '').replace(/\D/g, ''), 10) || 0;
+                total += qty * price;
+            });
+            return total;
+        }
+
+        function updateAllTotals() {
+            const purchaseTotal = getPurchaseTotal();
+            let paymentSum = 0;
+            document.querySelectorAll('.payment-amount').forEach(inp => {
+                const v = (inp.value || '').replace(/\D/g, '');
+                if (v) paymentSum += parseInt(v, 10);
+            });
+            const selisih = purchaseTotal - paymentSum;
+            const fmt = (n) => new Intl.NumberFormat('id-ID').format(n);
+
+            const totalEl = document.getElementById('purchase-total-text');
+            const sectionTotalEl = document.getElementById('payment-section-total-pembelian');
+            const sumEl = document.getElementById('payment-sum-text');
+            const diffEl = document.getElementById('payment-diff-text');
+
+            if (totalEl) totalEl.textContent = fmt(purchaseTotal);
+            if (sectionTotalEl) sectionTotalEl.textContent = fmt(purchaseTotal);
+            if (sumEl) sumEl.textContent = fmt(paymentSum);
+            if (diffEl) {
+                diffEl.textContent = fmt(selisih);
+                diffEl.className = 'font-bold ' + (selisih > 0 ? 'text-amber-600' : selisih < 0 ? 'text-emerald-600' : 'text-slate-700');
+            }
+        }
+
+        let itemIdx = 1;
+        let paymentIdx = 0;
+
+        document.getElementById('add-item')?.addEventListener('click', function() {
+            const tpl = document.querySelector('.purchase-item').cloneNode(true);
+            tpl.querySelectorAll('input, select, textarea').forEach(el => {
+                el.name = el.name?.replace(/\[0\]/, '[' + itemIdx + ']');
+                if (el.type !== 'hidden') el.value = '';
+                if (el.classList.contains('item-qty')) el.value = '1';
+                if (el.classList.contains('product-id-input')) el.value = '';
+            });
+            tpl.querySelector('.product-select-label')?.classList.add('text-slate-500');
+            tpl.querySelector('.product-select-label').textContent = 'Pilih Produk';
+            tpl.querySelector('.brand-filter').innerHTML = '<option value="">Semua Merk</option>';
+            tpl.querySelector('.series-filter').innerHTML = '<option value="">Semua Series</option>';
+            tpl.querySelector('.product-dropdown-list').innerHTML = '';
+            tpl.querySelector('.remove-item').style.display = '';
+            tpl.querySelector('.remove-item').onclick = () => { tpl.remove(); updateAllTotals(); };
+            document.getElementById('purchase-items').appendChild(tpl);
+            populateProductDropdown(tpl);
+            attachItemTotalListeners(tpl);
+            itemIdx++;
+            if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
+            updateAllTotals();
+        });
+
+        function attachItemTotalListeners(row) {
+            row.querySelector('.item-qty')?.addEventListener('input', updateAllTotals);
+            row.querySelector('.item-qty')?.addEventListener('change', updateAllTotals);
+            row.querySelector('.item-price')?.addEventListener('input', updateAllTotals);
+            row.querySelector('.item-price')?.addEventListener('blur', updateAllTotals);
+        }
+
+
+        document.querySelector('.remove-item')?.addEventListener('click', function() {
+            if (document.querySelectorAll('.purchase-item').length > 1) {
+                this.closest('.purchase-item').remove();
+                updateAllTotals();
+            }
+        });
+
+        document.getElementById('add-payment')?.addEventListener('click', function() {
+            addPaymentRow(paymentIdx++, {});
+        });
+
+        document.querySelectorAll('.purchase-item').forEach(row => {
+            populateProductDropdown(row);
+            attachItemTotalListeners(row);
+        });
+        updateAllTotals();
+
+        function initRupiahInputs() {
+            document.querySelectorAll('[data-rupiah="true"]').forEach(inp => {
+                if (inp.dataset.rupiahInit) return;
+                inp.dataset.rupiahInit = '1';
+                inp.addEventListener('blur', function() {
+                    const v = this.value.replace(/\D/g, '');
+                    if (v) this.value = new Intl.NumberFormat('id-ID').format(v);
+                });
+                inp.addEventListener('focus', function() {
+                    this.value = this.value.replace(/\D/g, '');
+                });
+            });
+        }
+        initRupiahInputs();
+
+        document.getElementById('purchase-form')?.addEventListener('submit', function(e) {
+            document.querySelectorAll('.item-serials').forEach(ta => {
+                const names = ta.name;
+                if (names && names.includes('serial_numbers_text')) {
+                    const baseName = names.replace('serial_numbers_text', 'serial_numbers');
+                    const lines = (ta.value || '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+                    ta.removeAttribute('name');
+                    lines.forEach((line, i) => {
+                        const hid = document.createElement('input');
+                        hid.type = 'hidden';
+                        hid.name = baseName + '[' + i + ']';
+                        hid.value = line;
+                        ta.parentNode.appendChild(hid);
+                    });
+                }
+            });
+        });
+
+        const oldPayments = @json(old('payments', []));
+        const hasValidOld = Array.isArray(oldPayments) && oldPayments.length > 0 && oldPayments.some(p => p && (p.payment_method_id || (p.amount && parseInt(String(p.amount).replace(/\D/g,''), 10) > 0)));
+        if (hasValidOld) {
+            oldPayments.forEach(p => addPaymentRow(paymentIdx++, p));
+        } else {
+            addPaymentRow(paymentIdx++, {});
+        }
+        updateAllTotals();
+
+        window.loadPurchaseDistributors = async function() {
+            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
+            const locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            if (!locType || !locId) {
+                document.getElementById('distributor_id').innerHTML = '<option value="">Pilih lokasi terlebih dahulu</option>';
+                document.getElementById('distributor_id').disabled = true;
+                window.loadPurchaseProducts?.();
+                return;
+            }
+            try {
+                const catId = document.getElementById('purchase_category_id')?.value || '';
+                const url = baseUrl + formDataUrl + '?location_type=' + encodeURIComponent(locType) + '&location_id=' + encodeURIComponent(locId) + (catId ? '&category_id=' + encodeURIComponent(catId) : '');
+                const r = await fetch(url);
+                const data = await r.json();
+                const sel = document.getElementById('distributor_id');
+                sel.disabled = false;
+                sel.innerHTML = '<option value="">Pilih Distributor</option>' + (data.distributors || []).map(d => '<option value="' + d.id + '">' + (d.name || '') + '</option>').join('');
+                if (data.products) {
+                    products = data.products;
+                    repopulateProductDropdowns();
+                }
+            } catch (e) {
+                document.getElementById('distributor_id').innerHTML = '<option value="">Gagal memuat distributor</option>';
+            }
+        };
+
+        window.loadPurchaseProducts = async function() {
+            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
+            const locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            if (!locType || !locId) {
+                products = [];
+                repopulateProductDropdowns();
+                return;
+            }
+            try {
+                const catId = document.getElementById('purchase_category_id')?.value || '';
+                const url = baseUrl + formDataUrl + '?location_type=' + encodeURIComponent(locType) + '&location_id=' + encodeURIComponent(locId) + (catId ? '&category_id=' + encodeURIComponent(catId) : '');
+                const r = await fetch(url);
+                const data = await r.json();
+                if (data.products) {
+                    products = data.products;
+                    repopulateProductDropdowns();
+                }
+            } catch (e) {
+                products = [];
+                repopulateProductDropdowns();
+            }
+        };
+
+        function repopulateProductDropdowns() {
+            document.querySelectorAll('.purchase-item').forEach(row => {
+                const prevProductId = row.querySelector('.product-id-input')?.value;
+                populateProductDropdown(row);
+                const productStillExists = prevProductId && products.some(p => String(p.id) === String(prevProductId));
+                if (!productStillExists && prevProductId) {
+                    row.querySelector('.product-id-input').value = '';
+                    const label = row.querySelector('.product-select-label');
+                    if (label) { label.textContent = 'Pilih Produk'; label.classList.add('text-slate-500'); }
+                }
+            });
+        }
+
+        document.getElementById('purchase_category_id')?.addEventListener('change', () => window.loadPurchaseProducts?.());
+        document.getElementById('refresh-products-btn')?.addEventListener('click', function() {
+            this.disabled = true;
+            this.querySelector('svg')?.classList?.add('animate-spin');
+            window.loadPurchaseProducts?.().finally(() => {
+                this.disabled = false;
+                this.querySelector('svg')?.classList?.remove('animate-spin');
+            });
+        });
+        document.querySelectorAll('input[name="location_type"]').forEach(el => el.addEventListener('change', () => window.loadPurchaseDistributors?.()));
+        document.querySelector('form')?.addEventListener('change', function(e) {
+            if (e.target.matches('#warehouse_id, #branch_id')) window.loadPurchaseDistributors?.();
+        });
+        document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.loadPurchaseDistributors?.(), 200));
+    </script>
+    @endpush
+</x-app-layout>

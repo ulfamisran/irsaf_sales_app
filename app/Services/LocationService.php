@@ -156,8 +156,8 @@ class LocationService
         }
 
         if ($user->isSuperAdminOrAdminPusat()) {
-            $locationType = $requestLocationType;
-            $locationId = $requestLocationId ? (int) $requestLocationId : null;
+            $locationType = in_array($requestLocationType, ['cabang', 'branch', 'gudang', 'warehouse'], true) ? $requestLocationType : null;
+            $locationId = ($requestLocationId && (int) $requestLocationId > 0) ? (int) $requestLocationId : null;
             $locationLabel = null;
             if ($locationType === User::PLACEMENT_CABANG && $locationId) {
                 $branch = $branches->firstWhere('id', $locationId);

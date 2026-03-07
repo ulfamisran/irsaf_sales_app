@@ -18,6 +18,15 @@
                                 @endforeach
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses as $w)
+                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @elseif($filterLocked ?? false)
                         <div class="min-w-[180px]">
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
@@ -108,6 +117,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                     </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -127,10 +137,19 @@
                                 -{{ number_format($exp->amount, 0, ',', '.') }}
                             </td>
                             <td class="px-4 py-3">{{ $exp->user?->name }}</td>
+                            <td class="px-4 py-3 text-center">
+                                <a href="{{ route('cash-flows.out.show', $exp) }}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-100 text-indigo-700 text-sm font-medium hover:bg-indigo-200" title="{{ __('Lihat Detail') }}">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                    </svg>
+                                    {{ __('Detail') }}
+                                </a>
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
+                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

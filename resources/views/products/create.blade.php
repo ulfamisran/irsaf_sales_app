@@ -14,10 +14,20 @@
                         @csrf
                         <div class="space-y-4">
                             <div>
+                                <x-input-label for="category_id" :value="__('Kategori')" />
+                                <select id="category_id" name="category_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="">{{ __('Pilih Kategori') }}</option>
+                                    @foreach ($categories as $category)
+                                        <option value="{{ $category->id }}" data-code="{{ $category->code }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('category_id')" class="mt-2" />
+                            </div>
+                            <div>
                                 <x-input-label for="created_by" :value="__('Pengguna')" />
                                 <x-text-input id="created_by" class="block mt-1 w-full bg-slate-100" type="text" :value="auth()->user()?->name" disabled />
                             </div>
-                            {{-- Lokasi Produk: PERTAMA - pilihan Gudang/Cabang, default dari user jika bukan super admin --}}
+                            {{-- Lokasi Produk: pilihan Gudang/Cabang, default dari user jika bukan super admin --}}
                             <div x-data="{ locType: '{{ old('location_type', $defaultLocationType ?? 'warehouse') }}' }"
                                  x-init="$nextTick(() => { setTimeout(() => window.loadProductDistributors?.(), 150) })">
                                 <x-input-label :value="__('Lokasi Produk')" />
@@ -63,16 +73,6 @@
                                 </template>
                             </div>
                             <div>
-                                <x-input-label for="category_id" :value="__('Kategori')" />
-                                <select id="category_id" name="category_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                    <option value="">{{ __('Pilih Kategori') }}</option>
-                                    @foreach ($categories as $category)
-                                        <option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('category_id')" class="mt-2" />
-                            </div>
-                            <div>
                                 <x-input-label for="distributor_id" :value="__('Distributor')" />
                                 <p class="mt-1 text-xs text-slate-500 mb-1">{{ __('Pilih Gudang/Cabang lalu pilih lokasi spesifik, distributor akan otomatis dimuat.') }}</p>
                                 <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required disabled>
@@ -81,7 +81,7 @@
                                 <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
                             </div>
                             <div>
-                                <x-input-label for="laptop_type" :value="__('Jenis Laptop')" />
+                                <x-input-label for="laptop_type" :value="__('Jenis Produk')" />
                                 @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
                                     <input type="hidden" name="laptop_type" value="baru" />
                                     <select id="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 bg-slate-100 shadow-sm" disabled>
@@ -108,7 +108,14 @@
                                 <x-text-input id="series" class="block mt-1 w-full" type="text" name="series" :value="old('series')" />
                                 <x-input-error :messages="$errors->get('series')" class="mt-2" />
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" x-data="{ isLaptop: false }"
+                                 x-init="
+                                    const select = document.getElementById('category_id');
+                                    const update = () => { isLaptop = (select?.options[select?.selectedIndex]?.text?.trim().toLowerCase() === 'laptop'); };
+                                    select?.addEventListener('change', update);
+                                    update();
+                                 "
+                                 x-show="isLaptop" x-transition>
                                 <div>
                                     <x-input-label for="processor" :value="__('Processor')" />
                                     <x-text-input id="processor" class="block mt-1 w-full" type="text" name="processor" :value="old('processor')" />
@@ -143,7 +150,8 @@
                                 </div>
                                 <div>
                             <x-input-label for="selling_price" :value="__('Harga Jual')" />
-                            <x-text-input id="selling_price" class="block mt-1 w-full" type="text" name="selling_price" data-rupiah="true" :value="old('selling_price', 0)" required />
+                            <x-text-input id="selling_price" class="block mt-1 w-full" type="text" name="selling_price" data-rupiah="true" :value="old('selling_price', 0)" />
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan atau 0 = produk nonaktif, status unit inactive.') }}</p>
                                     <x-input-error :messages="$errors->get('selling_price')" class="mt-2" />
                                 </div>
                             </div>
@@ -229,6 +237,19 @@
                 .replace(/[^A-Z0-9]/g, '');
         };
 
+        const categoriesCodeMap = @json($categories->pluck('code', 'id'));
+        const categoriesNameMap = @json($categories->pluck('name', 'id'));
+
+        const isLaptopCategory = (categoryId) => {
+            const name = (categoriesNameMap[categoryId] || '').toString().trim().toLowerCase();
+            return name === 'laptop';
+        };
+
+        const categoryPrefix = (categoryId) => {
+            const code = (categoriesCodeMap[categoryId] || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            return code || 'NA';
+        };
+
         const brandSegment = (value) => {
             const cleaned = sanitize(value).replace(/[AEIOU]/g, '');
             return cleaned !== '' ? cleaned : 'NA';
@@ -249,17 +270,15 @@
         };
 
         generateBtn.addEventListener('click', function () {
+            const categoryId = getValue('category_id');
+            const prefix = categoryPrefix(categoryId);
             const laptopType = getValue('laptop_type') === 'baru' ? 'NW' : 'SC';
-            const sku = [
-                'LP',
-                laptopType,
-                brandSegment(getValue('brand')),
-                segment(getValue('series')),
-                segment(getValue('processor')),
-                segment(getValue('ram')),
-                segment(getValue('storage')),
-                random3()
-            ].join('-');
+            const parts = [prefix, laptopType, brandSegment(getValue('brand')), segment(getValue('series'))];
+            if (isLaptopCategory(categoryId)) {
+                parts.push(segment(getValue('processor')), segment(getValue('ram')), segment(getValue('storage')));
+            }
+            parts.push(random3());
+            const sku = parts.join('-');
 
             skuInput.value = sku;
             skuDisplay.value = sku;

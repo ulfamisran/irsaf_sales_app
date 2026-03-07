@@ -99,7 +99,7 @@
                             </div>
                             @endif
                             <div>
-                                <x-input-label for="laptop_type" :value="__('Jenis Laptop')" />
+                                <x-input-label for="laptop_type" :value="__('Jenis Produk')" />
                                 @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
                                     <input type="hidden" name="laptop_type" value="baru" />
                                     <select id="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 bg-slate-100 shadow-sm" disabled>
@@ -126,7 +126,14 @@
                                 <x-text-input id="series" class="block mt-1 w-full" type="text" name="series" :value="old('series', $product->series)" />
                                 <x-input-error :messages="$errors->get('series')" class="mt-2" />
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" x-data="{ isLaptop: false }"
+                                 x-init="
+                                    const select = document.getElementById('category_id');
+                                    const update = () => { isLaptop = (select?.options[select?.selectedIndex]?.text?.trim().toLowerCase() === 'laptop'); };
+                                    select?.addEventListener('change', update);
+                                    update();
+                                 "
+                                 x-show="isLaptop" x-transition>
                                 <div>
                                     <x-input-label for="processor" :value="__('Processor')" />
                                     <x-text-input id="processor" class="block mt-1 w-full" type="text" name="processor" :value="old('processor', $product->processor)" />
@@ -161,7 +168,8 @@
                                 </div>
                                 <div>
                                     <x-input-label for="selling_price" :value="__('Harga Jual')" />
-                                    <x-text-input id="selling_price" class="block mt-1 w-full" type="text" name="selling_price" data-rupiah="true" :value="old('selling_price', $product->selling_price)" required />
+                                    <x-text-input id="selling_price" class="block mt-1 w-full" type="text" name="selling_price" data-rupiah="true" :value="old('selling_price', $product->selling_price)" />
+                                    <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan atau 0 = produk nonaktif.') }}</p>
                                     <x-input-error :messages="$errors->get('selling_price')" class="mt-2" />
                                 </div>
                             </div>
@@ -256,6 +264,19 @@
                 .replace(/[^A-Z0-9]/g, '');
         };
 
+        const categoriesCodeMap = @json($categories->pluck('code', 'id'));
+        const categoriesNameMap = @json($categories->pluck('name', 'id'));
+
+        const isLaptopCategory = (categoryId) => {
+            const name = (categoriesNameMap[categoryId] || '').toString().trim().toLowerCase();
+            return name === 'laptop';
+        };
+
+        const categoryPrefix = (categoryId) => {
+            const code = (categoriesCodeMap[categoryId] || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            return code || 'NA';
+        };
+
         const brandSegment = (value) => {
             const cleaned = sanitize(value).replace(/[AEIOU]/g, '');
             return cleaned !== '' ? cleaned : 'NA';
@@ -276,17 +297,15 @@
         };
 
         generateBtn.addEventListener('click', function () {
+            const categoryId = getValue('category_id');
+            const prefix = categoryPrefix(categoryId);
             const laptopType = getValue('laptop_type') === 'baru' ? 'NW' : 'SC';
-            const sku = [
-                'LP',
-                laptopType,
-                brandSegment(getValue('brand')),
-                segment(getValue('series')),
-                segment(getValue('processor')),
-                segment(getValue('ram')),
-                segment(getValue('storage')),
-                random3()
-            ].join('-');
+            const parts = [prefix, laptopType, brandSegment(getValue('brand')), segment(getValue('series'))];
+            if (isLaptopCategory(categoryId)) {
+                parts.push(segment(getValue('processor')), segment(getValue('ram')), segment(getValue('storage')));
+            }
+            parts.push(random3());
+            const sku = parts.join('-');
 
             skuInput.value = sku;
             skuDisplay.value = sku;

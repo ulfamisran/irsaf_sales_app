@@ -60,6 +60,9 @@ class CashFlowController extends Controller
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
         }
 
         if ($request->filled('expense_category_id')) {
@@ -106,6 +109,48 @@ class CashFlowController extends Controller
             ->pluck('total', 'payment_method_id');
 
         return view('cash-flows.out-index', compact('expenses', 'branches', 'warehouses', 'canFilterLocation', 'filterLocked', 'locationLabel', 'expenseCategories', 'totalOut', 'paymentMethods', 'paymentMethodTotals'));
+    }
+
+    public function showOut(Request $request, CashFlow $cashFlow): View|RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                if ($cashFlow->branch_id != $user->branch_id) {
+                    abort(403);
+                }
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                if ($cashFlow->warehouse_id != $user->warehouse_id) {
+                    abort(403);
+                }
+            } else {
+                abort(403);
+            }
+        }
+        $cashFlow->load(['user', 'branch', 'warehouse', 'expenseCategory', 'paymentMethod']);
+        $referenceLabel = null;
+        $referenceUrl = null;
+        if ($cashFlow->reference_type && $cashFlow->reference_id) {
+            $referenceLabel = match ($cashFlow->reference_type) {
+                CashFlow::REFERENCE_PURCHASE => __('Pembelian #:id', ['id' => $cashFlow->reference_id]),
+                CashFlow::REFERENCE_SALE => __('Penjualan #:id', ['id' => $cashFlow->reference_id]),
+                CashFlow::REFERENCE_SERVICE => __('Servis #:id', ['id' => $cashFlow->reference_id]),
+                default => $cashFlow->reference_type . ' #' . $cashFlow->reference_id,
+            };
+            if (in_array($cashFlow->reference_type, [CashFlow::REFERENCE_PURCHASE, CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])) {
+                $referenceUrl = match ($cashFlow->reference_type) {
+                    CashFlow::REFERENCE_PURCHASE => route('purchases.show', $cashFlow->reference_id),
+                    CashFlow::REFERENCE_SALE => route('sales.show', $cashFlow->reference_id),
+                    CashFlow::REFERENCE_SERVICE => route('services.show', $cashFlow->reference_id),
+                    default => null,
+                };
+            }
+        }
+
+        return view('cash-flows.out-show', compact('cashFlow', 'referenceLabel', 'referenceUrl'));
     }
 
     public function inIndex(Request $request): View

@@ -18,66 +18,6 @@
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <x-input-label for="brand_filter" :value="__('Brand')" />
-                                    <select id="brand_filter" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">{{ __('Semua Brand') }}</option>
-                                        @foreach ($brands as $b)
-                                            <option value="{{ $b }}">{{ $b }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div>
-                                    <x-input-label for="series_filter" :value="__('Series')" />
-                                    <select id="series_filter" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">{{ __('Semua Series') }}</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <x-input-label for="product_select_trigger" :value="__('Produk')" />
-                                <input type="hidden" id="product_id" name="product_id" value="{{ old('product_id') }}">
-                                <div class="relative mt-1">
-                                    <button type="button" id="product_select_trigger" class="w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        <span id="product_select_label" class="text-slate-500">{{ __('Pilih Produk') }}</span>
-                                        <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                    <div id="product_dropdown" class="hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                                        <div class="p-2 border-b border-gray-100">
-                                            <input type="text" id="product_search" placeholder="{{ __('Cari SKU, brand, series, atau warna...') }}"
-                                                class="w-full rounded-md border border-gray-300 py-2 px-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:ring-indigo-500">
-                                        </div>
-                                        <div id="product_dropdown_list" class="max-h-60 overflow-auto py-1">
-                                            @foreach ($products as $product)
-                                                <div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="{{ $product->id }}" data-brand="{{ $product->brand ?? '' }}" data-series="{{ $product->series ?? '' }}" data-sku="{{ $product->sku ?? '' }}" data-color="{{ $product->color ?? '' }}">
-                                                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                                        <span class="text-xs text-slate-500">{{ $product->sku }}</span>
-                                                        <span class="text-slate-400">-</span>
-                                                        <span class="text-slate-800">{{ $product->brand }} {{ $product->series }}</span>
-                                                        @if($product->color)
-                                                            <span class="text-slate-400">-</span>
-                                                            <span class="text-xs text-slate-600">{{ $product->color }}</span>
-                                                        @endif
-                                                        <span class="text-slate-400">-</span>
-                                                        <span class="text-emerald-600 font-medium ml-auto">{{ number_format($product->selling_price ?? 0, 0, ',', '.') }}</span>
-                                                    </div>
-                                                    <span class="text-xs text-slate-500">({{ $product->in_stock_count ?? 0 }} unit)</span>
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                        <div id="product_dropdown_empty" class="hidden px-3 py-4 text-sm text-slate-500 text-center">
-                                            {{ __('Tidak ada produk yang cocok.') }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <p class="text-xs text-emerald-600 -mt-2">
-                                {{ __('Angka di dalam kurung menunjukkan stok unit yang tersedia.') }}
-                            </p>
-                            <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
                                     <x-input-label for="from_location_type" :value="__('Tipe Asal')" />
                                     <select id="from_location_type" name="from_location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                         <option value="warehouse" {{ old('from_location_type') == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
@@ -91,6 +31,59 @@
                                     </select>
                                     <x-input-error :messages="$errors->get('from_location_id')" class="mt-2" />
                                 </div>
+                            </div>
+                            <div id="product-selector-block" class="space-y-3">
+                                <x-input-label :value="__('Pilih Produk')" class="font-semibold" />
+                                <p class="text-xs text-slate-500">{{ __('Pilih lokasi asal terlebih dahulu, lalu filter kategori, merk, dan series.') }}</p>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <x-input-label for="sm_category_id" :value="__('Kategori Barang')" class="text-sm" />
+                                        <select id="sm_category_id" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">{{ __('Semua Kategori') }}</option>
+                                            @foreach ($categories as $cat)
+                                                <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="sm_brand_filter" :value="__('Merk')" class="text-sm" />
+                                        <select id="sm_brand_filter" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">{{ __('Semua Merk') }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="sm_series_filter" :value="__('Series')" class="text-sm" />
+                                        <select id="sm_series_filter" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">{{ __('Semua Series') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <x-input-label for="product_select_trigger" :value="__('Produk')" class="text-sm" />
+                                    <input type="hidden" id="product_id" name="product_id" value="{{ old('product_id') }}" required>
+                                    <div class="relative mt-0.5">
+                                        <button type="button" id="product_select_trigger" class="w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <span id="product_select_label" class="text-slate-500">{{ __('Pilih Produk') }}</span>
+                                            <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+                                        <div id="product_dropdown" class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                            <div class="p-2 border-b border-gray-100">
+                                                <input type="text" id="product_search" placeholder="{{ __('Cari SKU, merk, series...') }}"
+                                                    class="w-full rounded-md border border-gray-300 py-2 px-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:ring-indigo-500">
+                                            </div>
+                                            <div id="product_dropdown_list" class="max-h-60 overflow-auto py-1"></div>
+                                            <div id="product_dropdown_empty" class="hidden px-3 py-4 text-sm text-slate-500 text-center">
+                                                {{ __('Tidak ada produk yang cocok.') }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-emerald-600 mt-1">
+                                        {{ __('Angka di dalam kurung menunjukkan stok unit yang tersedia di lokasi asal.') }}
+                                    </p>
+                                </div>
+                                <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
@@ -169,6 +162,8 @@
     <script>
         const warehouses = @json($warehouses);
         const branches = @json($branches);
+        const oldFromLocationId = @json(old('from_location_id'));
+        const oldToLocationId = @json(old('to_location_id'));
 
         function updateLocationSelect(selectId, type) {
             const select = document.getElementById(selectId);
@@ -185,6 +180,8 @@
 
         updateLocationSelect('from_location_id', document.getElementById('from_location_type').value);
         updateLocationSelect('to_location_id', document.getElementById('to_location_type').value);
+        if (oldFromLocationId) document.getElementById('from_location_id').value = oldFromLocationId;
+        if (oldToLocationId) document.getElementById('to_location_id').value = oldToLocationId;
     </script>
 
     <script>
@@ -372,63 +369,102 @@
             updateQtyFromSelection();
         });
 
-        const productsForDropdown = @json($productsForDropdown);
+        let productsForDropdown = [];
 
-        function updateSeriesFilter() {
-            const brandVal = document.getElementById('brand_filter')?.value || '';
-            const seriesSelect = document.getElementById('series_filter');
-            if (!seriesSelect) return;
+        const availableProductsUrl = @json(route('stock-mutations.available-products'));
 
-            const seriesSet = new Set();
+        async function loadProducts() {
+            const fromType = document.getElementById('from_location_type')?.value;
+            const fromId = document.getElementById('from_location_id')?.value;
+            const catId = document.getElementById('sm_category_id')?.value;
+
+            if (!fromType || !fromId) {
+                productsForDropdown = [];
+                updateProductUI();
+                return;
+            }
+
+            try {
+                const url = new URL(availableProductsUrl);
+                url.searchParams.set('from_location_type', fromType);
+                url.searchParams.set('from_location_id', fromId);
+                if (catId) url.searchParams.set('category_id', catId);
+
+                const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const data = await res.json();
+                productsForDropdown = data.products || [];
+            } catch (e) {
+                productsForDropdown = [];
+            }
+            updateProductUI();
+        }
+
+        function getBrands() {
+            const s = new Set();
+            productsForDropdown.forEach(p => { if (p.brand) s.add(p.brand); });
+            return Array.from(s).sort();
+        }
+
+        function getSeries(brandVal) {
+            const s = new Set();
             productsForDropdown.forEach(p => {
-                if (brandVal === '' || (p.brand || '') === brandVal) {
-                    if (p.series) seriesSet.add(p.series);
-                }
+                if ((!brandVal || p.brand === brandVal) && p.series) s.add(p.series);
             });
-            const seriesList = Array.from(seriesSet).sort();
+            return Array.from(s).sort();
+        }
 
-            seriesSelect.innerHTML = '<option value="">Semua Series</option>' + seriesList.map(s => `<option value="${s}">${s}</option>`).join('');
-            seriesSelect.disabled = brandVal === '' && seriesList.length === 0;
+        function escAttr(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        }
+
+        function productOptionHtml(p) {
+            const price = p.selling_price != null ? Number(p.selling_price).toLocaleString('id-ID') : '0';
+            const colorPart = p.color ? ' <span class="text-slate-400">-</span> <span class="text-xs text-slate-600">' + escAttr(p.color) + '</span>' : '';
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + escAttr(p.brand) + '" data-series="' + escAttr(p.series) + '" data-sku="' + escAttr(p.sku) + '" data-color="' + escAttr(p.color) + '">' +
+                '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">' +
+                '<span class="text-xs text-slate-500">' + escAttr(p.sku) + '</span> <span class="text-slate-400">-</span> <span class="text-slate-800">' + escAttr(p.brand) + ' ' + escAttr(p.series) + '</span>' + colorPart +
+                ' <span class="text-slate-400">-</span> <span class="text-emerald-600 font-medium ml-auto">' + price + '</span></div>' +
+                '<span class="text-xs text-slate-500">(' + (p.in_stock_count ?? 0) + ' unit)</span></div>';
         }
 
         function filterProductOptions() {
-            const brandVal = document.getElementById('brand_filter')?.value || '';
-            const seriesVal = document.getElementById('series_filter')?.value || '';
+            const brandVal = document.getElementById('sm_brand_filter')?.value || '';
+            const seriesVal = document.getElementById('sm_series_filter')?.value || '';
             const searchVal = (document.getElementById('product_search')?.value || '').trim().toLowerCase();
-            const options = document.querySelectorAll('.product-option');
+            const opts = document.querySelectorAll('#product_dropdown_list .product-option');
             const listEl = document.getElementById('product_dropdown_list');
             const emptyEl = document.getElementById('product_dropdown_empty');
-            let firstVisibleValue = '';
-            let visibleCount = 0;
+            let visible = 0;
 
-            options.forEach(opt => {
-                const optBrand = opt.getAttribute('data-brand') || '';
-                const optSeries = opt.getAttribute('data-series') || '';
-                const optSku = opt.getAttribute('data-sku') || '';
-                const optColor = opt.getAttribute('data-color') || '';
-                const matchBrand = brandVal === '' || optBrand === brandVal;
-                const matchSeries = seriesVal === '' || optSeries === seriesVal;
-                const searchStr = `${optSku} ${optBrand} ${optSeries} ${optColor}`.toLowerCase();
+            opts.forEach(o => {
+                const matchBrand = !brandVal || (o.getAttribute('data-brand') || '') === brandVal;
+                const matchSeries = !seriesVal || (o.getAttribute('data-series') || '') === seriesVal;
+                const searchStr = ((o.getAttribute('data-sku') || '') + ' ' + (o.getAttribute('data-brand') || '') + ' ' + (o.getAttribute('data-series') || '') + ' ' + (o.getAttribute('data-color') || '')).toLowerCase();
                 const matchSearch = !searchVal || searchStr.includes(searchVal);
-                const visible = matchBrand && matchSeries && matchSearch;
-                opt.classList.toggle('hidden', !visible);
-                if (visible) {
-                    visibleCount++;
-                    if (!firstVisibleValue) firstVisibleValue = opt.getAttribute('data-id');
-                }
+                const show = matchBrand && matchSeries && matchSearch;
+                o.classList.toggle('hidden', !show);
+                if (show) visible++;
             });
 
-            if (listEl) listEl.classList.toggle('hidden', visibleCount === 0);
-            if (emptyEl) emptyEl.classList.toggle('hidden', visibleCount > 0);
+            if (listEl) listEl.classList.toggle('hidden', visible === 0);
+            if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0);
+        }
 
-            const productInput = document.getElementById('product_id');
-            const selectedOpt = productInput?.value && document.querySelector(`.product-option[data-id="${productInput.value}"]`);
-            if (productInput?.value && selectedOpt && selectedOpt.classList.contains('hidden')) {
-                productInput.value = firstVisibleValue || '';
-                updateProductLabel(firstVisibleValue || '');
-                lastFetchKey = '';
-                loadSerials();
+        function updateProductUI() {
+            const listEl = document.getElementById('product_dropdown_list');
+            const brandSel = document.getElementById('sm_brand_filter');
+            const seriesSel = document.getElementById('sm_series_filter');
+            if (!listEl) return;
+
+            listEl.innerHTML = productsForDropdown.map(p => productOptionHtml(p)).join('');
+            if (brandSel) {
+                brandSel.innerHTML = '<option value="">Semua Merk</option>' + getBrands().map(b => '<option value="' + escAttr(b) + '">' + escAttr(b) + '</option>').join('');
             }
+            if (seriesSel) {
+                seriesSel.innerHTML = '<option value="">Semua Series</option>' + getSeries(brandSel?.value || '').map(s => '<option value="' + escAttr(s) + '">' + escAttr(s) + '</option>').join('');
+            }
+            filterProductOptions();
+            attachProductOptionHandlers();
         }
 
         function escapeHtml(s) {
@@ -436,6 +472,7 @@
             div.textContent = s;
             return div.innerHTML;
         }
+
         function updateProductLabel(productId) {
             const labelEl = document.getElementById('product_select_label');
             if (!labelEl) return;
@@ -446,78 +483,85 @@
             }
             const p = productsForDropdown.find(x => String(x.id) === String(productId));
             if (p) {
-                labelEl.innerHTML = `<span class="text-xs text-slate-500">${escapeHtml(p.sku)}</span> <span class="text-slate-800">${escapeHtml((p.brand || '') + ' ' + (p.series || '')).trim()}</span>`;
+                labelEl.innerHTML = '<span class="text-xs text-slate-500">' + escapeHtml(p.sku) + '</span> <span class="text-slate-800">' + escapeHtml((p.brand || '') + ' ' + (p.series || '')).trim() + '</span>';
                 labelEl.classList.remove('text-slate-500');
             }
         }
 
-        const productDropdown = document.getElementById('product_dropdown');
-        const productTrigger = document.getElementById('product_select_trigger');
+        function attachProductOptionHandlers() {
+            const productDropdown = document.getElementById('product_dropdown');
+            const productTrigger = document.getElementById('product_select_trigger');
+            const searchInput = document.getElementById('product_search');
+            const productIdInput = document.getElementById('product_id');
+            const brandEl = document.getElementById('sm_brand_filter');
+            const seriesEl = document.getElementById('sm_series_filter');
+            const listEl = document.getElementById('product_dropdown_list');
 
-        productTrigger?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const wasHidden = productDropdown?.classList.contains('hidden');
-            productDropdown?.classList.toggle('hidden');
-            if (wasHidden) {
-                const searchEl = document.getElementById('product_search');
-                if (searchEl) { searchEl.focus(); searchEl.value = ''; }
-                filterProductOptions();
-            }
-        });
-        document.addEventListener('click', function() {
-            productDropdown?.classList.add('hidden');
-        });
-        productDropdown?.addEventListener('click', function(e) {
-            e.stopPropagation();
-        });
-        document.getElementById('product_search')?.addEventListener('input', filterProductOptions);
-        document.getElementById('product_search')?.addEventListener('keydown', function(e) {
-            e.stopPropagation();
-            if (e.key === 'Escape') productDropdown?.classList.add('hidden');
-        });
+            if (!productTrigger || !productDropdown) return;
 
-        document.querySelectorAll('.product-option').forEach(opt => {
-            opt.addEventListener('click', function() {
-                const id = this.getAttribute('data-id');
-                const productInput = document.getElementById('product_id');
-                if (productInput) {
-                    productInput.value = id;
-                    productInput.dispatchEvent(new Event('change', { bubbles: true }));
+            productDropdown.onclick = e => e.stopPropagation();
+            productTrigger.onclick = function(e) {
+                e.stopPropagation();
+                document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden'));
+                const wasHidden = productDropdown.classList.contains('hidden');
+                productDropdown.classList.toggle('hidden');
+                if (wasHidden && searchInput) {
+                    searchInput.focus();
+                    searchInput.value = '';
+                    filterProductOptions();
                 }
-                updateProductLabel(id);
-                productDropdown?.classList.add('hidden');
-                lastFetchKey = '';
-                loadSerials();
-            });
-        });
+            };
 
-        document.getElementById('brand_filter')?.addEventListener('change', function() {
-            updateSeriesFilter();
-            filterProductOptions();
-            lastFetchKey = '';
-            loadSerials();
-        });
-        document.getElementById('series_filter')?.addEventListener('change', function() {
-            filterProductOptions();
-            lastFetchKey = '';
-            loadSerials();
-        });
+            if (searchInput) {
+                searchInput.oninput = () => filterProductOptions();
+                searchInput.onkeydown = e => { if (e.key === 'Escape') productDropdown.classList.add('hidden'); };
+            }
+
+            if (brandEl) brandEl.onchange = () => {
+                seriesEl.innerHTML = '<option value="">Semua Series</option>' + getSeries(brandEl.value).map(s => '<option value="' + escAttr(s) + '">' + escAttr(s) + '</option>').join('');
+                filterProductOptions();
+            };
+            if (seriesEl) seriesEl.onchange = () => filterProductOptions();
+
+            listEl?.querySelectorAll('.product-option').forEach(opt => {
+                opt.onclick = function(e) {
+                    e.stopPropagation();
+                    const id = this.getAttribute('data-id');
+                    if (productIdInput) {
+                        productIdInput.value = id;
+                        productIdInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    updateProductLabel(id);
+                    productDropdown.classList.add('hidden');
+                    lastFetchKey = '';
+                    loadSerials();
+                };
+            });
+        }
+
+        document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+
+        document.getElementById('from_location_type')?.addEventListener('change', loadProducts);
+        document.getElementById('from_location_id')?.addEventListener('change', loadProducts);
+        document.getElementById('sm_category_id')?.addEventListener('change', loadProducts);
 
         const oldProductId = @json(old('product_id'));
-        if (oldProductId && productsForDropdown.length) {
-            const oldProduct = productsForDropdown.find(p => String(p.id) === String(oldProductId));
-            if (oldProduct) {
-                const brandEl = document.getElementById('brand_filter');
-                const seriesEl = document.getElementById('series_filter');
-                if (brandEl && oldProduct.brand) brandEl.value = oldProduct.brand;
-                updateSeriesFilter();
-                if (seriesEl && oldProduct.series) seriesEl.value = oldProduct.series;
-                updateProductLabel(oldProductId);
+        loadProducts().then(function() {
+            if (oldProductId) {
+                const oldProduct = productsForDropdown.find(p => String(p.id) === String(oldProductId));
+                if (oldProduct) {
+                    const brandEl = document.getElementById('sm_brand_filter');
+                    const seriesEl = document.getElementById('sm_series_filter');
+                    if (brandEl && oldProduct.brand) brandEl.value = oldProduct.brand;
+                    if (seriesEl) {
+                        seriesEl.innerHTML = '<option value="">Semua Series</option>' + getSeries(oldProduct.brand || '').map(s => '<option value="' + escAttr(s) + '">' + escAttr(s) + '</option>').join('');
+                        if (oldProduct.series) seriesEl.value = oldProduct.series;
+                    }
+                    updateProductLabel(oldProductId);
+                }
             }
-        }
-        filterProductOptions();
+        });
 
-        // Initial load (also re-populates old selections if any)
         loadSerials();
     </script>
 </x-app-layout>

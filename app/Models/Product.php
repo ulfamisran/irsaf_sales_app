@@ -112,16 +112,39 @@ class Product extends Model
 
     protected static function buildSku(array $data): string
     {
+        $prefix = self::categoryPrefixForSku($data['category_id'] ?? null);
         $typeCode = ($data['laptop_type'] ?? '') === 'baru' ? 'NW' : 'SC';
 
         $brand = self::skuBrandSegment($data['brand'] ?? '');
         $series = self::skuSegment($data['series'] ?? '');
-        $processor = self::skuSegment($data['processor'] ?? '');
-        $ram = self::skuSegment($data['ram'] ?? '');
-        $storage = self::skuSegment($data['storage'] ?? '');
         $random = Str::upper(Str::random(3));
 
-        return "LP-{$typeCode}-{$brand}-{$series}-{$processor}-{$ram}-{$storage}-{$random}";
+        $category = isset($data['category_id']) ? Category::find($data['category_id']) : null;
+        $isLaptop = $category && strtolower(trim($category->name ?? '')) === 'laptop';
+
+        if ($isLaptop) {
+            $processor = self::skuSegment($data['processor'] ?? '');
+            $ram = self::skuSegment($data['ram'] ?? '');
+            $storage = self::skuSegment($data['storage'] ?? '');
+
+            return "{$prefix}-{$typeCode}-{$brand}-{$series}-{$processor}-{$ram}-{$storage}-{$random}";
+        }
+
+        return "{$prefix}-{$typeCode}-{$brand}-{$series}-{$random}";
+    }
+
+    /**
+     * Get SKU prefix from category code (kolom code pada tabel categories).
+     */
+    protected static function categoryPrefixForSku(?int $categoryId): string
+    {
+        $category = $categoryId ? Category::find($categoryId) : null;
+        $code = $category?->code ?? '';
+
+        $code = Str::upper(trim((string) $code));
+        $code = preg_replace('/[^A-Z0-9]/', '', $code);
+
+        return $code !== '' ? $code : 'NA';
     }
 
     protected static function skuSegment(?string $value): string

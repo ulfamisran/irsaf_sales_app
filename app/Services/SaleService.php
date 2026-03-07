@@ -432,6 +432,10 @@ class SaleService
                 // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
                 // Lokasi mengikuti cabang penjualan
                 $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
+                $sellingPrice = $hpp;
+                $isActive = $sellingPrice > 0;
+                $unitStatus = $sellingPrice > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
+
                 $newProduct = Product::create([
                     'category_id' => $tradeIn->category_id,
                     'distributor_id' => $tradeInDistributor->id,
@@ -447,21 +451,21 @@ class SaleService
                     'laptop_type' => 'bekas',
                     'purchase_price' => $hpp,
                     'selling_price' => $hpp,
-                    'is_active' => false,
+                    'is_active' => $isActive,
                     'location_type' => Stock::LOCATION_BRANCH,
                     'location_id' => (int) $branch->id,
                 ]);
 
                 $tradeIn->update(['product_id' => $newProduct->id]);
 
-                // Tambah unit ke cabang sebagai unit nonaktif (tidak dihitung stok)
+                // Unit: inactive jika harga jual 0, in_stock jika ada harga jual
                 ProductUnit::create([
                     'product_id' => $newProduct->id,
                     'user_id' => $userId,
                     'serial_number' => $tradeIn->serial_number,
                     'location_type' => Stock::LOCATION_BRANCH,
                     'location_id' => (int) $branch->id,
-                    'status' => ProductUnit::STATUS_INACTIVE,
+                    'status' => $unitStatus,
                     'received_date' => $saleDate,
                 ]);
                 Stock::updateOrCreate(

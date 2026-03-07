@@ -516,6 +516,9 @@ class StockMutationService
                 );
             }
 
+            $sellingPrice = (float) ($product->selling_price ?? 0);
+            $unitStatus = $sellingPrice > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
+
             foreach ($serialNumbers as $sn) {
                 ProductUnit::create([
                     'product_id' => $product->id,
@@ -523,7 +526,7 @@ class StockMutationService
                     'serial_number' => $sn,
                     'location_type' => $locationType,
                     'location_id' => $locationId,
-                    'status' => ProductUnit::STATUS_IN_STOCK,
+                    'status' => $unitStatus,
                     'received_date' => $receivedDate,
                 ]);
             }
@@ -539,6 +542,11 @@ class StockMutationService
                 ['quantity' => 0]
             )->fresh();
         });
+    }
+
+    public function recalculateStockQuantityIfExists(int $productId, string $locationType, int $locationId): void
+    {
+        $this->recalculateStockQuantity($productId, $locationType, $locationId);
     }
 
     private function recalculateStockQuantity(int $productId, string $locationType, int $locationId): void

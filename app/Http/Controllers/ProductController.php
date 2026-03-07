@@ -58,6 +58,7 @@ class ProductController extends Controller
         $filters = [
             'search' => $request->get('search'),
             'category_id' => $request->get('category_id'),
+            'status' => $request->get('status'),
             'location_type' => $locationType,
             'location_id' => $locationId,
         ];
@@ -123,6 +124,8 @@ class ProductController extends Controller
         } else {
             $data['sku'] = Product::generateSku($data);
         }
+        $sellingPrice = (float) ($data['selling_price'] ?? 0);
+        $data['is_active'] = $sellingPrice > 0;
         $product = $this->productRepository->create($data);
         $userId = $request->user()?->id;
         AuditLog::create([
@@ -184,6 +187,8 @@ class ProductController extends Controller
             $data['location_type'] = $data['location_type'] === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
             $data['location_id'] = (int) $data['location_id'];
         }
+        $sellingPrice = (float) ($data['selling_price'] ?? 0);
+        $data['is_active'] = $sellingPrice > 0;
         $sku = trim((string) $request->input('sku', ''));
         if ($sku !== '' && $sku !== $product->sku) {
             $request->validate([

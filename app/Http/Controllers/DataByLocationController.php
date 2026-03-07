@@ -76,6 +76,8 @@ class DataByLocationController extends Controller
         $saldoPerPm = [];
         if ($branchId) {
             $saldoPerPm = (new KasBalanceService)->getSaldoPerPaymentMethod($branchId);
+        } elseif ($warehouseId) {
+            $saldoPerPm = (new KasBalanceService)->getSaldoPerPaymentMethodForWarehouse($warehouseId);
         }
 
         return response()->json([

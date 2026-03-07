@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StockMutationRequest;
 use App\Models\Branch;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Role;
@@ -159,24 +160,68 @@ class StockMutationController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $products = Product::withCount([
-            'units as in_stock_count' => fn ($q) => $q->where('status', ProductUnit::STATUS_IN_STOCK),
-        ])->having('in_stock_count', '>', 0)->orderBy('brand')->orderBy('series')->orderBy('sku')->get();
-
-        $productsForDropdown = $products->map(fn ($p) => [
-            'id' => $p->id,
-            'sku' => $p->sku,
-            'brand' => $p->brand ?? '',
-            'series' => $p->series ?? '',
-            'in_stock_count' => $p->in_stock_count ?? 0,
-        ])->values();
-
-        $brands = $products->pluck('brand')->unique()->filter()->sort()->values();
-
+        $categories = Category::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        return view('stock-mutations.create', compact('products', 'productsForDropdown', 'brands', 'warehouses', 'branches'));
+        return view('stock-mutations.create', compact('categories', 'warehouses', 'branches'));
+    }
+
+    public function availableProducts(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $validated = $request->validate([
+            'from_location_type' => ['required', 'in:'.Stock::LOCATION_WAREHOUSE.','.Stock::LOCATION_BRANCH],
+            'from_location_id' => ['required', 'integer', 'min:1'],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+        ]);
+
+        $fromType = (string) $validated['from_location_type'];
+        $fromId = (int) $validated['from_location_id'];
+        $categoryId = $validated['category_id'] ?? null;
+
+        $productIds = ProductUnit::query()
+            ->where('location_type', $fromType)
+            ->where('location_id', $fromId)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->select('product_id')
+            ->distinct()
+            ->pluck('product_id');
+
+        $query = Product::query()
+            ->whereIn('id', $productIds)
+            ->where('is_active', true)
+            ->withCount([
+                'units as in_stock_count' => fn ($q) => $q
+                    ->where('location_type', $fromType)
+                    ->where('location_id', $fromId)
+                    ->where('status', ProductUnit::STATUS_IN_STOCK),
+            ])
+            ->orderBy('brand')
+            ->orderBy('series')
+            ->orderBy('sku');
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $products = $query->limit(500)->get(['id', 'sku', 'brand', 'series', 'color', 'selling_price', 'category_id']);
+
+        return response()->json([
+            'products' => $products->map(fn ($p) => [
+                'id' => $p->id,
+                'sku' => $p->sku ?? '',
+                'brand' => $p->brand ?? '',
+                'series' => $p->series ?? '',
+                'color' => $p->color ?? '',
+                'selling_price' => $p->selling_price,
+                'in_stock_count' => $p->in_stock_count ?? 0,
+            ])->values(),
+        ]);
     }
 
     public function availableSerials(Request $request): JsonResponse

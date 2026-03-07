@@ -65,14 +65,14 @@ class DistributorRepository
                 $query->whereRaw('1 = 0');
             }
         } elseif ($locationType && $locationId) {
-            if ($locationType === 'cabang') {
+            if (in_array($locationType, ['cabang', 'branch'], true)) {
                 $query->where(function ($q) use ($locationId) {
                     $q->where('branch_id', $locationId)
                         ->orWhere(function ($q2) {
                             $q2->whereNull('branch_id')->whereNull('warehouse_id');
                         });
                 });
-            } else {
+            } elseif (in_array($locationType, ['gudang', 'warehouse'], true)) {
                 $query->where(function ($q) use ($locationId) {
                     $q->where('warehouse_id', $locationId)
                         ->orWhere(function ($q2) {

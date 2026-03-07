@@ -40,7 +40,7 @@ class ProductRequest extends FormRequest
             'specs' => ['nullable', 'string'],
             'laptop_type' => $isBranchAdmin ? ['required', 'in:baru'] : ['required', 'in:baru,bekas'],
             'purchase_price' => ['required', 'numeric', 'min:0'],
-            'selling_price' => ['required', 'numeric', 'min:0'],
+            'selling_price' => ['nullable', 'numeric', 'min:0'],
         ];
 
         $rules['location_type'] = ['required', 'in:warehouse,branch'];

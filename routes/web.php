@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\CashFlowController;
+use App\Http\Controllers\DebtController;
+use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DistributorController;
@@ -187,6 +189,9 @@ Route::middleware('auth')->group(function () {
     Route::get('stock-mutations/available-serials', [StockMutationController::class, 'availableSerials'])
         ->middleware('role:admin_gudang')
         ->name('stock-mutations.available-serials');
+    Route::get('stock-mutations/available-products', [StockMutationController::class, 'availableProducts'])
+        ->middleware('role:admin_gudang')
+        ->name('stock-mutations.available-products');
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
         ->middleware('role:admin_gudang')
         ->name('stock-mutations.store');
@@ -204,9 +209,28 @@ Route::middleware('auth')->group(function () {
     Route::post('incoming-goods', [IncomingGoodsController::class, 'store'])
         ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.store');
+    Route::get('incoming-goods/available-products', [IncomingGoodsController::class, 'availableProducts'])
+        ->middleware('role:admin_gudang,admin_cabang')
+        ->name('incoming-goods.available-products');
     Route::get('incoming-goods/{incomingGood}/detail', [IncomingGoodsController::class, 'detail'])
         ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.detail');
+
+    Route::get('purchases/distributors', [PurchaseController::class, 'distributors'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.distributors');
+    Route::get('purchases/form-data', [PurchaseController::class, 'formData'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.form-data');
+    Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.add-payment');
+    Route::post('purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.cancel');
+    Route::resource('purchases', PurchaseController::class)
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->only(['index', 'create', 'store', 'show']);
 
     Route::get('data-by-location/distributors', [\App\Http\Controllers\DataByLocationController::class, 'distributors'])
         ->name('data-by-location.distributors');
@@ -288,6 +312,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:super_admin,admin_pusat')
         ->only(['edit', 'update']);
 
+    Route::get('debts', [DebtController::class, 'index'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('debts.index');
+    Route::get('debts/{purchase}/payment-history', [DebtController::class, 'paymentHistory'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('debts.payment-history');
+
     Route::get('cash-flows', [CashFlowController::class, 'index'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.index');
@@ -306,6 +337,9 @@ Route::middleware('auth')->group(function () {
     Route::get('cash-flows/out/create', [CashFlowController::class, 'createOut'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.create');
+    Route::get('cash-flows/out/{cashFlow}', [CashFlowController::class, 'showOut'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.out.show');
     Route::post('cash-flows/out', [CashFlowController::class, 'storeOut'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.store');

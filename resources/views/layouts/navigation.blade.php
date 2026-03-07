@@ -99,7 +99,7 @@
 
                 <!-- Stok -->
                 @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
-                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'purchases.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -116,6 +116,7 @@
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         @if ($isSuperAdmin || $isAdminGudang || $isAdminCabang)
+                            <li><x-sidebar-nav-link :href="route('purchases.index')" :active="request()->routeIs('purchases.*')">Pembelian</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('incoming-goods.index')" :active="request()->routeIs('incoming-goods.*')">Barang Masuk</x-sidebar-nav-link></li>
                         @endif
 
@@ -162,8 +163,8 @@
                 @endif
 
                 <!-- Kas (Pengeluaran & Pemasukan Lainnya) -->
-                @if ($isSuperAdmin || $isAdminCabang)
-                <li x-data="{ open: {{ request()->routeIs('cash-flows.out.*', 'cash-flows.in.*', 'expense-categories.*') ? 'true' : 'false' }} }" class="pt-2">
+                @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
+                <li x-data="{ open: {{ request()->routeIs('cash-flows.out.*', 'cash-flows.in.*', 'expense-categories.*', 'debts.*') ? 'true' : 'false' }} }" class="pt-2">
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                             <span class="flex items-center gap-3">
                             <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500/30 transition-colors">
@@ -179,8 +180,11 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
+                        <li><x-sidebar-nav-link :href="route('debts.index')" :active="request()->routeIs('debts.*')">Data Utang</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isAdminCabang)
                         <li><x-sidebar-nav-link :href="route('cash-flows.out.index')" :active="request()->routeIs('cash-flows.out.index')">Pengeluaran Dana</x-sidebar-nav-link></li>
                         <li><x-sidebar-nav-link :href="route('cash-flows.in.index')" :active="request()->routeIs('cash-flows.in.*')">Pemasukan Lainnya</x-sidebar-nav-link></li>
+                        @endif
                     </ul>
                 </li>
                 @endif

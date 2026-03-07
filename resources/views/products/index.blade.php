@@ -44,6 +44,14 @@
                         </select>
                     </div>
                     <div class="min-w-[140px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Produk') }}</label>
+                        <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="1" {{ request('status') === '1' ? 'selected' : '' }}>{{ __('Aktif') }}</option>
+                            <option value="0" {{ request('status') === '0' ? 'selected' : '' }}>{{ __('Nonaktif') }}</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[140px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Filter Lokasi') }}</label>
                         <select name="location_type" x-model="locType" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
@@ -80,7 +88,7 @@
                             </svg>
                             {{ __('Filter') }}
                         </button>
-                        <a href="{{ route('products.index', ['location_type' => '', 'category_id' => '', 'search' => '']) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+                        <a href="{{ route('products.index', ['location_type' => '', 'location_id' => '', 'category_id' => '', 'status' => '', 'search' => '']) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
                     </div>
