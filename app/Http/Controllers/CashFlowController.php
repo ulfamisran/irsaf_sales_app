@@ -60,9 +60,6 @@ class CashFlowController extends Controller
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
-            if ($request->filled('warehouse_id')) {
-                $query->where('warehouse_id', $request->warehouse_id);
-            }
         }
 
         if ($request->filled('expense_category_id')) {
@@ -152,9 +149,6 @@ class CashFlowController extends Controller
             $canFilterLocation = true;
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
-            }
-            if ($request->filled('warehouse_id')) {
-                $query->where('warehouse_id', $request->warehouse_id);
             }
         }
 
@@ -362,12 +356,10 @@ class CashFlowController extends Controller
         $branchId = $user->isSuperAdmin()
             ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
             : (int) $user->branch_id;
-        $warehouseId = $user->isSuperAdmin()
-            ? (isset($validated['warehouse_id']) ? (int) $validated['warehouse_id'] : null)
-            : null;
+        $warehouseId = null;
 
-        if (! $branchId && ! $warehouseId) {
-            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang/Gudang wajib dipilih.')]);
+        if (! $branchId) {
+            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
         }
 
         $saldo = (new KasBalanceService)->getSaldoForLocation(
@@ -409,12 +401,10 @@ class CashFlowController extends Controller
         $branchId = $user->isSuperAdmin()
             ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
             : (int) $user->branch_id;
-        $warehouseId = $user->isSuperAdmin()
-            ? (isset($validated['warehouse_id']) ? (int) $validated['warehouse_id'] : null)
-            : null;
+        $warehouseId = null;
 
-        if (! $branchId && ! $warehouseId) {
-            abort(403, __('Branch/Warehouse is required.'));
+        if (! $branchId) {
+            abort(403, __('Cabang wajib dipilih.'));
         }
 
         CashFlow::create([

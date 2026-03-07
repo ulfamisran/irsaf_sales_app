@@ -10,33 +10,23 @@
         @endif
 
         <div class="card-modern overflow-hidden">
-            <div class="p-6">
+            <div class="p-6" x-data="cashInForm">
                 <form method="POST" action="{{ route('cash-flows.in.store') }}" class="space-y-4">
                     @csrf
 
                     @if (auth()->user()->isSuperAdmin() || !auth()->user()->branch_id)
                         <div>
                             <x-input-label for="branch_id" :value="__('Cabang')" />
-                            <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" x-model="branchId" x-on:change="loadFormDataForBranch()" required>
                                 <option value="">{{ __('Pilih Cabang') }}</option>
                                 @foreach ($branches as $b)
                                     <option value="{{ $b->id }}" {{ old('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
                                 @endforeach
                             </select>
                             <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
-                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi gudang') }}</p>
                         </div>
-                        <div>
-                            <x-input-label for="warehouse_id" :value="__('Gudang')" />
-                            <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Pilih Gudang') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ old('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
-                            <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan jika transaksi cabang') }}</p>
-                        </div>
+                    @else
+                        <input type="hidden" id="branch_id" name="branch_id" value="{{ auth()->user()->branch_id }}">
                     @endif
 
                     <div>
@@ -51,14 +41,11 @@
                     </div>
 
                     <div>
-                        <x-input-label for="payment_method_id" :value="__('Masuk ke Kas (Metode Pembayaran)')" />
+                        <x-input-label for="payment_method_id" :value="__('Pilih Kas')" />
                         <select id="payment_method_id" name="payment_method_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                            <option value="">{{ __('Pilih Kas / Rekening Tujuan') }}</option>
-                            @foreach ($paymentMethods as $pm)
-                                <option value="{{ $pm->id }}" {{ old('payment_method_id') == $pm->id ? 'selected' : '' }}>{{ $pm->display_label }}</option>
-                            @endforeach
+                            <option value="">{{ __('Pilih Kas') }}</option>
                         </select>
-                        <p class="mt-1 text-xs text-slate-500">{{ __('Pilih di mana dana akan disimpan (Tunai, BNI, BRI, dll)') }}</p>
+                        <p class="mt-1 text-xs text-slate-500">{{ __('Metode pembayaran/kas berdasarkan cabang yang dipilih') }}</p>
                         <x-input-error :messages="$errors->get('payment_method_id')" class="mt-2" />
                     </div>
 
@@ -90,5 +77,43 @@
             </div>
         </div>
     </div>
+
+    @php
+        $formDataUrl = route('data-by-location.form-data', [], false);
+        $appBase = request()->getBaseUrl();
+    @endphp
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('cashInForm', () => ({
+                branchId: '{{ old('branch_id', auth()->user()->isSuperAdmin() ? '' : auth()->user()->branch_id) }}',
+                paymentMethodId: '{{ old('payment_method_id', '') }}',
+                formDataUrl: @json($formDataUrl),
+                appBase: @json($appBase),
+                async loadFormDataForBranch() {
+                    const branchId = this.branchId || document.getElementById('branch_id')?.value;
+                    if (!branchId) return;
+                    const pmSelect = document.getElementById('payment_method_id');
+                    if (!pmSelect) return;
+                    try {
+                        const url = new URL(this.appBase + this.formDataUrl, window.location.origin);
+                        url.searchParams.set('location_type', 'branch');
+                        url.searchParams.set('location_id', branchId);
+                        const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                        if (!res.ok) throw new Error('Fetch failed');
+                        const data = await res.json();
+                        const methods = data.payment_methods || [];
+                        const oldVal = pmSelect.value;
+                        pmSelect.innerHTML = '<option value="">' + @json(__('Pilih Kas')) + '</option>' +
+                            methods.map(m => '<option value="' + m.id + '">' + (m.label || '') + '</option>').join('');
+                        if (oldVal && methods.some(m => m.id == oldVal)) pmSelect.value = oldVal;
+                        this.paymentMethodId = pmSelect.value || '';
+                    } catch (e) { console.error('loadFormDataForBranch failed', e); }
+                },
+                init() {
+                    if (this.branchId) this.$nextTick(() => this.loadFormDataForBranch());
+                }
+            }));
+        });
+    </script>
 </x-app-layout>
 

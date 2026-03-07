@@ -18,15 +18,6 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
                     @elseif($filterLocked ?? false)
                         <div class="min-w-[180px]">
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
