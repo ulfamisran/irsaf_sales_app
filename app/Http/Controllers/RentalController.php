@@ -114,61 +114,62 @@ class RentalController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id && ! $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])) {
-            abort(403, __('User branch not set.'));
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
         $warehouses = Warehouse::orderBy('name')->get();
+        $branches = Branch::orderBy('name')->get();
         if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
             $warehouses = $warehouses->where('id', $user->warehouse_id)->values();
         }
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            $branches = $branches->where('id', $user->branch_id)->values();
+        }
 
-        $defaultWarehouseId = null;
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-            $defaultWarehouseId = (int) $user->warehouse_id;
+        $defaultLocationType = null;
+        $defaultLocationId = null;
+        if (! $user->isSuperAdminOrAdminPusat() && $user->warehouse_id) {
+            $defaultLocationType = 'warehouse';
+            $defaultLocationId = (int) $user->warehouse_id;
+        } elseif (! $user->isSuperAdminOrAdminPusat() && $user->branch_id) {
+            $defaultLocationType = 'branch';
+            $defaultLocationId = (int) $user->branch_id;
         }
 
         $customers = collect();
         $paymentMethods = collect();
-        if ($defaultWarehouseId) {
+        if ($defaultLocationId) {
             $paymentMethods = PaymentMethod::query()
                 ->where('is_active', true)
-                ->where('warehouse_id', $defaultWarehouseId)
+                ->forLocation(
+                    $defaultLocationType === 'branch' ? $defaultLocationId : null,
+                    $defaultLocationType === 'warehouse' ? $defaultLocationId : null
+                )
                 ->orderBy('jenis_pembayaran')
                 ->orderBy('nama_bank')
                 ->orderBy('id')
                 ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
             $customers = Customer::query()
                 ->where('is_active', true)
-                ->where('warehouse_id', $defaultWarehouseId)
+                ->when($defaultLocationType === 'branch', fn ($q) => $q->where('branch_id', $defaultLocationId))
+                ->when($defaultLocationType === 'warehouse', fn ($q) => $q->where('warehouse_id', $defaultLocationId))
                 ->orderBy('name')
                 ->limit(500)
                 ->get(['id', 'name', 'phone']);
         }
 
-        return view('rentals.create', compact('warehouses', 'customers', 'paymentMethods', 'defaultWarehouseId'));
+        return view('rentals.create', compact('warehouses', 'branches', 'customers', 'paymentMethods', 'defaultLocationType', 'defaultLocationId'));
     }
 
     public function store(RentalRequest $request): RedirectResponse
     {
         try {
-            $user = $request->user();
-            $branchId = $user->isSuperAdminOrAdminPusat()
-                ? (int) Branch::orderBy('id')->value('id')
-                : (int) $user->branch_id;
-            if (! $branchId && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])) {
-                $branchId = (int) Branch::orderBy('id')->value('id');
-            }
-
-            if (! $branchId) {
-                abort(403, __('Branch is required.'));
-            }
-
             $customerId = $this->resolveCustomerId($request);
 
             $rental = $this->rentalService->create(
-                $branchId,
-                (int) $request->warehouse_id,
+                $request->location_type,
+                (int) $request->location_id,
                 $customerId,
                 $request->pickup_date,
                 $request->return_date,
@@ -177,7 +178,7 @@ class RentalController extends Controller
                 (float) $request->input('penalty_amount', 0),
                 $request->input('payments', []),
                 $request->description,
-                $user->id
+                $request->user()->id
             );
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -215,7 +216,8 @@ class RentalController extends Controller
         }
 
         $rental->load(['items.product', 'customer', 'payments.paymentMethod']);
-        $warehouses = Warehouse::orderBy('name')->get();
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
         $customers = Customer::query()
             ->where('is_active', true)
             ->orderBy('name')
@@ -228,7 +230,7 @@ class RentalController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        return view('rentals.edit', compact('rental', 'warehouses', 'customers', 'paymentMethods'));
+        return view('rentals.edit', compact('rental', 'warehouses', 'branches', 'customers', 'paymentMethods'));
     }
 
     public function update(RentalRequest $request, Rental $rental): RedirectResponse
@@ -245,7 +247,8 @@ class RentalController extends Controller
             $customerId = $this->resolveCustomerId($request);
             $rental = $this->rentalService->update(
                 $rental,
-                (int) $request->warehouse_id,
+                $request->location_type,
+                (int) $request->location_id,
                 $customerId,
                 $request->pickup_date,
                 $request->return_date,
@@ -367,15 +370,18 @@ class RentalController extends Controller
 
     public function availableProducts(Request $request): JsonResponse
     {
-        $warehouseId = (int) $request->get('warehouse_id');
+        $locationType = $request->get('location_type', 'warehouse');
+        $locationId = (int) $request->get('location_id');
         $rentalId = (int) $request->get('rental_id');
-        if ($warehouseId <= 0) {
+        $brand = $request->get('brand');
+        $series = $request->get('series');
+        if ($locationId <= 0 || ! in_array($locationType, [Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH], true)) {
             return response()->json(['products' => []]);
         }
 
         $productIds = ProductUnit::query()
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->where('status', ProductUnit::STATUS_IN_STOCK)
             ->pluck('product_id')
             ->all();
@@ -386,23 +392,42 @@ class RentalController extends Controller
             $productIds = array_values(array_unique(array_merge($productIds, $rentalProductIds)));
         }
 
-        $products = Product::query()
-            ->select('products.id', 'products.sku', 'products.brand', 'products.series', 'products.laptop_type')
+        $query = Product::query()
+            ->select('products.id', 'products.sku', 'products.brand', 'products.series', 'products.laptop_type', 'products.color')
             ->join('categories', 'categories.id', '=', 'products.category_id')
+            ->where('products.is_active', true)
             ->where('products.laptop_type', 'bekas')
             ->where(function ($q) {
                 $q->where('categories.code', 'LAP')
-                    ->orWhere('categories.name', 'Laptop');
+                    ->orWhere('categories.name', 'like', '%Laptop%');
             })
             ->whereIn('products.id', $productIds)
-            ->orderBy('products.sku')
-            ->get();
+            ->withCount([
+                'units as in_stock_count' => fn ($q) => $q
+                    ->where('location_type', $locationType)
+                    ->where('location_id', $locationId)
+                    ->where('status', ProductUnit::STATUS_IN_STOCK),
+            ])
+            ->orderBy('products.brand')
+            ->orderBy('products.series')
+            ->orderBy('products.sku');
+
+        if ($brand) {
+            $query->where('products.brand', $brand);
+        }
+        if ($series) {
+            $query->where('products.series', $series);
+        }
+
+        $products = $query->limit(500)->get();
 
         $products = $products->map(fn ($p) => [
             'id' => $p->id,
             'sku' => $p->sku,
             'brand' => $p->brand,
             'series' => $p->series,
+            'color' => $p->color,
+            'in_stock_count' => $p->in_stock_count ?? 0,
         ])->values();
 
         return response()->json(['products' => $products]);
@@ -410,17 +435,18 @@ class RentalController extends Controller
 
     public function availableSerials(Request $request): JsonResponse
     {
-        $warehouseId = (int) $request->get('warehouse_id');
+        $locationType = $request->get('location_type', 'warehouse');
+        $locationId = (int) $request->get('location_id');
         $productId = (int) $request->get('product_id');
         $rentalId = (int) $request->get('rental_id');
-        if ($warehouseId <= 0 || $productId <= 0) {
+        if ($locationId <= 0 || $productId <= 0 || ! in_array($locationType, [Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH], true)) {
             return response()->json(['serial_numbers' => []]);
         }
 
         $serials = ProductUnit::query()
             ->where('product_id', $productId)
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->where('status', ProductUnit::STATUS_IN_STOCK)
             ->orderBy('serial_number')
             ->pluck('serial_number')
@@ -451,17 +477,19 @@ class RentalController extends Controller
         }
 
         $user = $request->user();
-        $warehouseId = $user->isSuperAdminOrAdminPusat()
-            ? (int) $request->warehouse_id
-            : (int) $user->warehouse_id;
+        $locationType = $request->input('location_type');
+        $locationId = (int) $request->input('location_id');
+        $branchId = $locationType === 'branch' ? $locationId : null;
+        $warehouseId = $locationType === 'warehouse' ? $locationId : null;
 
         $customer = Customer::create([
             'name' => $name,
             'phone' => $request->input('customer_new_phone'),
             'address' => $request->input('customer_new_address'),
             'is_active' => true,
-            'placement_type' => $warehouseId ? Customer::PLACEMENT_GUDANG : null,
-            'warehouse_id' => $warehouseId ?: null,
+            'placement_type' => $branchId ? Customer::PLACEMENT_CABANG : Customer::PLACEMENT_GUDANG,
+            'branch_id' => $branchId,
+            'warehouse_id' => $warehouseId,
         ]);
 
         return (int) $customer->id;

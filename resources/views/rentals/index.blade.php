@@ -124,7 +124,7 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Gudang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Penyewa') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Ambil') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Kembali') }}</th>
@@ -138,7 +138,7 @@
                         @forelse ($rentals as $rental)
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3">{{ $rental->invoice_number }}</td>
-                                <td class="px-4 py-3">{{ $rental->warehouse?->name }}</td>
+                                <td class="px-4 py-3">{{ ($rental->location_type ?? 'warehouse') === 'branch' ? ($rental->branch?->name ?? '-') : ($rental->warehouse?->name ?? '-') }}</td>
                                 <td class="px-4 py-3">{{ $rental->customer?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $rental->pickup_date?->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $rental->return_date?->format('d/m/Y') }}</td>

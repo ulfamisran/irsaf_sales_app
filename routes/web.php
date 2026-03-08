@@ -260,25 +260,25 @@ Route::middleware('auth')->group(function () {
         ->only(['edit', 'update']);
 
     Route::get('rentals/available-serials', [RentalController::class, 'availableSerials'])
-        ->middleware('role:admin_gudang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_gudang,admin_cabang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-serials');
     Route::get('rentals/available-products', [RentalController::class, 'availableProducts'])
-        ->middleware('role:admin_gudang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_gudang,admin_cabang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-products');
     Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
-        ->middleware('role:admin_gudang,kasir')
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.invoice');
     Route::post('rentals/{rental}/add-payment', [RentalController::class, 'addPayment'])
-        ->middleware('role:admin_gudang,kasir')
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.add-payment');
     Route::post('rentals/{rental}/mark-returned', [RentalController::class, 'markReturned'])
-        ->middleware('role:admin_gudang,kasir')
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.mark-returned');
     Route::post('rentals/{rental}/cancel', [RentalController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('rentals.cancel');
     Route::resource('rentals', RentalController::class)
-        ->middleware('role:admin_gudang,kasir')
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('rentals', RentalController::class)
         ->middleware('role:super_admin,admin_pusat')

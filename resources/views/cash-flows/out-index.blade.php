@@ -114,6 +114,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Pengeluaran') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sumber Dana') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
@@ -132,6 +133,7 @@
                                 @endif
                             </td>
                             <td class="px-4 py-3">{{ $exp->expenseCategory?->name ?? '-' }}</td>
+                            <td class="px-4 py-3">{{ $exp->paymentMethod?->display_label ?? '-' }}</td>
                             <td class="px-4 py-3">{{ $exp->description }}</td>
                             <td class="px-4 py-3 text-right font-medium text-red-600">
                                 -{{ number_format($exp->amount, 0, ',', '.') }}
@@ -149,7 +151,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
+                            <td colspan="8" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

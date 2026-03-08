@@ -4,7 +4,10 @@ namespace App\Services;
 
 use App\Models\CashFlow;
 use App\Models\Branch;
+use App\Models\ExpenseCategory;
+use App\Models\IncomeCategory;
 use App\Models\Service;
+use App\Models\ServiceMaterial;
 use App\Models\ServicePayment;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -111,6 +114,7 @@ class ServiceService
                 ]);
             }
 
+            $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
             foreach (ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get() as $sp) {
                 $pm = $sp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
@@ -122,6 +126,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'income_category_id' => $serviceCategory->id,
                     'payment_method_id' => $sp->payment_method_id,
                     'transaction_date' => $entryDate,
                     'user_id' => $userId ?? auth()->id(),
@@ -231,6 +236,7 @@ class ServiceService
                 ->where('reference_id', $service->id)
                 ->delete();
 
+            $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
             foreach (ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get() as $sp) {
                 $pm = $sp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
@@ -242,6 +248,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'income_category_id' => $serviceCategory->id,
                     'payment_method_id' => $sp->payment_method_id,
                     'transaction_date' => $entryDate,
                     'user_id' => auth()->id(),
@@ -313,6 +320,7 @@ class ServiceService
             }
 
             $txDate = $exitDate ?? $service->entry_date->toDateString();
+            $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
             foreach ($payments as $p) {
                 $amt = round((float) ($p['amount'] ?? 0), 2);
                 if ($amt <= 0) {
@@ -328,6 +336,7 @@ class ServiceService
                     'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
+                    'income_category_id' => $serviceCategory->id,
                     'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $txDate,
                     'user_id' => $userId ?? auth()->id(),
@@ -399,17 +408,95 @@ class ServiceService
 
         return DB::transaction(function () use ($service, $userId, $reason) {
             $refundDate = now()->toDateString();
-            $payments = ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get();
-            foreach ($payments as $sp) {
-                $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
+
+            // Dana keluar: refund ke pelanggan per metode pembayaran (berkurang sesuai metode pembayarannya)
+            // Prioritas 1: dari CashFlow IN (pembayaran service) - selalu selaras dengan uang yang diterima
+            // Prioritas 2: fallback ke ServicePayment jika CashFlow IN kosong
+            $refundSources = CashFlow::where('reference_type', CashFlow::REFERENCE_SERVICE)
+                ->where('reference_id', $service->id)
+                ->where('type', CashFlow::TYPE_IN)
+                ->get();
+
+            if ($refundSources->isEmpty() && (float) $service->total_paid > 0) {
+                $refundSources = ServicePayment::with('paymentMethod')
+                    ->where('service_id', $service->id)
+                    ->get()
+                    ->map(fn ($sp) => (object) [
+                        'amount' => $sp->amount,
+                        'payment_method_id' => $sp->payment_method_id,
+                        'label' => $sp->paymentMethod?->display_label ?? __('Payment'),
+                    ]);
+            } else {
+                $paymentMethodLabels = [];
+                foreach (\App\Models\PaymentMethod::all() as $pm) {
+                    $paymentMethodLabels[$pm->id] = $pm->display_label ?? (string) $pm->id;
+                }
+                $refundSources = $refundSources->map(fn ($cf) => (object) [
+                    'amount' => $cf->amount,
+                    'payment_method_id' => $cf->payment_method_id,
+                    'label' => $paymentMethodLabels[(int) ($cf->payment_method_id ?? 0)] ?? __('Payment'),
+                ]);
+            }
+
+            $reversalCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Pengembalian dana pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
+            foreach ($refundSources as $src) {
+                $amt = (float) $src->amount;
+                if ($amt <= 0) {
+                    continue;
+                }
+                $pmId = (int) ($src->payment_method_id ?? 0);
+                $pmLabel = $src->label ?? __('Payment');
                 CashFlow::create([
                     'branch_id' => $service->branch_id,
                     'type' => CashFlow::TYPE_OUT,
-                    'amount' => $sp->amount,
-                    'description' => __('Cancel Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
+                    'amount' => $amt,
+                    'description' => __('Pengembalian dana pembatalan service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
-                    'payment_method_id' => $sp->payment_method_id,
+                    'expense_category_id' => $reversalCategory->id,
+                    'payment_method_id' => $pmId > 0 ? $pmId : null,
+                    'transaction_date' => $refundDate,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
+
+            // Hapus dana masuk asal (pembayaran service) agar tidak double-count di saldo
+            CashFlow::where('reference_type', CashFlow::REFERENCE_SERVICE)
+                ->where('reference_id', $service->id)
+                ->where('type', CashFlow::TYPE_IN)
+                ->delete();
+
+            // Dana masuk: retur pembelian material (barang yang dibeli untuk service dibatalkan)
+            $returPembelianCategory = IncomeCategory::firstOrCreate(
+                ['code' => 'RTR'],
+                [
+                    'name' => 'Retur Pembelian',
+                    'description' => 'Pengembalian dana dari pembatalan/retur pembelian',
+                    'is_active' => true,
+                ]
+            );
+            $materials = ServiceMaterial::where('service_id', $service->id)->get();
+            foreach ($materials as $mat) {
+                $amount = round((float) $mat->quantity * (float) $mat->price, 2);
+                if ($amount <= 0) {
+                    continue;
+                }
+                CashFlow::create([
+                    'branch_id' => $service->branch_id,
+                    'type' => CashFlow::TYPE_IN,
+                    'amount' => $amount,
+                    'description' => __('Pembatalan Service') . ' - ' . __('Retur Pembelian material') . ' ' . $service->invoice_number . ' - ' . ($mat->name ?? '-'),
+                    'reference_type' => CashFlow::REFERENCE_SERVICE,
+                    'reference_id' => $service->id,
+                    'income_category_id' => $returPembelianCategory->id,
+                    'payment_method_id' => $mat->payment_method_id,
                     'transaction_date' => $refundDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);

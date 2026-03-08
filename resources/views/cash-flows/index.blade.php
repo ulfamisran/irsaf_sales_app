@@ -31,6 +31,25 @@
                         <div class="min-w-[180px]">
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         </div>
+                        @if(isset($branchId) && $branchId)
+                            <input type="hidden" name="branch_id" value="{{ $branchId }}">
+                        @endif
+                        @if(isset($warehouseId) && $warehouseId)
+                            <input type="hidden" name="warehouse_id" value="{{ $warehouseId }}">
+                        @endif
+                    @endif
+                    @if(count($paymentMethods ?? []) > 0)
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Metode Pembayaran') }}</label>
+                            <select name="payment_method_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($paymentMethods ?? [] as $pm)
+                                    <option value="{{ $pm->id }}" {{ request('payment_method_id') == $pm->id ? 'selected' : '' }}>
+                                        {{ $pm->display_label }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe') }}</label>
@@ -48,6 +67,13 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Urutan') }}</label>
+                        <select name="order" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="bawah_ke_atas" {{ request('order', 'bawah_ke_atas') === 'bawah_ke_atas' ? 'selected' : '' }}>{{ __('Bawah ke atas') }} ({{ __('Saldo awal di bawah, saldo akhir di atas') }})</option>
+                            <option value="atas_ke_bawah" {{ request('order') === 'atas_ke_bawah' ? 'selected' : '' }}>{{ __('Atas ke bawah') }} ({{ __('Saldo awal di atas, saldo akhir di bawah') }})</option>
+                        </select>
+                    </div>
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -57,9 +83,6 @@
                         </button>
                         <a href="{{ route('cash-flows.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
-                        </a>
-                        <a href="{{ route('cash-flows.out.create') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">
-                            {{ __('Catat Dana Keluar') }}
                         </a>
                     </div>
                 </form>
@@ -113,57 +136,95 @@
 
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-xs">
                     <thead>
                         <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tipe') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Referensi') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tipe') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Sumber Dana') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Referensi') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Pemasukan') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Pengeluaran') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Saldo') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
+                        @if(($orderDirection ?? 'bawah_ke_atas') === 'atas_ke_bawah' && $cashFlows->isNotEmpty())
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <td colspan="7" class="px-2 py-2 text-right font-semibold text-slate-700">{{ __('Saldo Awal') }}</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right font-semibold text-slate-700">0</td>
+                            <td class="px-2 py-2"></td>
+                        </tr>
+                        @endif
                         @forelse ($cashFlows as $cf)
                             <tr class="hover:bg-slate-50/50">
-                                <td class="px-4 py-3">{{ $cf->transaction_date->format('d/m/Y') }}</td>
-                                <td class="px-4 py-3">
-                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $cf->type === 'IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800' }}">
+                                <td class="px-2 py-2">{{ $cf->transaction_date->format('d/m/Y') }}</td>
+                                <td class="px-2 py-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium {{ $cf->type === 'IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800' }}">
                                         {{ $cf->type }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-3">
+                                <td class="px-2 py-2">
                                     @if ($cf->warehouse_id)
                                         {{ __('Gudang') }}: {{ $cf->warehouse?->name ?? '-' }}
                                     @else
                                         {{ __('Cabang') }}: {{ $cf->branch?->name ?? '-' }}
                                     @endif
                                 </td>
-                                <td class="px-4 py-3">
+                                <td class="px-2 py-2">{{ $cf->paymentMethod?->display_label ?? '-' }}</td>
+                                <td class="px-2 py-2">
                                     @if ($cf->type === 'OUT')
                                         {{ $cf->expenseCategory?->name ?? '-' }}
                                     @else
                                         {{ $cf->incomeCategory?->name ?? '-' }}
                                     @endif
                                 </td>
-                                <td class="px-4 py-3">{{ $cf->description }}</td>
-                                <td class="px-4 py-3">{{ $cf->reference_type }} #{{ $cf->reference_id }}</td>
-                                <td class="px-4 py-3 text-right font-medium {{ $cf->type === 'IN' ? 'text-emerald-600' : 'text-red-600' }}">
-                                    {{ $cf->type === 'IN' ? '+' : '-' }}{{ number_format($cf->amount, 0, ',', '.') }}
+                                <td class="px-2 py-2">{{ $cf->description }}</td>
+                                <td class="px-2 py-2">
+                                    @if ($cf->reference_type && $cf->reference_id)
+                                        {{ $cf->reference_type }} #{{ $cf->reference_id }}
+                                    @else
+                                        -
+                                    @endif
                                 </td>
-                                <td class="px-4 py-3">{{ $cf->user?->name }}</td>
+                                <td class="px-2 py-2 text-right font-medium text-emerald-600">
+                                    {{ $cf->type === 'IN' ? number_format($cf->amount, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="px-2 py-2 text-right font-medium text-red-600">
+                                    {{ $cf->type === 'OUT' ? number_format($cf->amount, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="px-2 py-2 text-right font-medium {{ ($cf->running_balance ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600' }}">
+                                    {{ number_format($cf->running_balance ?? 0, 0, ',', '.') }}
+                                </td>
+                                <td class="px-2 py-2">{{ $cf->user?->name }}</td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
+                                <td colspan="11" class="px-2 py-8 text-center text-slate-500">{{ __('Tidak ada data.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
+                    @if ($cashFlows->isNotEmpty() && ($orderDirection ?? 'bawah_ke_atas') === 'bawah_ke_atas')
+                    <tfoot class="bg-slate-50 border-t-2 border-slate-200">
+                        <tr>
+                            <td colspan="7" class="px-2 py-2 text-right font-semibold text-slate-700">{{ __('Saldo Awal') }}</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right font-semibold text-slate-700">0</td>
+                            <td class="px-2 py-2"></td>
+                        </tr>
+                    </tfoot>
+                    @endif
                 </table>
-                <div class="mt-4">{{ $cashFlows->links() }}</div>
+                @if ($cashFlows->count() >= 1000)
+                    <p class="mt-3 text-sm text-amber-600">{{ __('Menampilkan 1000 transaksi terakhir. Saldo dihitung dari transaksi terlama dalam rentang tersebut.') }}</p>
+                @endif
             </div>
         </div>
     </div>

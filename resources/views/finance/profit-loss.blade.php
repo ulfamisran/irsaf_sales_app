@@ -33,6 +33,12 @@
                         <div class="min-w-[180px]">
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         </div>
+                        @if($selectedBranchId ?? null)
+                            <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
+                        @endif
+                        @if($selectedWarehouseId ?? null)
+                            <input type="hidden" name="warehouse_id" value="{{ $selectedWarehouseId }}">
+                        @endif
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
@@ -41,6 +47,13 @@
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tampilan') }}</label>
+                        <select name="pov" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="card" {{ request('pov', 'card') === 'card' ? 'selected' : '' }}>{{ __('Card') }}</option>
+                            <option value="table" {{ request('pov') === 'table' ? 'selected' : '' }}>{{ __('Tabel') }}</option>
+                        </select>
                     </div>
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
@@ -58,15 +71,71 @@
         </div>
 
         <div class="space-y-4">
+            @if(($pov ?? 'card') === 'table')
+            {{-- POV Tabel --}}
+            <div class="card-modern overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr class="bg-indigo-50/50">
+                                <td colspan="2" class="px-4 py-2 font-semibold text-slate-800">{{ __('PEMASUKAN PENJUALAN') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Penjualan') }} ({{ __('Harga Jual') }} - {{ __('HPP') }})</td>
+                                <td class="px-4 py-2 text-right font-medium {{ $totalSalesProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalSalesProfit, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Service') }} ({{ __('Total Service') }} - {{ __('Biaya Material') }})</td>
+                                <td class="px-4 py-2 text-right font-medium {{ $totalServiceProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalServiceProfit, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Penyewaan') }} ({{ __('Harga Sewa') }})</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600">{{ number_format($totalRentalIncome ?? 0, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr class="border-t-2 border-slate-200">
+                                <td class="px-4 py-2 font-semibold text-slate-800">{{ __('Total Pemasukan Penjualan') }}</td>
+                                @php $totPenj = $totalSalesIncome ?? ($totalSalesProfit + $totalServiceProfit + ($totalRentalIncome ?? 0)); @endphp
+                                <td class="px-4 py-2 text-right font-semibold {{ $totPenj >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totPenj, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 text-slate-600">{{ __('Pemasukan Lainnya') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600">+{{ number_format($totalOtherIncome, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 text-slate-600">{{ __('Pengeluaran') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr class="bg-slate-100 border-t-2 border-slate-300">
+                                <td class="px-4 py-3 font-bold text-slate-900">{{ __('Laba Keseluruhan') }}</td>
+                                <td class="px-4 py-3 text-right font-bold {{ $netProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($netProfit, 0, ',', '.') }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-4 py-2 bg-slate-50 border-t text-xs text-slate-500">
+                    {{ __('Periode') }}: {{ $dateFrom }} s/d {{ $dateTo }}
+                    @if($locationLabel)
+                        &middot; {{ $locationLabel }}
+                    @endif
+                </div>
+            </div>
+            @else
+            {{-- POV Card --}}
             <div class="card-modern p-6">
                 <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Ringkasan') }}</h3>
                 <dl class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
                         <dt class="text-slate-500">{{ __('Periode') }}</dt>
-                        <dd class="font-semibold text-slate-800">{{ __('Semua periode (tidak difilter tanggal)') }}</dd>
+                        <dd class="font-semibold text-slate-800">{{ $dateFrom }} s/d {{ $dateTo }}</dd>
                     </div>
                     <div>
-                        <dt class="text-slate-500">{{ __('Laba Bersih') }}</dt>
+                        <dt class="text-slate-500">{{ __('Laba Keseluruhan') }}</dt>
                         <dd class="font-semibold {{ $netProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">
                             {{ number_format($netProfit, 0, ',', '.') }}
                         </dd>
@@ -107,8 +176,8 @@
                             <dd class="font-semibold text-slate-800">{{ number_format($totalServiceRevenue, 0, ',', '.') }}</dd>
                         </div>
                         <div class="flex justify-between">
-                            <dt class="text-slate-600">{{ __('Total Biaya Service') }}</dt>
-                            <dd class="font-semibold text-red-600">-{{ number_format($totalServiceCost, 0, ',', '.') }}</dd>
+                            <dt class="text-slate-600">{{ __('Biaya Material yang dibeli') }}</dt>
+                            <dd class="font-semibold text-red-600">-{{ number_format($totalServiceMaterialCost ?? 0, 0, ',', '.') }}</dd>
                         </div>
                         <div class="flex justify-between border-t border-slate-200 pt-2 mt-1">
                             <dt class="text-slate-700 font-semibold">{{ __('Laba Kotor Service') }}</dt>
@@ -176,6 +245,7 @@
                     </div>
                 </div>
             </div>
+            @endif
         </div>
     </div>
 </x-app-layout>

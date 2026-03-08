@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\CashFlow;
+use App\Models\ExpenseCategory;
 use App\Models\Role;
 use App\Models\PaymentMethod;
 use App\Models\Rental;
@@ -60,8 +61,10 @@ class FinanceController extends Controller
             }
         }
 
+        // Penjualan: hanya released, Harga Penjualan - HPP
         $salesQuery = Sale::query()
-            ->where('status', Sale::STATUS_RELEASED);
+            ->where('status', Sale::STATUS_RELEASED)
+            ->whereBetween('sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
             $salesQuery->where('branch_id', $branchId);
@@ -75,14 +78,20 @@ class FinanceController extends Controller
         $totalSales = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
             ->where('sales.status', Sale::STATUS_RELEASED)
+            ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
             ->sum('sale_payments.amount');
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;
 
+        // Service: hanya completed, Total service - Biaya Material yang dibeli
         $servicesQuery = Service::query()
             ->with('serviceMaterials')
-            ->whereIn('status', [Service::STATUS_COMPLETED]);
+            ->where('status', Service::STATUS_COMPLETED)
+            ->whereBetween(
+                DB::raw('COALESCE(services.exit_date, services.entry_date)'),
+                [$dateFrom->toDateString(), $dateTo->toDateString()]
+            );
 
         if ($branchId) {
             $servicesQuery->where('branch_id', $branchId);
@@ -91,31 +100,28 @@ class FinanceController extends Controller
             $servicesQuery->whereRaw('1 = 0');
         }
 
-        $services = $servicesQuery
-            ->when($dateFrom && $dateTo, function ($q) use ($dateFrom, $dateTo) {
-                $q->whereBetween(
-                    DB::raw('COALESCE(services.exit_date, services.entry_date)'),
-                    [$dateFrom->toDateString(), $dateTo->toDateString()]
-                );
-            })
-            ->get();
+        $services = $servicesQuery->get();
 
         $totalServiceRevenue = (float) $services->sum->total_service_price;
-        $totalServiceCost = (float) $services->sum->total_service_cost;
-        $totalServiceProfit = $totalServiceRevenue - $totalServiceCost;
+        // Biaya Material = Pembelian Sparepart (quantity * price) - sama dengan CashFlow OUT "Pembelian Sparepart User (SERVICE)"
+        $totalServiceMaterialCost = (float) $services->sum->materials_total_price;
+        $totalServiceProfit = $totalServiceRevenue - $totalServiceMaterialCost;
 
         $totalTradeIn = 0.0;
         if (! $warehouseId) {
             $totalTradeIn = (float) DB::table('sale_trade_ins')
                 ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
                 ->where('sales.status', Sale::STATUS_RELEASED)
+                ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
                 ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
                 ->sum('sale_trade_ins.trade_in_value');
         }
 
+        // Pemasukan Lainnya: filter tanggal
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->where('reference_type', CashFlow::REFERENCE_OTHER);
+            ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
             $incomeOtherQuery->where('branch_id', $branchId);
@@ -126,8 +132,12 @@ class FinanceController extends Controller
 
         $totalOtherIncome = (float) $incomeOtherQuery->sum('amount');
 
+        // Pengeluaran: filter tanggal
+        // EXCLUDE: SP-SVC (sudah di Biaya Material Service), REVERSAL (transaksi cancel tidak dihitung)
         $expenseQuery = CashFlow::query()
-            ->where('type', CashFlow::TYPE_OUT);
+            ->where('type', CashFlow::TYPE_OUT)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereDoesntHave('expenseCategory', fn ($q) => $q->whereIn('code', ['SP-SVC', 'REVERSAL']));
 
         if ($branchId) {
             $expenseQuery->where('branch_id', $branchId);
@@ -138,22 +148,26 @@ class FinanceController extends Controller
 
         $totalExpense = (float) $expenseQuery->sum('amount');
 
+        // Penyewaan: hanya released (selesai), Harga sewa
         $rentalQuery = Rental::query()
-            ->where('status', '!=', Rental::STATUS_CANCEL);
+            ->where('status', Rental::STATUS_RELEASED)
+            ->whereBetween('pickup_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
         if ($warehouseId) {
             $rentalQuery->where('warehouse_id', $warehouseId);
         }
         if ($branchId) {
             $rentalQuery->where('branch_id', $branchId);
         }
-        $totalRentalIncome = (float) $rentalQuery
-            ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
-            ->sum('total');
+        $totalRentalIncome = (float) $rentalQuery->sum('total');
 
-        $netProfit = ($totalSalesProfit + $totalServiceProfit + $totalRentalIncome + $totalOtherIncome) - $totalExpense;
+        // Laba = Pemasukan Penjualan (sales+service+rental) + Pemasukan Lainnya - Pengeluaran
+        $totalSalesIncome = $totalSalesProfit + $totalServiceProfit + $totalRentalIncome;
+        $netProfit = $totalSalesIncome + $totalOtherIncome - $totalExpense;
 
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereDoesntHave('expenseCategory', fn ($q) => $q->whereIn('code', ['SP-SVC', 'REVERSAL']))
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->orderByDesc('transaction_date')
@@ -167,6 +181,8 @@ class FinanceController extends Controller
             ? Warehouse::orderBy('name')->get(['id', 'name'])
             : collect();
 
+        $pov = $request->input('pov', 'card');
+
         return view('finance.profit-loss', [
             'canFilterLocation' => $canFilterLocation,
             'filterLocked' => $filterLocked,
@@ -177,8 +193,9 @@ class FinanceController extends Controller
             'totalSalesHpp' => $totalSalesHpp,
             'totalSalesProfit' => $totalSalesProfit,
             'totalServiceRevenue' => $totalServiceRevenue,
-            'totalServiceCost' => $totalServiceCost,
+            'totalServiceMaterialCost' => $totalServiceMaterialCost,
             'totalServiceProfit' => $totalServiceProfit,
+            'totalSalesIncome' => $totalSalesIncome,
             'totalTradeIn' => $totalTradeIn,
             'totalRentalIncome' => $totalRentalIncome,
             'totalOtherIncome' => $totalOtherIncome,
@@ -189,6 +206,7 @@ class FinanceController extends Controller
             'selectedBranchId' => $branchId,
             'warehouses' => $warehouses,
             'selectedWarehouseId' => $warehouseId,
+            'pov' => $pov,
         ]);
     }
 
@@ -230,11 +248,12 @@ class FinanceController extends Controller
             [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
         }
 
-        // Branch IN from sales + service (payment method via payment_methods)
+        // Branch IN from sales + service: semua pemasukan tanpa status, dikurangi yang cancel
+        // (sale_payments/service_payments dari transaksi cancel sudah dihapus saat cancel)
         $salePayments = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
             ->join('payment_methods', 'sale_payments.payment_method_id', '=', 'payment_methods.id')
-            ->where('sales.status', Sale::STATUS_RELEASED)
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
             ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
             ->selectRaw('sales.branch_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(sale_payments.amount) as total')
@@ -244,20 +263,29 @@ class FinanceController extends Controller
         $servicePayments = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
             ->join('payment_methods', 'service_payments.payment_method_id', '=', 'payment_methods.id')
-            ->where('services.status', Service::STATUS_COMPLETED)
+            ->where('services.status', '!=', Service::STATUS_CANCEL)
             ->when($branchId, fn ($q) => $q->where('services.branch_id', $branchId))
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]))
             ->selectRaw('services.branch_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(service_payments.amount) as total')
             ->groupBy('services.branch_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
             ->get();
 
-        // CashFlow IN/OUT (manual + rental), grouped by branch_id/warehouse_id and payment method
+        // CashFlow IN/OUT (manual + rental + retur pembelian material saat batal service), grouped by branch_id/warehouse_id and payment method
         $cashFlowInByPm = DB::table('cash_flows')
             ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
             ->where('cash_flows.type', CashFlow::TYPE_IN)
             ->where(function ($q) {
                 $q->whereNull('cash_flows.reference_type')
-                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE]);
+                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
+                    ->orWhere(function ($q2) {
+                        $q2->where('cash_flows.reference_type', CashFlow::REFERENCE_SERVICE)
+                            ->whereExists(function ($sq) {
+                                $sq->select(DB::raw(1))
+                                    ->from('income_categories')
+                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                                    ->where('income_categories.code', 'RTR');
+                            });
+                    });
             })
             ->where(function ($q) {
                 $q->whereNull('cash_flows.reference_type')
@@ -285,6 +313,10 @@ class FinanceController extends Controller
                         $sq->select('id')
                             ->from('rentals')
                             ->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('cash_flows.reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('cash_flows.type', CashFlow::TYPE_OUT);
                     });
             })
             ->when($branchId, fn ($q) => $q->where('cash_flows.branch_id', $branchId))
@@ -467,6 +499,10 @@ class FinanceController extends Controller
                         $sq->select('id')
                             ->from('rentals')
                             ->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('type', CashFlow::TYPE_OUT);
                     });
             })
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
@@ -488,7 +524,7 @@ class FinanceController extends Controller
         if (! $warehouseId) {
             $tradeInRows = DB::table('sale_trade_ins')
                 ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-                ->where('sales.status', Sale::STATUS_RELEASED)
+                ->where('sales.status', '!=', Sale::STATUS_CANCEL)
                 ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
                 ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
                 ->selectRaw('sales.branch_id, SUM(sale_trade_ins.trade_in_value) as total')
@@ -530,6 +566,22 @@ class FinanceController extends Controller
         }
         $overallSaldo = $overallIn - $overallOut;
 
+        // Filter by bank (kas_key) jika dipilih
+        $filterKasKey = $request->filled('kas_key') ? $request->kas_key : null;
+        $allKasKeys = $kasKeys;
+        if ($filterKasKey && in_array($filterKasKey, $allKasKeys, true)) {
+            $kasKeys = [$filterKasKey];
+            $branchKasKeys = array_map(fn ($keys) => array_values(array_intersect($keys, [$filterKasKey])), $branchKasKeys);
+            $warehouseKasKeys = array_map(fn ($keys) => array_values(array_intersect($keys, [$filterKasKey])), $warehouseKasKeys);
+            foreach ($branchTotals as $bid => $totals) {
+                $branchTotals[$bid] = isset($totals[$filterKasKey]) ? [$filterKasKey => $totals[$filterKasKey]] : [];
+            }
+            foreach ($warehouseTotals as $wid => $totals) {
+                $warehouseTotals[$wid] = isset($totals[$filterKasKey]) ? [$filterKasKey => $totals[$filterKasKey]] : [];
+            }
+            $overallTotals = isset($overallTotals[$filterKasKey]) ? [$filterKasKey => $overallTotals[$filterKasKey]] : [];
+        }
+
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
@@ -564,6 +616,8 @@ class FinanceController extends Controller
             'selectedWarehouseId' => $warehouseId,
             'dateFrom' => $dateFrom?->toDateString(),
             'dateTo' => $dateTo?->toDateString(),
+            'filterKasKey' => $filterKasKey,
+            'allKasKeys' => $allKasKeys ?? [],
         ]);
     }
 
@@ -620,7 +674,7 @@ class FinanceController extends Controller
         if (! $warehouseId) {
             $salePaymentsQuery = DB::table('sale_payments')
                 ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                ->where('sales.status', Sale::STATUS_RELEASED)
+                ->where('sales.status', '!=', Sale::STATUS_CANCEL)
                 ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
                 ->whereIn('sale_payments.payment_method_id', $paymentMethodIds)
                 ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
@@ -639,7 +693,7 @@ class FinanceController extends Controller
 
             $servicePaymentsQuery = DB::table('service_payments')
                 ->join('services', 'service_payments.service_id', '=', 'services.id')
-                ->where('services.status', Service::STATUS_COMPLETED)
+                ->where('services.status', '!=', Service::STATUS_CANCEL)
                 ->when($branchId, fn ($q) => $q->where('services.branch_id', $branchId))
                 ->whereIn('service_payments.payment_method_id', $paymentMethodIds)
                 ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]));
@@ -672,6 +726,16 @@ class FinanceController extends Controller
                     ->orWhere(function ($sq) {
                         $sq->whereIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
                             ->where('type', CashFlow::TYPE_OUT);
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_SERVICE)
+                            ->where('type', CashFlow::TYPE_IN)
+                            ->whereExists(function ($sub) {
+                                $sub->select(DB::raw(1))
+                                    ->from('income_categories')
+                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                                    ->where('income_categories.code', 'RTR');
+                            });
                     });
             })
             ->where(function ($q) {
@@ -681,6 +745,10 @@ class FinanceController extends Controller
                         $sq->select('id')
                             ->from('rentals')
                             ->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('type', CashFlow::TYPE_OUT);
                     });
             })
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
@@ -699,7 +767,13 @@ class FinanceController extends Controller
             ]);
         }
 
-        $transactions = $transactions->sortByDesc('transaction_date')->values();
+        $transactions = $transactions->sortBy('transaction_date')->values();
+        $runningBalance = 0.0;
+        foreach ($transactions as $tx) {
+            $runningBalance += (float) $tx->amount;
+            $tx->running_balance = round($runningBalance, 2);
+        }
+        $transactions = $transactions->reverse()->values();
 
         $label = $kasKey === 'Tunai'
             ? 'Tunai'

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\CashFlow;
+use App\Models\ExpenseCategory;
+use App\Models\IncomeCategory;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Rental;
@@ -23,8 +25,8 @@ class RentalService
      * @param  array<int, array{payment_method_id:int, amount:float, notes?:string|null}>  $payments
      */
     public function create(
-        int $branchId,
-        int $warehouseId,
+        string $locationType,
+        int $locationId,
         ?int $customerId,
         string $pickupDate,
         string $returnDate,
@@ -42,15 +44,21 @@ class RentalService
             throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
         }
 
+        $branchId = $locationType === Stock::LOCATION_BRANCH
+            ? $locationId
+            : (auth()->user()?->branch_id ? (int) auth()->user()->branch_id : (int) Branch::orderBy('id')->value('id'));
+        $warehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $locationId : null;
         $branch = Branch::findOrFail($branchId);
-        $warehouse = Warehouse::findOrFail($warehouseId);
+        if ($warehouseId) {
+            Warehouse::findOrFail($warehouseId);
+        }
 
         $days = $this->calculateDays($pickupDate, $returnDate);
         if ($days <= 0) {
             throw new InvalidArgumentException(__('Jumlah hari sewa tidak valid.'));
         }
 
-        [$details, $subTotal] = $this->buildItems($items, $days, $warehouse->id);
+        [$details, $subTotal] = $this->buildItems($items, $days, $locationType, $locationId);
 
         $taxAmount = max(0, round($this->parseMoney($taxAmount), 2));
         $penaltyAmount = max(0, round($this->parseMoney($penaltyAmount), 2));
@@ -71,7 +79,10 @@ class RentalService
 
         return DB::transaction(function () use (
             $branch,
-            $warehouse,
+            $branchId,
+            $warehouseId,
+            $locationType,
+            $locationId,
             $customerId,
             $pickupDate,
             $returnDate,
@@ -91,8 +102,9 @@ class RentalService
 
             $rental = Rental::create([
                 'invoice_number' => $invoiceNumber,
-                'branch_id' => $branch->id,
-                'warehouse_id' => $warehouse->id,
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouseId,
+                'location_type' => $locationType,
                 'customer_id' => $customerId,
                 'user_id' => $userId ?? auth()->id(),
                 'pickup_date' => $pickupDate,
@@ -121,7 +133,8 @@ class RentalService
 
                 $this->markUnitRented(
                     $detail['product_id'],
-                    $warehouse->id,
+                    $locationType,
+                    $locationId,
                     $detail['serial_number']
                 );
             }
@@ -139,18 +152,22 @@ class RentalService
                 ]);
             }
 
+            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
+            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
+            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
             foreach (RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get() as $rp) {
                 $pm = $rp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => null,
-                    'warehouse_id' => $warehouse->id,
+                    'branch_id' => $cfBranchId,
+                    'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $rp->amount,
                     'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
+                    'income_category_id' => $penyewaanCategory->id,
                     'payment_method_id' => $rp->payment_method_id,
                     'transaction_date' => $pickupDate,
                     'user_id' => $userId ?? auth()->id(),
@@ -190,9 +207,12 @@ class RentalService
         }
 
         $branch = Branch::findOrFail($rental->branch_id);
-        $warehouse = \App\Models\Warehouse::findOrFail($rental->warehouse_id);
+        $locationType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
+        $cfBranchId = $locationType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
+        $cfWarehouseId = $locationType === Rental::LOCATION_WAREHOUSE && $rental->warehouse_id ? $rental->warehouse_id : null;
 
-        return DB::transaction(function () use ($rental, $payments, $branch, $warehouse, $totalPaid, $totalPrice, $userId) {
+        return DB::transaction(function () use ($rental, $payments, $cfBranchId, $cfWarehouseId, $totalPaid, $totalPrice, $userId) {
+            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
             foreach ($payments as $p) {
                 $amt = round($this->parseMoney($p['amount'] ?? 0), 2);
                 if ($amt <= 0) {
@@ -209,13 +229,14 @@ class RentalService
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => null,
-                    'warehouse_id' => $warehouse->id,
+                    'branch_id' => $cfBranchId,
+                    'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $amt,
                     'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
+                    'income_category_id' => $penyewaanCategory->id,
                     'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $rental->pickup_date->toDateString(),
                     'user_id' => $userId ?? auth()->id(),
@@ -239,7 +260,8 @@ class RentalService
      */
     public function update(
         Rental $rental,
-        int $warehouseId,
+        string $locationType,
+        int $locationId,
         ?int $customerId,
         string $pickupDate,
         string $returnDate,
@@ -260,15 +282,19 @@ class RentalService
             throw new InvalidArgumentException(__('Pembayaran DP wajib diisi.'));
         }
 
-        $branch = Branch::findOrFail($rental->branch_id);
-        $warehouse = Warehouse::findOrFail($warehouseId);
+        $branchId = $locationType === Stock::LOCATION_BRANCH ? $locationId : $rental->branch_id;
+        $warehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $locationId : null;
+        $branch = Branch::findOrFail($branchId);
+        if ($warehouseId) {
+            Warehouse::findOrFail($warehouseId);
+        }
 
         $days = $this->calculateDays($pickupDate, $returnDate);
         if ($days <= 0) {
             throw new InvalidArgumentException(__('Jumlah hari sewa tidak valid.'));
         }
 
-        [$details, $subTotal] = $this->buildItems($items, $days, $warehouse->id);
+        [$details, $subTotal] = $this->buildItems($items, $days, $locationType, $locationId);
         $taxAmount = max(0, round($this->parseMoney($taxAmount), 2));
         $penaltyAmount = max(0, round($this->parseMoney($penaltyAmount), 2));
         $grandTotal = max(0, round($subTotal + $taxAmount + $penaltyAmount, 2));
@@ -281,10 +307,18 @@ class RentalService
             throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi total sewa.'));
         }
 
+        $oldLocType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
+        $oldLocId = $oldLocType === Rental::LOCATION_WAREHOUSE ? (int) $rental->warehouse_id : (int) $rental->branch_id;
+
         return DB::transaction(function () use (
             $rental,
             $branch,
-            $warehouse,
+            $branchId,
+            $warehouseId,
+            $locationType,
+            $locationId,
+            $oldLocType,
+            $oldLocId,
             $customerId,
             $pickupDate,
             $returnDate,
@@ -302,7 +336,7 @@ class RentalService
             // Return previous units to stock
             $oldItems = RentalItem::where('rental_id', $rental->id)->get();
             foreach ($oldItems as $item) {
-                $this->markUnitReturned((int) $item->product_id, (int) $rental->warehouse_id, (string) $item->serial_number);
+                $this->markUnitReturned((int) $item->product_id, $oldLocType, $oldLocId, (string) $item->serial_number);
             }
 
             RentalItem::where('rental_id', $rental->id)->delete();
@@ -312,7 +346,9 @@ class RentalService
                 ->delete();
 
             $rental->update([
-                'warehouse_id' => $warehouse->id,
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouseId,
+                'location_type' => $locationType,
                 'customer_id' => $customerId,
                 'pickup_date' => $pickupDate,
                 'return_date' => $returnDate,
@@ -337,7 +373,8 @@ class RentalService
                 ]);
                 $this->markUnitRented(
                     $detail['product_id'],
-                    $warehouse->id,
+                    $locationType,
+                    $locationId,
                     $detail['serial_number']
                 );
             }
@@ -355,17 +392,21 @@ class RentalService
                 ]);
             }
 
+            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
+            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
+            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
             foreach (RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get() as $rp) {
                 $pm = $rp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
                 CashFlow::create([
-                    'branch_id' => null,
-                    'warehouse_id' => $warehouse->id,
+                    'branch_id' => $cfBranchId,
+                    'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $rp->amount,
                     'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
+                    'income_category_id' => $penyewaanCategory->id,
                     'payment_method_id' => $rp->payment_method_id,
                     'transaction_date' => $pickupDate,
                     'user_id' => $userId ?? auth()->id(),
@@ -385,26 +426,40 @@ class RentalService
             throw new InvalidArgumentException(__('Hanya penyewaan OPEN atau RELEASED yang bisa dibatalkan.'));
         }
 
-        return DB::transaction(function () use ($rental, $userId) {
+        $locType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
+        $locId = $locType === Rental::LOCATION_BRANCH ? (int) $rental->branch_id : (int) $rental->warehouse_id;
+        $cfBranchId = $locType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
+        $cfWarehouseId = $locType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
+
+        return DB::transaction(function () use ($rental, $userId, $reason, $locType, $locId, $cfBranchId, $cfWarehouseId) {
             if ($rental->status === Rental::STATUS_OPEN) {
                 $items = RentalItem::where('rental_id', $rental->id)->get();
                 foreach ($items as $item) {
-                    $this->markUnitReturned((int) $item->product_id, (int) $rental->warehouse_id, (string) $item->serial_number);
+                    $this->markUnitReturned((int) $item->product_id, $locType, $locId, (string) $item->serial_number);
                 }
             }
 
             $refundDate = now()->toDateString();
+            $reversalCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Pengembalian dana pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
             $payments = RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get();
             foreach ($payments as $rp) {
                 $pmLabel = $rp->paymentMethod?->display_label ?? __('Payment');
                 CashFlow::create([
-                    'branch_id' => null,
-                    'warehouse_id' => $rental->warehouse_id,
+                    'branch_id' => $cfBranchId,
+                    'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_OUT,
                     'amount' => $rp->amount,
-                    'description' => __('Cancel Rental') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                    'description' => __('Pengembalian dana pembatalan penyewaan') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
+                    'expense_category_id' => $reversalCategory->id,
                     'payment_method_id' => $rp->payment_method_id,
                     'transaction_date' => $refundDate,
                     'user_id' => $userId ?? auth()->id(),
@@ -433,11 +488,14 @@ class RentalService
             throw new InvalidArgumentException(__('Hanya penyewaan OPEN yang bisa diselesaikan.'));
         }
 
-        $branch = Branch::findOrFail($rental->branch_id);
-        $warehouse = \App\Models\Warehouse::findOrFail($rental->warehouse_id);
+        $locType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
+        $locId = $locType === Rental::LOCATION_BRANCH ? (int) $rental->branch_id : (int) $rental->warehouse_id;
+        $cfBranchId = $locType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
+        $cfWarehouseId = $locType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
 
-        return DB::transaction(function () use ($rental, $payments, $branch, $warehouse, $userId) {
+        return DB::transaction(function () use ($rental, $payments, $cfBranchId, $cfWarehouseId, $locType, $locId, $userId) {
             if (! empty($payments)) {
+                $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
                 foreach ($payments as $p) {
                     $amt = round($this->parseMoney($p['amount'] ?? 0), 2);
                     if ($amt <= 0) {
@@ -454,13 +512,14 @@ class RentalService
                     $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                     CashFlow::create([
-                        'branch_id' => null,
-                        'warehouse_id' => $warehouse->id,
+                        'branch_id' => $cfBranchId,
+                        'warehouse_id' => $cfWarehouseId,
                         'type' => CashFlow::TYPE_IN,
                         'amount' => $amt,
                         'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                         'reference_type' => CashFlow::REFERENCE_RENTAL,
                         'reference_id' => $rental->id,
+                        'income_category_id' => $penyewaanCategory->id,
                         'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                         'transaction_date' => $rental->pickup_date->toDateString(),
                         'user_id' => $userId ?? auth()->id(),
@@ -475,7 +534,7 @@ class RentalService
 
             $items = RentalItem::where('rental_id', $rental->id)->get();
             foreach ($items as $item) {
-                $this->markUnitReturned((int) $item->product_id, (int) $rental->warehouse_id, (string) $item->serial_number);
+                $this->markUnitReturned((int) $item->product_id, $locType, $locId, (string) $item->serial_number);
             }
 
             $rental->update([
@@ -502,7 +561,7 @@ class RentalService
      * @param  array<int, array{product_id:int, serial_number:string, rental_price:float}>  $items
      * @return array{0: array<int, array{product_id:int, serial_number:string, rental_price:float, days:int, total:float}>, 1: float}
      */
-    private function buildItems(array $items, int $days, int $warehouseId): array
+    private function buildItems(array $items, int $days, string $locationType, int $locationId): array
     {
         $details = [];
         $subTotal = 0.0;
@@ -519,7 +578,7 @@ class RentalService
                 throw new InvalidArgumentException(__('Serial tidak boleh duplikat: :serial', ['serial' => $serial]));
             }
 
-            $this->validateRentableUnit($productId, $warehouseId, $serial);
+            $this->validateRentableUnit($productId, $locationType, $locationId, $serial);
 
             $lineTotal = round($price * $days, 2);
             $details[] = [
@@ -540,7 +599,7 @@ class RentalService
         return [$details, round($subTotal, 2)];
     }
 
-    private function validateRentableUnit(int $productId, int $warehouseId, string $serial): void
+    private function validateRentableUnit(int $productId, string $locationType, int $locationId, string $serial): void
     {
         $product = Product::with('category')->find($productId);
         if (! $product) {
@@ -559,29 +618,29 @@ class RentalService
 
         $unit = ProductUnit::where('product_id', $productId)
             ->where('serial_number', $serial)
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->first();
 
         if (! $unit) {
-            throw new InvalidArgumentException(__('Serial tidak ditemukan di gudang.'));
+            throw new InvalidArgumentException(__('Serial tidak ditemukan di lokasi.'));
         }
         if ($unit->status !== ProductUnit::STATUS_IN_STOCK) {
             throw new InvalidArgumentException(__('Serial tidak tersedia untuk disewa.'));
         }
     }
 
-    private function markUnitRented(int $productId, int $warehouseId, string $serial): void
+    private function markUnitRented(int $productId, string $locationType, int $locationId, string $serial): void
     {
         $unit = ProductUnit::where('product_id', $productId)
             ->where('serial_number', $serial)
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->lockForUpdate()
             ->first();
 
         if (! $unit) {
-            throw new InvalidArgumentException(__('Serial tidak ditemukan di gudang.'));
+            throw new InvalidArgumentException(__('Serial tidak ditemukan di lokasi.'));
         }
         if ($unit->status !== ProductUnit::STATUS_IN_STOCK) {
             throw new InvalidArgumentException(__('Serial tidak tersedia untuk disewa.'));
@@ -589,15 +648,15 @@ class RentalService
 
         $unit->update(['status' => ProductUnit::STATUS_IN_RENT]);
 
-        $this->recalculateWarehouseStock($productId, $warehouseId);
+        $this->recalculateStock($productId, $locationType, $locationId);
     }
 
-    private function markUnitReturned(int $productId, int $warehouseId, string $serial): void
+    private function markUnitReturned(int $productId, string $locationType, int $locationId, string $serial): void
     {
         $unit = ProductUnit::where('product_id', $productId)
             ->where('serial_number', $serial)
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->lockForUpdate()
             ->first();
 
@@ -609,22 +668,22 @@ class RentalService
         }
 
         $unit->update(['status' => ProductUnit::STATUS_IN_STOCK]);
-        $this->recalculateWarehouseStock($productId, $warehouseId);
+        $this->recalculateStock($productId, $locationType, $locationId);
     }
 
-    private function recalculateWarehouseStock(int $productId, int $warehouseId): void
+    private function recalculateStock(int $productId, string $locationType, int $locationId): void
     {
         $qty = ProductUnit::where('product_id', $productId)
-            ->where('location_type', Stock::LOCATION_WAREHOUSE)
-            ->where('location_id', $warehouseId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->where('status', ProductUnit::STATUS_IN_STOCK)
             ->count();
 
         Stock::updateOrCreate(
             [
                 'product_id' => $productId,
-                'location_type' => Stock::LOCATION_WAREHOUSE,
-                'location_id' => $warehouseId,
+                'location_type' => $locationType,
+                'location_id' => $locationId,
             ],
             ['quantity' => $qty]
         );

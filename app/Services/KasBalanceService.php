@@ -79,7 +79,7 @@ class KasBalanceService
 
     /**
      * Hitung saldo per payment_method_id.
-     * Untuk branch: sale_payments (released) + service_payments (completed) + cash_flows IN - cash_flows OUT.
+     * Untuk branch: sale_payments + service_payments (seluruh transaksi non-cancel) + cash_flows IN - cash_flows OUT.
      * Untuk warehouse: cash_flows saja (tidak ada sale/service di gudang).
      * Konsisten dengan Monitoring Kas.
      *
@@ -92,7 +92,7 @@ class KasBalanceService
         if ($locationType === 'branch') {
             $salePayments = DB::table('sale_payments')
                 ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                ->where('sales.status', Sale::STATUS_RELEASED)
+                ->where('sales.status', '!=', Sale::STATUS_CANCEL)
                 ->where('sales.branch_id', $locationId)
                 ->selectRaw('payment_method_id, SUM(amount) as total')
                 ->groupBy('payment_method_id')
@@ -107,7 +107,7 @@ class KasBalanceService
 
             $servicePayments = DB::table('service_payments')
                 ->join('services', 'service_payments.service_id', '=', 'services.id')
-                ->where('services.status', Service::STATUS_COMPLETED)
+                ->where('services.status', '!=', Service::STATUS_CANCEL)
                 ->where('services.branch_id', $locationId)
                 ->selectRaw('payment_method_id, SUM(amount) as total')
                 ->groupBy('payment_method_id')
@@ -124,6 +124,26 @@ class KasBalanceService
         $cashFlowIn = DB::table('cash_flows')
             ->where('cash_flows.type', CashFlow::TYPE_IN)
             ->whereNotNull('cash_flows.payment_method_id')
+            ->where(function ($q) {
+                $q->whereNull('cash_flows.reference_type')
+                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
+                    ->orWhere(function ($q2) {
+                        $q2->where('cash_flows.reference_type', CashFlow::REFERENCE_SERVICE)
+                            ->whereExists(function ($sq) {
+                                $sq->select(DB::raw(1))
+                                    ->from('income_categories')
+                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                                    ->where('income_categories.code', 'RTR');
+                            });
+                    });
+            })
+            ->where(function ($q) {
+                $q->whereNull('cash_flows.reference_type')
+                    ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                    ->orWhereIn('cash_flows.reference_id', function ($sq) {
+                        $sq->select('id')->from('rentals')->where('status', '!=', 'cancel');
+                    });
+            })
             ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
             ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
             ->selectRaw('payment_method_id, SUM(amount) as total')
@@ -138,6 +158,17 @@ class KasBalanceService
         $cashFlowOut = DB::table('cash_flows')
             ->where('cash_flows.type', CashFlow::TYPE_OUT)
             ->whereNotNull('cash_flows.payment_method_id')
+            ->where(function ($q) {
+                $q->whereNull('cash_flows.reference_type')
+                    ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                    ->orWhereIn('cash_flows.reference_id', function ($sq) {
+                        $sq->select('id')->from('rentals')->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('cash_flows.reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('cash_flows.type', CashFlow::TYPE_OUT);
+                    });
+            })
             ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
             ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
             ->selectRaw('payment_method_id, SUM(amount) as total')

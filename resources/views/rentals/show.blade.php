@@ -59,8 +59,8 @@
                     <p class="font-medium text-slate-800">{{ $rental->branch?->name }}</p>
                 </div>
                 <div>
-                    <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Gudang') }}</p>
-                    <p class="font-medium text-slate-800">{{ $rental->warehouse?->name }}</p>
+                    <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Lokasi Pengambilan') }}</p>
+                    <p class="font-medium text-slate-800">{{ ($rental->location_type ?? 'warehouse') === 'branch' ? ($rental->branch?->name ?? '-') : ($rental->warehouse?->name ?? '-') }}</p>
                 </div>
                 <div>
                     <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Penyewa') }}</p>
@@ -173,9 +173,24 @@
         </div>
 
         @if ($rental->status === \App\Models\Rental::STATUS_OPEN)
+            @php
+                $rentalTotal = (float) $rental->total;
+                $rentalPaid = (float) $rental->total_paid;
+                if ($rentalPaid <= 0 && $rental->relationLoaded('payments')) {
+                    $rentalPaid = (float) $rental->payments->sum('amount');
+                }
+                $rentalRemaining = max(0, $rentalTotal - $rentalPaid);
+            @endphp
             <div class="card-modern overflow-hidden mb-6">
                 <div class="p-6">
                     <h3 class="font-semibold text-slate-800 mb-3">{{ __('Pelunasan & Pengembalian') }}</h3>
+                    <div class="rounded-lg border {{ $rentalRemaining > 0 ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50' }} p-3 mb-3">
+                        <p class="text-xs text-slate-600">{{ __('Total') }}: {{ number_format($rentalTotal, 0, ',', '.') }}</p>
+                        <p class="text-xs text-slate-600">{{ __('Sudah dibayar') }}: {{ number_format($rentalPaid, 0, ',', '.') }}</p>
+                        <p class="text-sm font-semibold mt-2 {{ $rentalRemaining > 0 ? 'text-amber-800' : 'text-emerald-800' }}">
+                            {{ __('Sisa pembayaran') }}: {{ number_format($rentalRemaining, 0, ',', '.') }}
+                        </p>
+                    </div>
                     <p class="text-xs text-amber-700 mb-3">{{ __('Wajib pelunasan sebelum pengembalian. Isi pembayaran jika belum lunas.') }}</p>
                     <form method="POST" action="{{ route('rentals.mark-returned', $rental) }}" id="rental-return-form">
                         @csrf

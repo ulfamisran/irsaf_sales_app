@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\ExpenseCategory;
+use App\Models\IncomeCategory;
 use App\Models\Distributor;
 use App\Models\Product;
 use App\Models\ProductUnit;
@@ -405,6 +406,7 @@ class SaleService
             }
 
             // Create cashflow IN entries (one per payment method)
+            $penjualanCategory = IncomeCategory::resolveByCode('SALE', 'Penjualan');
             foreach (SalePayment::with('paymentMethod')->where('sale_id', $sale->id)->get() as $sp) {
                 $pm = $sp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
@@ -416,6 +418,7 @@ class SaleService
                     'description' => __('Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SALE,
                     'reference_id' => $sale->id,
+                    'income_category_id' => $penjualanCategory->id,
                     'transaction_date' => $saleDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
@@ -662,6 +665,14 @@ class SaleService
             }
 
             $refundDate = now()->toDateString();
+            $reversalCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Pengembalian dana pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
             $payments = SalePayment::with('paymentMethod')->where('sale_id', $sale->id)->get();
             foreach ($payments as $sp) {
                 $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
@@ -669,9 +680,10 @@ class SaleService
                     'branch_id' => $sale->branch_id,
                     'type' => CashFlow::TYPE_OUT,
                     'amount' => $sp->amount,
-                    'description' => __('Cancel Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
+                    'description' => __('Pengembalian dana pembatalan penjualan') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SALE,
                     'reference_id' => $sale->id,
+                    'expense_category_id' => $reversalCategory->id,
                     'payment_method_id' => $sp->payment_method_id,
                     'transaction_date' => $refundDate,
                     'user_id' => $userId ?? auth()->id(),

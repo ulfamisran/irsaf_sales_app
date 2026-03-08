@@ -23,10 +23,15 @@ class CashFlowController extends Controller
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory'])
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'paymentMethod'])
             ->where('type', CashFlow::TYPE_OUT)
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
+        // Exclude Reversal (transaksi cancel) - tidak dihitung & ditampilkan di pengeluaran
+        $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
+        if ($reversalCategoryId) {
+            $query->where('expense_category_id', '!=', $reversalCategoryId);
+        }
         $query->where(function ($q) {
             $q->whereNull('reference_type')
                 ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
@@ -34,6 +39,10 @@ class CashFlowController extends Controller
                     $sq->select('id')
                         ->from('rentals')
                         ->where('status', '!=', 'cancel');
+                })
+                ->orWhere(function ($sq) {
+                    $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                        ->where('type', CashFlow::TYPE_OUT);
                 });
         });
 
@@ -245,67 +254,86 @@ class CashFlowController extends Controller
     {
         $user = $request->user();
 
-        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'incomeCategory'])
-            ->orderByDesc('transaction_date')
-            ->orderByDesc('id');
-        $query->where(function ($q) {
-            $q->whereNull('reference_type')
-                ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
-                ->orWhereIn('reference_id', function ($sq) {
-                    $sq->select('id')
-                        ->from('rentals')
-                        ->where('status', '!=', 'cancel');
-                });
-        });
-
+        $branchId = null;
+        $warehouseId = null;
         $canFilterLocation = false;
         $filterLocked = false;
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $branchId = (int) $user->branch_id;
                 $filterLocked = true;
-                $branch = Branch::find($user->branch_id);
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+                $branch = Branch::find($branchId);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
+                $warehouseId = (int) $user->warehouse_id;
                 $filterLocked = true;
-                $warehouse = Warehouse::find($user->warehouse_id);
-                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+                $warehouse = Warehouse::find($warehouseId);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
             $canFilterLocation = true;
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
+            $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+            $warehouseId = $request->filled('warehouse_id') ? (int) $request->warehouse_id : null;
+        }
+
+        $applyFilters = function ($q) use ($user, $request, $branchId, $warehouseId) {
+            $q->where(function ($qq) {
+                $qq->whereNull('reference_type')
+                    ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                    ->orWhereIn('reference_id', function ($sq) {
+                        $sq->select('id')->from('rentals')->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('type', CashFlow::TYPE_OUT);
+                    });
+            });
+            if ($branchId) {
+                $q->where('branch_id', $branchId);
             }
-            if ($request->filled('warehouse_id')) {
-                $query->where('warehouse_id', $request->warehouse_id);
+            if ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId);
             }
-        }
+            if ($request->filled('type')) {
+                $q->where('type', $request->type);
+            }
+            if ($request->filled('date_from')) {
+                $q->whereDate('transaction_date', '>=', $request->date_from);
+            }
+            if ($request->filled('date_to')) {
+                $q->whereDate('transaction_date', '<=', $request->date_to);
+            }
+            if ($request->filled('payment_method_id')) {
+                $pmIds = $this->resolvePaymentMethodIdsForFilter((int) $request->payment_method_id, $branchId, $warehouseId);
+                if (! empty($pmIds)) {
+                    $q->whereIn('payment_method_id', $pmIds);
+                } else {
+                    $q->where('payment_method_id', $request->payment_method_id);
+                }
+            }
+        };
 
-        if ($request->filled('type')) {
-            $query->where('type', $request->type);
-        }
-        if ($request->filled('date_from')) {
-            $query->whereDate('transaction_date', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('transaction_date', '<=', $request->date_to);
-        }
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'incomeCategory', 'paymentMethod']);
+        $applyFilters($query);
+        $query->orderBy('transaction_date')->orderBy('id');
 
-        $cashFlows = $query->paginate(20)->withQueryString();
+        $cashFlowsRaw = $query->limit(1000)->get();
+        $runningBalance = 0.0;
+        foreach ($cashFlowsRaw as $cf) {
+            $runningBalance += $cf->type === CashFlow::TYPE_IN ? (float) $cf->amount : -(float) $cf->amount;
+            $cf->running_balance = round($runningBalance, 2);
+        }
+        $orderDirection = $request->input('order', 'bawah_ke_atas');
+        $cashFlows = $orderDirection === 'atas_ke_bawah'
+            ? $cashFlowsRaw->values()
+            : $cashFlowsRaw->reverse()->values();
 
-        $summaryBase = CashFlow::query()
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('warehouse_id', $user->warehouse_id))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id'), fn ($q) => $q->where('warehouse_id', $request->warehouse_id))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('transaction_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('transaction_date', '<=', $request->date_to));
-
+        $summaryBase = CashFlow::query();
+        $applyFilters($summaryBase);
         $summary = (clone $summaryBase)
             ->selectRaw('type, SUM(amount) as total')
             ->groupBy('type')
@@ -314,21 +342,54 @@ class CashFlowController extends Controller
         $totalTradeIn = (float) DB::table('sale_trade_ins')
             ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
             ->where('sales.status', \App\Models\Sale::STATUS_RELEASED)
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
+            ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+            ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
             ->sum('sale_trade_ins.trade_in_value');
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+            : ($branchId ? Branch::whereKey($branchId)->get(['id', 'name']) : collect());
         $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+            : ($warehouseId ? Warehouse::whereKey($warehouseId)->get(['id', 'name']) : collect());
 
-        return view('cash-flows.index', compact('cashFlows', 'summary', 'branches', 'warehouses', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalTradeIn'));
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchId, $warehouseId)
+            ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+
+        return view('cash-flows.index', compact('cashFlows', 'summary', 'branches', 'warehouses', 'paymentMethods', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalTradeIn', 'branchId', 'warehouseId', 'orderDirection'));
+    }
+
+    /**
+     * Resolve payment method IDs for filter. "Tunai" may map to multiple PMs (jenis=tunai or bank+rek empty).
+     */
+    private function resolvePaymentMethodIdsForFilter(int $paymentMethodId, ?int $branchId, ?int $warehouseId): array
+    {
+        $pm = PaymentMethod::find($paymentMethodId);
+        if (! $pm) {
+            return [];
+        }
+        $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? '')));
+        $bank = trim((string) ($pm->nama_bank ?? ''));
+        $rek = trim((string) ($pm->no_rekening ?? ''));
+        if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
+            return PaymentMethod::query()
+                ->where('is_active', true)
+                ->forLocation($branchId, $warehouseId)
+                ->get()
+                ->filter(fn ($p) => str_contains(strtolower(trim((string) ($p->jenis_pembayaran ?? ''))), 'tunai')
+                    || (trim((string) ($p->nama_bank ?? '')) === '' && trim((string) ($p->no_rekening ?? '')) === ''))
+                ->pluck('id')
+                ->toArray();
+        }
+
+        return [$paymentMethodId];
     }
 
     public function createOut(Request $request): View

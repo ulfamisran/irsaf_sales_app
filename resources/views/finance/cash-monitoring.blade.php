@@ -34,6 +34,20 @@
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         </div>
                     @endif
+                    @if(count($allKasKeys ?? []) > 0)
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Bank / Metode') }}</label>
+                            <select name="kas_key" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($allKasKeys ?? [] as $key)
+                                    @php $info = $kasLabels[$key] ?? ['label' => $key, 'subtitle' => null]; @endphp
+                                    <option value="{{ $key }}" {{ ($filterKasKey ?? '') === $key ? 'selected' : '' }}>
+                                        {{ $info['label'] }}{{ $info['subtitle'] ? ' (' . $info['subtitle'] . ')' : '' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from', $dateFrom ?? '') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

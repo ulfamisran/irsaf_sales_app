@@ -18,20 +18,24 @@
                         @csrf
                         @method('PATCH')
                         <div class="space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <x-input-label for="warehouse_id" :value="__('Gudang')" />
-                                    <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="">{{ __('Pilih Gudang') }}</option>
-                                        @foreach ($warehouses as $wh)
-                                            <option value="{{ $wh->id }}" {{ old('warehouse_id', $rental->warehouse_id) == $wh->id ? 'selected' : '' }}>
-                                                {{ $wh->name }}
-                                            </option>
-                                        @endforeach
+                                    <x-input-label for="location_type" :value="__('Tipe Lokasi')" />
+                                    <select id="location_type" name="location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="warehouse" {{ old('location_type', $rental->location_type ?? ($rental->warehouse_id ? 'warehouse' : 'branch')) == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                        <option value="branch" {{ old('location_type', $rental->location_type ?? '') == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <x-input-label for="location_id" :value="__('Lokasi')" />
+                                    <select id="location_id" name="location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="">{{ __('Pilih lokasi') }}</option>
                                     </select>
                                     <p id="products_status" class="mt-1 text-xs text-slate-500"></p>
-                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                    <x-input-error :messages="$errors->get('location_id')" class="mt-2" />
                                 </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <x-input-label for="pickup_date" :value="__('Tanggal Pengambilan')" />
                                     <x-text-input id="pickup_date" class="block mt-1 w-full" type="date" name="pickup_date" :value="old('pickup_date', $rental->pickup_date?->toDateString())" required />
@@ -77,9 +81,23 @@
                                 </div>
                             </div>
 
-                            <div>
-                                <x-input-label :value="__('Laptop yang Disewa')" />
-                                <p class="mt-1 mb-3 text-xs text-slate-500">{{ __('Hanya laptop bekas di gudang yang bisa disewakan.') }}</p>
+                            <div id="product-selector-block">
+                                <x-input-label :value="__('Laptop yang Disewa')" class="font-semibold" />
+                                <p class="mt-1 mb-2 text-xs text-slate-500">{{ __('Pilih lokasi terlebih dahulu. Produk: Laptop, bekas, aktif. Unit in_stock sesuai cabang/gudang.') }}</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                    <div>
+                                        <x-input-label for="rental_brand_filter" :value="__('Merk')" class="text-sm" />
+                                        <select id="rental_brand_filter" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">{{ __('Semua Merk') }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="rental_series_filter" :value="__('Series')" class="text-sm" />
+                                        <select id="rental_series_filter" class="block mt-0.5 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">{{ __('Semua Series') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="overflow-x-auto border border-slate-200 rounded-lg">
                                     <table class="min-w-full text-sm">
                                         <thead class="bg-slate-50">
@@ -168,6 +186,10 @@
         const availableSerialsPath = @json(route('rentals.available-serials', [], false));
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
+        const warehouses = @json($warehouses ?? []);
+        const branches = @json($branches ?? []);
+        const editLocationType = @json(old('location_type', $rental->location_type ?? ($rental->warehouse_id ? 'warehouse' : 'branch')));
+        const editLocationId = @json(old('location_id', $rental->warehouse_id ?? $rental->branch_id));
         let products = [];
 
         function toNumber(val) {
@@ -190,68 +212,177 @@
                 : (type === 'ok' ? 'text-emerald-600' : 'text-slate-500'));
         }
 
-        function productOptionsHtml() {
-            return '<option value="">{{ __('Pilih Produk') }}</option>' + products.map(p =>
-                '<option value="' + p.id + '">' +
-                p.sku + ' - ' + p.brand + ' ' + (p.series || '') + '</option>'
-            ).join('');
+        function getProductsByBrandSeries() {
+            const brandVal = document.getElementById('rental_brand_filter')?.value || '';
+            const seriesVal = document.getElementById('rental_series_filter')?.value || '';
+            return products.filter(p => {
+                const matchBrand = !brandVal || (p.brand || '') === brandVal;
+                const matchSeries = !seriesVal || (p.series || '') === seriesVal;
+                return matchBrand && matchSeries;
+            });
         }
 
-        function updateProductSelectOptions(selectEl) {
-            if (!selectEl) return;
-            const old = selectEl.value;
-            selectEl.innerHTML = productOptionsHtml();
-            if (old && Array.from(selectEl.options).some(o => o.value === old)) {
-                selectEl.value = old;
-            } else {
-                selectEl.value = '';
+        function getProductsForDropdown(baseList, searchVal) {
+            const q = (searchVal || '').trim().toLowerCase();
+            if (!q) return baseList;
+            return baseList.filter(p => {
+                const s = ((p.sku || '') + ' ' + (p.brand || '') + ' ' + (p.series || '') + ' ' + (p.color || '')).toLowerCase();
+                return s.includes(q);
+            });
+        }
+
+        function productOptionHtml(p) {
+            const label = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || '') + (p.in_stock_count != null ? ' (' + p.in_stock_count + ' unit)' : '');
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-sku="' + (p.sku || '') + '" data-brand="' + (p.brand || '') + '" data-series="' + (p.series || '') + '">' + label + '</div>';
+        }
+
+        function renderProductList(dropdownEl, searchVal) {
+            const baseList = getProductsByBrandSeries();
+            const list = getProductsForDropdown(baseList, searchVal);
+            const listEl = dropdownEl.querySelector('.product-list');
+            const emptyEl = dropdownEl.querySelector('.product-empty');
+            if (!listEl) return;
+            listEl.innerHTML = list.map(p => productOptionHtml(p)).join('');
+            listEl.classList.toggle('hidden', list.length === 0);
+            if (emptyEl) emptyEl.classList.toggle('hidden', list.length > 0);
+            attachProductOptionHandlers(dropdownEl);
+        }
+
+        function attachProductOptionHandlers(dropdownEl) {
+            const wrapper = dropdownEl.closest('.product-dropdown-wrapper');
+            const idInput = wrapper?.querySelector('.product-id-input');
+            const labelEl = wrapper?.querySelector('.product-label');
+            dropdownEl.querySelectorAll('.product-option').forEach(opt => {
+                opt.onclick = function(e) {
+                    e.stopPropagation();
+                    const id = this.getAttribute('data-id');
+                    const p = products.find(x => String(x.id) === id);
+                    if (idInput) idInput.value = id;
+                    if (idInput) idInput.setAttribute('required', 'required');
+                    if (labelEl) {
+                        labelEl.textContent = (p?.sku || '') + ' - ' + (p?.brand || '') + ' ' + (p?.series || '');
+                        labelEl.classList.remove('text-slate-500');
+                    }
+                    dropdownEl.classList.add('hidden');
+                    const row = wrapper?.closest('.rental-item');
+                    if (row) loadSerialsForRow(row);
+                };
+            });
+        }
+
+        function updateAllProductDropdowns() {
+            document.querySelectorAll('.product-dropdown').forEach(dd => {
+                const searchInput = dd.querySelector('.product-search-input');
+                renderProductList(dd, searchInput?.value || '');
+            });
+        }
+
+        function getProductDropdownHtml(idx) {
+            return `
+                <div class="product-dropdown-wrapper relative">
+                    <input type="hidden" class="product-id-input" value="">
+                    <button type="button" class="product-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm hover:bg-slate-50">
+                        <span class="product-label text-slate-500">{{ __('Pilih Produk') }}</span>
+                        <svg class="h-4 w-4 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+                    </button>
+                    <div class="product-dropdown hidden absolute z-30 left-0 right-0 mt-1 min-w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div class="p-2 border-b border-gray-100">
+                            <input type="text" class="product-search-input w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm" placeholder="{{ __('Cari SKU, merk, series...') }}">
+                        </div>
+                        <div class="product-list max-h-48 overflow-auto py-1"></div>
+                        <div class="product-empty hidden px-3 py-3 text-sm text-slate-500 text-center">{{ __('Tidak ada produk.') }}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function initProductDropdown(wrapper) {
+            if (!wrapper) return;
+            const trigger = wrapper.querySelector('.product-trigger');
+            const dropdown = wrapper.querySelector('.product-dropdown');
+            const searchInput = wrapper.querySelector('.product-search-input');
+            trigger?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden'));
+                dropdown?.classList.toggle('hidden');
+                if (!dropdown?.classList.contains('hidden') && searchInput) {
+                    searchInput.value = '';
+                    renderProductList(dropdown, '');
+                    searchInput.focus();
+                }
+            });
+            searchInput?.addEventListener('input', () => renderProductList(dropdown, searchInput.value));
+            searchInput?.addEventListener('keydown', (e) => { if (e.key === 'Escape') dropdown?.classList.add('hidden'); });
+            dropdown?.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        function updateBrandSeriesFilters() {
+            const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
+            const brandSel = document.getElementById('rental_brand_filter');
+            if (brandSel) brandSel.innerHTML = '<option value="">Semua Merk</option>' + brands.map(b => '<option value="' + b + '">' + b + '</option>').join('');
+            const seriesSel = document.getElementById('rental_series_filter');
+            if (seriesSel) {
+                const brandVal = brandSel?.value || '';
+                const series = [...new Set(products.filter(p => !brandVal || p.brand === brandVal).map(p => p.series).filter(Boolean))].sort();
+                seriesSel.innerHTML = '<option value="">Semua Series</option>' + series.map(s => '<option value="' + s + '">' + s + '</option>').join('');
             }
         }
 
-        async function loadProductsForWarehouse() {
-            const warehouseId = document.getElementById('warehouse_id')?.value;
-            if (!warehouseId) {
+        function updateLocationSelect() {
+            const type = document.getElementById('location_type')?.value;
+            const locSel = document.getElementById('location_id');
+            if (!locSel) return;
+            const options = type === 'warehouse' ? warehouses : branches;
+            locSel.innerHTML = '<option value="">Pilih lokasi</option>' + options.map(o => '<option value="' + o.id + '">' + o.name + '</option>').join('');
+            if (editLocationId && type === editLocationType) locSel.value = String(editLocationId);
+        }
+
+        async function loadProductsForLocation() {
+            const locationType = document.getElementById('location_type')?.value;
+            const locationId = document.getElementById('location_id')?.value;
+            if (!locationId) {
                 products = [];
-                document.querySelectorAll('.product-select').forEach(sel => updateProductSelectOptions(sel));
+                updateBrandSeriesFilters();
+                updateAllProductDropdowns();
                 setProductsStatus('');
                 return;
             }
-
             try {
                 setProductsStatus('Memuat produk...');
                 const url = new URL(availableProductsUrl, window.location.origin);
-                url.searchParams.set('warehouse_id', warehouseId);
+                url.searchParams.set('location_type', locationType);
+                url.searchParams.set('location_id', locationId);
                 url.searchParams.set('rental_id', rentalId);
                 const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
                 if (!res.ok) throw new Error(`available-products ${res.status}`);
                 const data = await res.json();
                 products = Array.isArray(data.products) ? data.products : [];
-                document.querySelectorAll('.product-select').forEach(sel => updateProductSelectOptions(sel));
-                setProductsStatus(
-                    products.length > 0 ? `Produk tersedia: ${products.length}` : 'Tidak ada laptop bekas di gudang ini.',
-                    products.length > 0 ? 'ok' : 'info'
-                );
+                updateBrandSeriesFilters();
+                updateAllProductDropdowns();
+                setProductsStatus(products.length > 0 ? 'Produk tersedia: ' + products.length : 'Tidak ada laptop bekas/aktif di lokasi ini.', products.length > 0 ? 'ok' : 'info');
             } catch (e) {
                 console.error('Failed to load products', e);
-                setProductsStatus('Gagal memuat produk. Cek koneksi/login.', 'error');
+                setProductsStatus('Gagal memuat produk.', 'error');
             }
         }
 
         async function loadSerialsForRow(row) {
-            const warehouseId = document.getElementById('warehouse_id')?.value;
-            const productSelect = row.querySelector('.product-select');
+            const locationType = document.getElementById('location_type')?.value;
+            const locationId = document.getElementById('location_id')?.value;
+            const productIdInput = row.querySelector('.product-id-input');
             const serialBox = row.querySelector('.serial-box');
             if (!serialBox) return;
 
-            const productId = productSelect?.value;
-            if (!warehouseId || !productId) {
+            const productId = productIdInput?.value;
+            if (!locationId || !productId) {
                 serialBox.innerHTML = '<p class="text-xs text-slate-500">{{ __('Pilih produk dulu') }}</p>';
                 return;
             }
 
             try {
                 const url = new URL(availableSerialsUrl, window.location.origin);
-                url.searchParams.set('warehouse_id', warehouseId);
+                url.searchParams.set('location_type', locationType);
+                url.searchParams.set('location_id', locationId);
                 url.searchParams.set('product_id', productId);
                 url.searchParams.set('rental_id', rentalId);
                 const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
@@ -330,9 +461,7 @@
             tr.className = 'rental-item';
             tr.innerHTML = `
                 <td class="px-3 py-2">
-                    <select name="items[${index}][product_id]" class="product-select block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                        ${productOptionsHtml()}
-                    </select>
+                    ${getProductDropdownHtml(index)}
                 </td>
                 <td class="px-3 py-2">
                     <div class="serial-box text-sm text-slate-600">
@@ -350,6 +479,8 @@
                 </td>
             `;
             body.appendChild(tr);
+            initProductDropdown(tr.querySelector('.product-dropdown-wrapper'));
+            updateAllProductDropdowns();
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
             return tr;
         }
@@ -388,12 +519,11 @@
             }
         });
 
+        document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+
         document.getElementById('rental-items')?.addEventListener('change', (e) => {
             const row = e.target.closest('.rental-item');
             if (!row) return;
-            if (e.target.classList.contains('product-select')) {
-                loadSerialsForRow(row);
-            }
             if (e.target.classList.contains('serial-check')) {
                 const current = e.target;
                 const otherSelected = new Set();
@@ -464,10 +594,25 @@
         customerSelect?.addEventListener('change', toggleCustomerFields);
         toggleCustomerFields();
 
-        document.getElementById('warehouse_id')?.addEventListener('change', async function() {
-            await loadProductsForWarehouse();
+        document.getElementById('location_type')?.addEventListener('change', function() {
+            updateLocationSelect();
+            loadProductsForLocation();
             document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
         });
+        document.getElementById('location_id')?.addEventListener('change', async function() {
+            await loadProductsForLocation();
+            document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
+        });
+        document.getElementById('rental_brand_filter')?.addEventListener('change', function() {
+            const brandVal = this.value;
+            const seriesSel = document.getElementById('rental_series_filter');
+            if (seriesSel) {
+                const series = [...new Set(products.filter(p => !brandVal || p.brand === brandVal).map(p => p.series).filter(Boolean))].sort();
+                seriesSel.innerHTML = '<option value="">Semua Series</option>' + series.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+            }
+            updateAllProductDropdowns();
+        });
+        document.getElementById('rental_series_filter')?.addEventListener('change', updateAllProductDropdowns);
         document.getElementById('pickup_date')?.addEventListener('change', refreshDays);
         document.getElementById('return_date')?.addEventListener('change', refreshDays);
         document.getElementById('tax_amount')?.addEventListener('input', refreshTotals);
@@ -479,7 +624,7 @@
             container.innerHTML = '';
             let idx = 0;
             document.querySelectorAll('.rental-item').forEach(row => {
-                const productId = row.querySelector('.product-select')?.value;
+                const productId = row.querySelector('.product-id-input')?.value;
                 const price = row.querySelector('.rental-price')?.value || '';
                 const selectedSerials = Array.from(row.querySelectorAll('.serial-check'))
                     .filter(chk => chk.checked)
@@ -498,10 +643,13 @@
 
         document.getElementById('rental-form')?.addEventListener('submit', () => {
             rebuildHiddenItems();
+            document.querySelectorAll('.rental-item .product-trigger').forEach(el => el.setAttribute('disabled', 'disabled'));
+            document.querySelectorAll('.rental-item .rental-price').forEach(el => el.setAttribute('disabled', 'disabled'));
         });
 
         async function initRentalEdit() {
-            await loadProductsForWarehouse();
+            updateLocationSelect();
+            await loadProductsForLocation();
             const body = document.getElementById('rental-items');
             body.innerHTML = '';
             const groups = groupItems(editItems);
@@ -511,8 +659,14 @@
                 for (let i = 0; i < groups.length; i++) {
                     const g = groups[i];
                     const row = createItemRow(i);
-                    const productSelect = row.querySelector('.product-select');
-                    if (productSelect) productSelect.value = String(g.product_id);
+                    const idInput = row.querySelector('.product-id-input');
+                    const labelEl = row.querySelector('.product-label');
+                    if (idInput) idInput.value = String(g.product_id);
+                    const p = products.find(x => String(x.id) === String(g.product_id));
+                    if (labelEl && p) {
+                        labelEl.textContent = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || '');
+                        labelEl.classList.remove('text-slate-500');
+                    }
                     await loadSerialsForRow(row);
                     const priceInput = row.querySelector('.rental-price');
                     if (priceInput) priceInput.value = String(g.rental_price);

@@ -60,31 +60,55 @@
                 <h3 class="font-semibold text-slate-800">{{ __('Daftar Transaksi') }}</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200">
+                <table class="min-w-full divide-y divide-slate-200 text-xs">
                     <thead class="bg-slate-50">
                         <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sumber') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tipe') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Sumber') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Pemasukan') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Pengeluaran') }}</th>
+                            <th class="px-2 py-2 text-right text-[10px] font-medium text-slate-500 uppercase">{{ __('Saldo') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         @forelse ($transactions as $tx)
                             <tr class="hover:bg-slate-50">
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ \Carbon\Carbon::parse($tx->transaction_date)->format('d/m/Y') }}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ $tx->source }}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ $tx->description }}</td>
-                                <td class="px-4 py-3 text-sm text-right font-semibold {{ $tx->type === 'IN' ? 'text-emerald-600' : 'text-red-600' }}">
-                                    {{ $tx->type === 'IN' ? '+' : '-' }}{{ number_format(abs($tx->amount), 0, ',', '.') }}
+                                <td class="px-2 py-2 text-slate-700">{{ \Carbon\Carbon::parse($tx->transaction_date)->format('d/m/Y') }}</td>
+                                <td class="px-2 py-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium {{ $tx->type === 'IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800' }}">
+                                        {{ $tx->type }}
+                                    </span>
+                                </td>
+                                <td class="px-2 py-2 text-slate-700">{{ $tx->source }}</td>
+                                <td class="px-2 py-2 text-slate-700">{{ $tx->description }}</td>
+                                <td class="px-2 py-2 text-right font-medium text-emerald-600">
+                                    {{ $tx->type === 'IN' ? number_format($tx->amount, 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="px-2 py-2 text-right font-medium text-red-600">
+                                    {{ $tx->type === 'OUT' ? number_format(abs($tx->amount), 0, ',', '.') : '-' }}
+                                </td>
+                                <td class="px-2 py-2 text-right font-medium {{ ($tx->running_balance ?? 0) >= 0 ? 'text-slate-700' : 'text-red-600' }}">
+                                    {{ number_format($tx->running_balance ?? 0, 0, ',', '.') }}
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="px-4 py-8 text-center text-slate-500">{{ __('Belum ada transaksi pada kas/rekening ini.') }}</td>
+                                <td colspan="7" class="px-2 py-8 text-center text-slate-500">{{ __('Belum ada transaksi pada kas/rekening ini.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
+                    @if ($transactions->isNotEmpty())
+                    <tfoot class="bg-slate-50 border-t-2 border-slate-200">
+                        <tr>
+                            <td colspan="4" class="px-2 py-2 text-right font-semibold text-slate-700">{{ __('Saldo Awal') }}</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right">-</td>
+                            <td class="px-2 py-2 text-right font-semibold text-slate-700">0</td>
+                        </tr>
+                    </tfoot>
+                    @endif
                 </table>
             </div>
         </div>

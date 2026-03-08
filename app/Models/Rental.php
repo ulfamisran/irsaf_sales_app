@@ -21,10 +21,14 @@ class Rental extends Model
     public const PAYMENT_BELUM_LUNAS = 'belum_lunas';
     public const PAYMENT_LUNAS = 'lunas';
 
+    public const LOCATION_WAREHOUSE = 'warehouse';
+    public const LOCATION_BRANCH = 'branch';
+
     protected $fillable = [
         'invoice_number',
         'branch_id',
         'warehouse_id',
+        'location_type',
         'customer_id',
         'user_id',
         'pickup_date',

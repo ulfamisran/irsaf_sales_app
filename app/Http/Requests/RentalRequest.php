@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class RentalRequest extends FormRequest
 {
@@ -13,8 +14,15 @@ class RentalRequest extends FormRequest
 
     public function rules(): array
     {
+        $locType = $this->input('location_type');
         return [
-            'warehouse_id' => ['required', 'exists:warehouses,id'],
+            'location_type' => ['required', 'in:warehouse,branch'],
+            'location_id' => [
+                'required',
+                'integer',
+                'min:1',
+                $locType === 'warehouse' ? 'exists:warehouses,id' : 'exists:branches,id',
+            ],
             'customer_id' => ['nullable', 'exists:customers,id'],
             'customer_new_name' => ['nullable', 'string', 'max:255', 'required_without:customer_id'],
             'customer_new_phone' => ['nullable', 'string', 'max:30'],
