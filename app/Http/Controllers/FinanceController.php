@@ -73,7 +73,7 @@ class FinanceController extends Controller
             $salesQuery->whereRaw('1 = 0');
         }
 
-        $sales = $salesQuery->get()->filter(fn ($sale) => $sale->isPaidOff());
+        $sales = $salesQuery->with('saleDetails', 'payments')->get()->filter(fn ($sale) => $sale->isPaidOff());
 
         $totalSales = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
@@ -134,10 +134,16 @@ class FinanceController extends Controller
 
         // Pengeluaran: filter tanggal
         // EXCLUDE: SP-SVC (sudah di Biaya Material Service), REVERSAL (transaksi cancel tidak dihitung)
+        $excludeExpenseCodes = ['SP-SVC', 'REVERSAL', 'REV'];
         $expenseQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_OUT)
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
-            ->whereDoesntHave('expenseCategory', fn ($q) => $q->whereIn('code', ['SP-SVC', 'REVERSAL']));
+            ->where(function ($q) use ($excludeExpenseCodes) {
+                $q->whereNull('expense_category_id')
+                    ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
+                        $sub->select('id')->from('expense_categories')->whereIn('code', $excludeExpenseCodes);
+                    });
+            });
 
         if ($branchId) {
             $expenseQuery->where('branch_id', $branchId);
@@ -158,7 +164,21 @@ class FinanceController extends Controller
         if ($branchId) {
             $rentalQuery->where('branch_id', $branchId);
         }
-        $totalRentalIncome = (float) $rentalQuery->sum('total');
+        $rentals = $rentalQuery->orderBy('pickup_date')->get();
+        $totalRentalIncome = (float) $rentals->sum('total');
+
+        // Detail pemasukan lainnya (untuk POV table)
+        $incomeOtherDetails = CashFlow::query()
+            ->where('type', CashFlow::TYPE_IN)
+            ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+        if ($branchId) {
+            $incomeOtherDetails->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $incomeOtherDetails->where('warehouse_id', $warehouseId);
+        }
+        $incomeOtherDetails = $incomeOtherDetails->orderBy('transaction_date')->orderBy('id')->get();
 
         // Laba = Pemasukan Penjualan (sales+service+rental) + Pemasukan Lainnya - Pengeluaran
         $totalSalesIncome = $totalSalesProfit + $totalServiceProfit + $totalRentalIncome;
@@ -167,7 +187,12 @@ class FinanceController extends Controller
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
-            ->whereDoesntHave('expenseCategory', fn ($q) => $q->whereIn('code', ['SP-SVC', 'REVERSAL']))
+            ->where(function ($q) use ($excludeExpenseCodes) {
+                $q->whereNull('expense_category_id')
+                    ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
+                        $sub->select('id')->from('expense_categories')->whereIn('code', $excludeExpenseCodes);
+                    });
+            })
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->orderByDesc('transaction_date')
@@ -201,6 +226,10 @@ class FinanceController extends Controller
             'totalOtherIncome' => $totalOtherIncome,
             'totalExpense' => $totalExpense,
             'netProfit' => $netProfit,
+            'sales' => $sales,
+            'services' => $services,
+            'rentals' => $rentals,
+            'incomeOtherDetails' => $incomeOtherDetails ?? collect(),
             'expenseDetails' => $expenseDetails,
             'branches' => $branches,
             'selectedBranchId' => $branchId,

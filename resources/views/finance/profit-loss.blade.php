@@ -72,47 +72,150 @@
 
         <div class="space-y-4">
             @if(($pov ?? 'card') === 'table')
-            {{-- POV Tabel --}}
+            {{-- POV Tabel Detail --}}
             <div class="card-modern overflow-hidden">
-                <div class="overflow-x-auto">
+                <div class="p-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
+                    <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" id="toggle-detail-transaksi" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm font-medium text-slate-700">{{ __('Tampilkan detail transaksi') }}</span>
+                    </label>
+                </div>
+                <div id="profit-loss-table-wrapper" class="overflow-x-auto overflow-y-auto transition-all duration-200" style="max-height: 70vh;">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-slate-50">
                             <tr>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
-                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total Transaksi') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total Modal') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Laba') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
+                            {{-- 1. Penjualan --}}
                             <tr class="bg-indigo-50/50">
-                                <td colspan="2" class="px-4 py-2 font-semibold text-slate-800">{{ __('PEMASUKAN PENJUALAN') }}</td>
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Laba Bersih Penjualan') }}</td>
                             </tr>
-                            <tr>
-                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Penjualan') }} ({{ __('Harga Jual') }} - {{ __('HPP') }})</td>
-                                <td class="px-4 py-2 text-right font-medium {{ $totalSalesProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalSalesProfit, 0, ',', '.') }}</td>
+                            @forelse($sales ?? [] as $sale)
+                            @php
+                                $saleTotal = (float) $sale->total_paid ?: (float) $sale->total;
+                                $saleHpp = (float) $sale->total_hpp;
+                                $saleProfit = $saleTotal - $saleHpp;
+                            @endphp
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $sale->invoice_number }} ({{ $sale->sale_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right text-slate-800">{{ number_format($saleTotal, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right text-red-600">{{ number_format($saleHpp, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium {{ $saleProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($saleProfit, 0, ',', '.') }}</td>
                             </tr>
-                            <tr>
-                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Service') }} ({{ __('Total Service') }} - {{ __('Biaya Material') }})</td>
-                                <td class="px-4 py-2 text-right font-medium {{ $totalServiceProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalServiceProfit, 0, ',', '.') }}</td>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada data penjualan') }}</td>
                             </tr>
-                            <tr>
-                                <td class="px-4 py-2 pl-6 text-slate-600">{{ __('Penyewaan') }} ({{ __('Harga Sewa') }})</td>
-                                <td class="px-4 py-2 text-right font-medium text-emerald-600">{{ number_format($totalRentalIncome ?? 0, 0, ',', '.') }}</td>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Penjualan') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-slate-800">{{ number_format($totalSales, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">{{ number_format($totalSalesHpp, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-semibold {{ $totalSalesProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalSalesProfit, 0, ',', '.') }}</td>
                             </tr>
-                            <tr class="border-t-2 border-slate-200">
-                                <td class="px-4 py-2 font-semibold text-slate-800">{{ __('Total Pemasukan Penjualan') }}</td>
-                                @php $totPenj = $totalSalesIncome ?? ($totalSalesProfit + $totalServiceProfit + ($totalRentalIncome ?? 0)); @endphp
-                                <td class="px-4 py-2 text-right font-semibold {{ $totPenj >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totPenj, 0, ',', '.') }}</td>
+
+                            {{-- 2. Penyewaan --}}
+                            <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Laba Bersih Penyewaan') }}</td>
                             </tr>
-                            <tr>
-                                <td class="px-4 py-2 text-slate-600">{{ __('Pemasukan Lainnya') }}</td>
-                                <td class="px-4 py-2 text-right font-medium text-emerald-600">+{{ number_format($totalOtherIncome, 0, ',', '.') }}</td>
+                            @forelse($rentals ?? [] as $rental)
+                            @php $rentalTotal = (float) $rental->total; @endphp
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $rental->invoice_number }} ({{ $rental->pickup_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right text-slate-800">{{ number_format($rentalTotal, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600">{{ number_format($rentalTotal, 0, ',', '.') }}</td>
                             </tr>
-                            <tr>
-                                <td class="px-4 py-2 text-slate-600">{{ __('Pengeluaran') }}</td>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada data penyewaan') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Penyewaan') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-slate-800">{{ number_format($totalRentalIncome ?? 0, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right font-semibold text-emerald-600">{{ number_format($totalRentalIncome ?? 0, 0, ',', '.') }}</td>
+                            </tr>
+
+                            {{-- 3. Service --}}
+                            <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Laba Bersih Service') }}</td>
+                            </tr>
+                            @forelse($services ?? [] as $service)
+                            @php
+                                $svcTotal = (float) $service->total_service_price;
+                                $svcMaterial = (float) $service->materials_total_price;
+                                $svcProfit = $svcTotal - $svcMaterial;
+                            @endphp
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $service->invoice_number }} ({{ ($service->exit_date ?? $service->entry_date)?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right text-slate-800">{{ number_format($svcTotal, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right text-red-600">{{ number_format($svcMaterial, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium {{ $svcProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($svcProfit, 0, ',', '.') }}</td>
+                            </tr>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada data service') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Service') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-slate-800">{{ number_format($totalServiceRevenue, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">{{ number_format($totalServiceMaterialCost ?? 0, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-semibold {{ $totalServiceProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalServiceProfit, 0, ',', '.') }}</td>
+                            </tr>
+
+                            {{-- 4. Pemasukan Lainnya --}}
+                            <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pemasukan Lainnya') }}</td>
+                            </tr>
+                            @forelse($incomeOtherDetails ?? [] as $inc)
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $inc->description }} ({{ $inc->transaction_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($inc->amount, 0, ',', '.') }}</td>
+                            </tr>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pemasukan lainnya') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pemasukan Lainnya') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalOtherIncome, 0, ',', '.') }}</td>
+                            </tr>
+
+                            {{-- 5. Pengeluaran --}}
+                            <tr class="bg-red-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pengeluaran') }}</td>
+                            </tr>
+                            @forelse($expenseDetails ?? [] as $exp)
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $exp->description }} ({{ $exp->transaction_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($exp->amount, 0, ',', '.') }}</td>
+                            </tr>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pengeluaran') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pengeluaran') }}</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right">-</td>
                                 <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</td>
                             </tr>
+
+                            {{-- Laba Keseluruhan --}}
                             <tr class="bg-slate-100 border-t-2 border-slate-300">
-                                <td class="px-4 py-3 font-bold text-slate-900">{{ __('Laba Keseluruhan') }}</td>
+                                <td class="px-4 py-3 font-bold text-slate-900" colspan="3">{{ __('Laba Keseluruhan') }}</td>
                                 <td class="px-4 py-3 text-right font-bold {{ $netProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($netProfit, 0, ',', '.') }}</td>
                             </tr>
                         </tbody>
@@ -248,5 +351,32 @@
             @endif
         </div>
     </div>
+
+    @if(($pov ?? 'card') === 'table')
+    <script>
+        (function() {
+            const checkbox = document.getElementById('toggle-detail-transaksi');
+            const wrapper = document.getElementById('profit-loss-table-wrapper');
+            const detailRows = document.querySelectorAll('.profit-loss-detail-row');
+            const defaultShow = localStorage.getItem('profitLossShowDetail') === 'true';
+
+            function toggleDetails(show) {
+                detailRows.forEach(row => {
+                    row.style.display = show ? '' : 'none';
+                });
+                wrapper.style.maxHeight = show ? '70vh' : 'none';
+                wrapper.style.overflowY = show ? 'auto' : 'visible';
+                if (checkbox) checkbox.checked = show;
+                localStorage.setItem('profitLossShowDetail', show ? 'true' : 'false');
+            }
+
+            if (checkbox) {
+                checkbox.checked = defaultShow;
+                toggleDetails(defaultShow);
+                checkbox.addEventListener('change', () => toggleDetails(checkbox.checked));
+            }
+        })();
+    </script>
+    @endif
 </x-app-layout>
 
