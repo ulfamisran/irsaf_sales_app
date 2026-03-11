@@ -29,27 +29,29 @@ class DebtController extends Controller
         $canFilterLocation = false;
         $filterLocked = false;
         $locationLabel = null;
+        $lockedBranchId = null;
+        $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
+                $lockedBranchId = (int) $user->branch_id;
                 $locationLabel = __('Cabang') . ': ' . (Branch::find($user->branch_id)?->name ?? '');
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
+                $lockedWarehouseId = (int) $user->warehouse_id;
                 $locationLabel = __('Gudang') . ': ' . (Warehouse::find($user->warehouse_id)?->name ?? '');
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
             $canFilterLocation = true;
-            if ($request->filled('location_type')) {
-                if ($request->location_type === 'warehouse' && $request->filled('warehouse_id')) {
-                    $query->where('warehouse_id', $request->warehouse_id);
-                } elseif ($request->location_type === 'branch' && $request->filled('branch_id')) {
-                    $query->where('branch_id', $request->branch_id);
-                }
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            } elseif ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
             }
         }
 
@@ -101,6 +103,8 @@ class DebtController extends Controller
             'canFilterLocation',
             'filterLocked',
             'locationLabel',
+            'lockedBranchId',
+            'lockedWarehouseId',
             'statusFilter'
         ));
     }

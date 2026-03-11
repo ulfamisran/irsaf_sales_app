@@ -286,16 +286,13 @@
             const brand = esc(p.brand);
             const series = esc(p.series || '');
             const color = esc(p.color || '');
-            const price = Number(p.price || 0).toLocaleString('id-ID');
             let colorPart = '';
             if (color) colorPart = ' <span class="text-slate-400">-</span> <span class="text-xs text-slate-600">' + color + '</span>';
-            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series || '') + '" data-sku="' + esc(p.sku) + '" data-color="' + esc(p.color || '') + '" data-price="' + (p.price || 0) + '">' +
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series || '') + '" data-sku="' + esc(p.sku) + '" data-color="' + esc(p.color || '') + '">' +
                 '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">' +
                 '<span class="text-xs text-slate-500">' + sku + '</span>' +
                 '<span class="text-slate-400">-</span>' +
                 '<span class="text-slate-800">' + brand + ' ' + series + '</span>' + colorPart +
-                '<span class="text-slate-400">-</span>' +
-                '<span class="text-emerald-600 font-medium ml-auto">' + price + '</span>' +
                 '</div></div>';
         }
 
@@ -362,6 +359,7 @@
         });
 
         const rowSerials = new WeakMap(); // row -> full serial array
+        const rowUnits = new WeakMap();   // row -> [{serial_number, harga_jual, harga_hpp}, ...]
 
         function getBrandsFromProducts() {
             const set = new Set();
@@ -434,7 +432,6 @@
                 opt.onclick = (e) => {
                     e.stopPropagation();
                     const id = opt.getAttribute('data-id');
-                    const price = opt.getAttribute('data-price');
                     if (productIdInput) { productIdInput.value = id; productIdInput.dispatchEvent(new Event('change', { bubbles: true })); }
                     const label = row.querySelector('.product-select-label');
                     if (label) {
@@ -443,11 +440,8 @@
                         label.classList.remove('text-slate-500');
                     }
                     const priceInput = row.querySelector('input[name*="[price]"]');
-                    if (priceInput && price) {
-                        priceInput.value = price;
-                        if (window.attachRupiahFormatter) window.attachRupiahFormatter();
-                        if (typeof refreshTotals === 'function') refreshTotals();
-                    }
+                    if (priceInput) { priceInput.value = ''; if (window.attachRupiahFormatter) window.attachRupiahFormatter(); }
+                    if (typeof refreshTotals === 'function') refreshTotals();
                     dropdown.classList.add('hidden');
                     loadSerialsForRow(row);
                 };
@@ -510,6 +504,7 @@
                         const label = row.querySelector('.product-select-label');
                         if (label) { label.textContent = 'Pilih Produk'; label.classList.add('text-slate-500'); }
                         rowSerials.set(row, []);
+                        rowUnits.set(row, []);
                         setSerialInputsEnabled(row, false);
                         syncQtyFromSerials(row);
                     }
@@ -558,6 +553,7 @@
             const productId = productIdInput?.value;
             if (!branchId || !productId) {
                 rowSerials.set(row, []);
+                rowUnits.set(row, []);
                 serialSelect.innerHTML = '';
                 setSerialInputsEnabled(row, false);
                 return;
@@ -573,18 +569,43 @@
                 if (!res.ok) throw new Error(`available-serials ${res.status}`);
                 const data = await res.json();
                 const serials = Array.isArray(data.serial_numbers) ? data.serial_numbers : [];
+                const units = Array.isArray(data.units) ? data.units : [];
                 const isTracked = !!data.is_serial_tracked;
 
                 rowSerials.set(row, serials);
+                rowUnits.set(row, units);
                 // Enable inputs when product is serial-tracked (even if zero available, allow manual typing/scanning)
                 setSerialInputsEnabled(row, isTracked);
                 renderSerialOptions(row);
             } catch (e) {
                 rowSerials.set(row, []);
+                rowUnits.set(row, []);
                 serialSelect.innerHTML = '';
                 setSerialInputsEnabled(row, false);
                 console.error('Failed to load serials', e);
             }
+        }
+
+        function syncPriceFromSerials(row) {
+            const serialSelect = row.querySelector('.serial-select');
+            const priceInput = row.querySelector('input[name*="[price]"]');
+            if (!serialSelect || !priceInput) return;
+
+            const selectedSerials = Array.from(serialSelect.selectedOptions || []).map(o => o.value);
+            const units = rowUnits.get(row) || [];
+            if (selectedSerials.length === 0 || units.length === 0) return;
+
+            const unitMap = Object.fromEntries(units.map(u => [String(u.serial_number || ''), u]));
+            let totalHargaJual = 0;
+            for (const sn of selectedSerials) {
+                const u = unitMap[sn];
+                if (u && typeof u.harga_jual === 'number') totalHargaJual += u.harga_jual;
+                else if (u && typeof u.harga_jual === 'string') totalHargaJual += parseFloat(u.harga_jual) || 0;
+            }
+            const pricePerUnit = selectedSerials.length > 0 ? Math.round(totalHargaJual / selectedSerials.length * 100) / 100 : 0;
+            priceInput.value = pricePerUnit;
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+            if (typeof refreshTotals === 'function') refreshTotals();
         }
 
         function syncQtyFromSerials(row) {
@@ -670,6 +691,7 @@
                     alert('Serial sudah dipilih di item lain.');
                 }
                 syncQtyFromSerials(row);
+                syncPriceFromSerials(row);
             }
         });
 
@@ -679,7 +701,7 @@
             const row = e.target.closest('.sale-item');
             if (!row) return;
             if (e.target.classList.contains('serial-select')) {
-                setTimeout(() => syncQtyFromSerials(row), 0);
+                setTimeout(() => { syncQtyFromSerials(row); syncPriceFromSerials(row); }, 0);
             }
         });
         document.getElementById('sale-items')?.addEventListener('keyup', function(e) {
@@ -687,6 +709,7 @@
             if (!row) return;
             if (e.target.classList.contains('serial-select')) {
                 syncQtyFromSerials(row);
+                syncPriceFromSerials(row);
             }
         });
 

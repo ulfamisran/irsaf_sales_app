@@ -475,22 +475,30 @@ class SaleController extends Controller
         if (! $branchId) {
             return response()->json([
                 'serial_numbers' => [],
+                'units' => [],
                 'is_serial_tracked' => $isSerialTracked,
             ]);
         }
 
-        $serials = ProductUnit::query()
+        $units = ProductUnit::query()
             ->where('product_id', (int) $validated['product_id'])
             ->where('location_type', Stock::LOCATION_BRANCH)
             ->where('location_id', $branchId)
             ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
             ->orderBy('serial_number')
             ->limit(500)
-            ->pluck('serial_number')
-            ->all();
+            ->get(['serial_number', 'harga_jual', 'harga_hpp']);
+
+        $serials = $units->pluck('serial_number')->all();
+        $unitsData = $units->map(fn ($u) => [
+            'serial_number' => $u->serial_number,
+            'harga_jual' => (float) ($u->harga_jual ?? 0),
+            'harga_hpp' => (float) ($u->harga_hpp ?? 0),
+        ])->values()->all();
 
         return response()->json([
             'serial_numbers' => $serials,
+            'units' => $unitsData,
             'is_serial_tracked' => $isSerialTracked,
         ]);
     }

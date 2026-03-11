@@ -95,6 +95,7 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No. Invoice') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
@@ -113,6 +114,7 @@
                                         <span class="ml-2 inline-flex px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
                                     @endif
                                 </td>
+                                <td class="px-4 py-3 text-sm">{{ $p->jenis_pembelian ?? __('Pembelian Unit') }}</td>
                                 <td class="px-4 py-3">{{ $p->purchase_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">{{ $p->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">
@@ -154,7 +156,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
+                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

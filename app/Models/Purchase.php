@@ -14,8 +14,12 @@ class Purchase extends Model
     public const STATUS_ACTIVE = 'active';
     public const STATUS_CANCELLED = 'cancelled';
 
+    public const JENIS_PEMBELIAN_UNIT = 'Pembelian Unit';
+    public const JENIS_DISTRIBUSI_UNIT = 'Distribusi Unit';
+
     protected $fillable = [
         'invoice_number',
+        'jenis_pembelian',
         'distributor_id',
         'location_type',
         'warehouse_id',
@@ -28,6 +32,7 @@ class Purchase extends Model
         'due_date',
         'user_id',
         'status',
+        'stock_mutation_id',
     ];
 
     protected function casts(): array
@@ -38,6 +43,11 @@ class Purchase extends Model
             'purchase_date' => 'date',
             'due_date' => 'date',
         ];
+    }
+
+    public function isDistribusiUnit(): bool
+    {
+        return $this->jenis_pembelian === self::JENIS_DISTRIBUSI_UNIT;
     }
 
     public function isCancelled(): bool
@@ -82,6 +92,11 @@ class Purchase extends Model
     public function details(): HasMany
     {
         return $this->hasMany(PurchaseDetail::class);
+    }
+
+    public function stockMutation(): BelongsTo
+    {
+        return $this->belongsTo(StockMutation::class);
     }
 
     public function payments(): HasMany

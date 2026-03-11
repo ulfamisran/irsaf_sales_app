@@ -324,6 +324,7 @@
         });
 
         const rowSerials = new WeakMap(); // row -> full serial array
+        const rowUnits = new WeakMap();   // row -> [{serial_number, harga_jual, harga_hpp}, ...]
 
         function updateProductSelectOptions(selectEl) {
             if (!selectEl) return;
@@ -407,6 +408,7 @@
 
             if (!branchId || !productId) {
                 rowSerials.set(row, existingSelected);
+                rowUnits.set(row, []);
                 setSerialInputsEnabled(row, false);
                 renderSerialOptions(row);
                 return;
@@ -422,18 +424,43 @@
                 if (!res.ok) throw new Error(`available-serials ${res.status}`);
                 const data = await res.json();
                 const apiSerials = Array.isArray(data.serial_numbers) ? data.serial_numbers : [];
+                const units = Array.isArray(data.units) ? data.units : [];
                 const isTracked = !!data.is_serial_tracked;
                 const serials = [...new Set([...apiSerials, ...existingSelected])];
 
                 rowSerials.set(row, serials);
+                rowUnits.set(row, units);
                 setSerialInputsEnabled(row, isTracked);
                 renderSerialOptions(row);
             } catch (e) {
                 rowSerials.set(row, []);
+                rowUnits.set(row, []);
                 serialSelect.innerHTML = '';
                 setSerialInputsEnabled(row, false);
                 console.error('Failed to load serials', e);
             }
+        }
+
+        function syncPriceFromSerials(row) {
+            const serialSelect = row.querySelector('.serial-select');
+            const priceInput = row.querySelector('input[name*="[price]"]');
+            if (!serialSelect || !priceInput) return;
+
+            const selectedSerials = Array.from(serialSelect.selectedOptions || []).map(o => o.value);
+            const units = rowUnits.get(row) || [];
+            if (selectedSerials.length === 0 || units.length === 0) return;
+
+            const unitMap = Object.fromEntries(units.map(u => [String(u.serial_number || ''), u]));
+            let totalHargaJual = 0;
+            for (const sn of selectedSerials) {
+                const u = unitMap[sn];
+                if (u && typeof u.harga_jual === 'number') totalHargaJual += u.harga_jual;
+                else if (u && typeof u.harga_jual === 'string') totalHargaJual += parseFloat(u.harga_jual) || 0;
+            }
+            const pricePerUnit = selectedSerials.length > 0 ? Math.round(totalHargaJual / selectedSerials.length * 100) / 100 : 0;
+            priceInput.value = pricePerUnit;
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+            if (typeof refreshTotals === 'function') refreshTotals();
         }
 
         function syncQtyFromSerials(row) {
@@ -484,6 +511,7 @@
                     alert('Serial sudah dipilih di item lain.');
                 }
                 syncQtyFromSerials(row);
+                syncPriceFromSerials(row);
                 refreshTotals();
             }
         });
@@ -811,11 +839,12 @@
         }
 
         // initial load
-        loadProductsForBranch().then(() => {
-            document.querySelectorAll('.sale-item').forEach(row => {
-                loadSerialsForRow(row);
+        loadProductsForBranch().then(async () => {
+            for (const row of document.querySelectorAll('.sale-item')) {
+                await loadSerialsForRow(row);
                 syncQtyFromSerials(row);
-            });
+                syncPriceFromSerials(row);
+            }
             refreshTotals();
         });
 

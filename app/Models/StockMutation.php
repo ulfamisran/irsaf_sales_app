@@ -13,12 +13,15 @@ class StockMutation extends Model
     protected $table = 'stock_mutations';
 
     protected $fillable = [
+        'invoice_number',
         'product_id',
         'from_location_type',
         'from_location_id',
         'to_location_type',
         'to_location_id',
         'quantity',
+        'biaya_distribusi_per_unit',
+        'distribution_payment_method_id',
         'mutation_date',
         'notes',
         'serial_numbers',
@@ -29,6 +32,7 @@ class StockMutation extends Model
     {
         return [
             'quantity' => 'integer',
+            'biaya_distribusi_per_unit' => 'decimal:2',
             'mutation_date' => 'date',
         ];
     }
@@ -47,5 +51,15 @@ class StockMutation extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function distributionPaymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class, 'distribution_payment_method_id');
+    }
+
+    public function purchase(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Purchase::class);
     }
 }

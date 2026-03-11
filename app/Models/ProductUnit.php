@@ -23,6 +23,8 @@ class ProductUnit extends Model
     protected $fillable = [
         'product_id',
         'user_id',
+        'harga_hpp',
+        'harga_jual',
         'serial_number',
         'location_type',
         'location_id',
@@ -35,6 +37,8 @@ class ProductUnit extends Model
     protected function casts(): array
     {
         return [
+            'harga_hpp' => 'decimal:2',
+            'harga_jual' => 'decimal:2',
             'received_date' => 'date',
             'sold_at' => 'datetime',
         ];

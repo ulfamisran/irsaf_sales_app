@@ -83,6 +83,7 @@ class PurchaseService
                 : $this->generateInvoiceNumber();
             $purchase = Purchase::create([
                 'invoice_number' => $invoiceNumber,
+                'jenis_pembelian' => Purchase::JENIS_PEMBELIAN_UNIT,
                 'distributor_id' => $distributorId,
                 'location_type' => $locationType,
                 'warehouse_id' => $warehouseId,

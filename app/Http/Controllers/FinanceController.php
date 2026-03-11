@@ -38,15 +38,19 @@ class FinanceController extends Controller
         $canFilterLocation = false;
         $filterLocked = false;
         $locationLabel = null;
+        $lockedBranchId = null;
+        $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
+                $lockedBranchId = $branchId;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
+                $lockedWarehouseId = $warehouseId;
                 $filterLocked = true;
                 $warehouse = Warehouse::find($warehouseId);
                 $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
@@ -55,7 +59,6 @@ class FinanceController extends Controller
             $canFilterLocation = true;
             if ($request->filled('warehouse_id')) {
                 $warehouseId = (int) $request->warehouse_id;
-                $branchId = null;
             } elseif ($request->filled('branch_id')) {
                 $branchId = (int) $request->branch_id;
             }
@@ -117,10 +120,10 @@ class FinanceController extends Controller
                 ->sum('sale_trade_ins.trade_in_value');
         }
 
-        // Pemasukan Lainnya: filter tanggal
+        // Pemasukan Lainnya: filter tanggal (termasuk Distribusi Barang)
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->whereIn('reference_type', [CashFlow::REFERENCE_OTHER, CashFlow::REFERENCE_DISTRIBUTION])
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
@@ -170,7 +173,7 @@ class FinanceController extends Controller
         // Detail pemasukan lainnya (untuk POV table)
         $incomeOtherDetails = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->whereIn('reference_type', [CashFlow::REFERENCE_OTHER, CashFlow::REFERENCE_DISTRIBUTION])
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
         if ($branchId) {
             $incomeOtherDetails->where('branch_id', $branchId);
@@ -212,6 +215,8 @@ class FinanceController extends Controller
             'canFilterLocation' => $canFilterLocation,
             'filterLocked' => $filterLocked,
             'locationLabel' => $locationLabel,
+            'lockedBranchId' => $lockedBranchId ?? null,
+            'lockedWarehouseId' => $lockedWarehouseId ?? null,
             'dateFrom' => $dateFrom->toDateString(),
             'dateTo' => $dateTo->toDateString(),
             'totalSales' => $totalSales,
@@ -251,23 +256,30 @@ class FinanceController extends Controller
         $canFilterLocation = false;
         $filterLocked = false;
         $locationLabel = null;
+        $lockedBranchId = null;
+        $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
+                $lockedBranchId = $branchId;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
+                $lockedWarehouseId = $warehouseId;
                 $filterLocked = true;
                 $warehouse = Warehouse::find($warehouseId);
                 $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
             }
         } else {
             $canFilterLocation = true;
-            $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
-            $warehouseId = $request->filled('warehouse_id') ? (int) $request->warehouse_id : null;
+            if ($request->filled('warehouse_id')) {
+                $warehouseId = (int) $request->warehouse_id;
+            } elseif ($request->filled('branch_id')) {
+                $branchId = (int) $request->branch_id;
+            }
         }
 
         // Filter tanggal (opsional) - default: tidak filter, tampilkan semua data
@@ -622,6 +634,8 @@ class FinanceController extends Controller
             'canFilterLocation' => $canFilterLocation,
             'filterLocked' => $filterLocked,
             'locationLabel' => $locationLabel,
+            'lockedBranchId' => $lockedBranchId ?? null,
+            'lockedWarehouseId' => $lockedWarehouseId ?? null,
             'branchTotals' => $branchTotals,
             'branchExpense' => $branchExpense,
             'warehouseTotals' => $warehouseTotals,

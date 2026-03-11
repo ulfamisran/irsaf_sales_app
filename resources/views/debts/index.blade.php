@@ -8,36 +8,36 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('debts.index') }}" class="flex flex-wrap gap-4 items-end">
-                    @if($canFilterLocation ?? false)
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
-                            <select name="location_type" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
-                                <option value="warehouse" {{ request('location_type') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                            <select name="branch_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($branches as $b)
-                                    <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                            <select name="warehouse_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    @elseif($filterLocked ?? false)
+                    @if(($canFilterLocation ?? false) || ($filterLocked ?? false))
+                        @php
+                            $branchSelectDisabled = $filterLocked ?? false;
+                            $warehouseSelectDisabled = $filterLocked ?? false;
+                            $selectedBranchId = $filterLocked && ($lockedBranchId ?? null) ? $lockedBranchId : request('branch_id');
+                            $selectedWarehouseId = $filterLocked && ($lockedWarehouseId ?? null) ? $lockedWarehouseId : request('warehouse_id');
+                        @endphp
                         <div class="min-w-[180px]">
-                            <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
+                            <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $branchSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $branchSelectDisabled ? 'disabled' : '' }}>
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($branches ?? [] as $b)
+                                    <option value="{{ $b->id }}" {{ (string)$selectedBranchId === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                @endforeach
+                            </select>
+                            @if($branchSelectDisabled && ($lockedBranchId ?? null))
+                                <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
+                            @endif
+                        </div>
+                        <div class="min-w-[180px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                            <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $warehouseSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $warehouseSelectDisabled ? 'disabled' : '' }}>
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($warehouses ?? [] as $w)
+                                    <option value="{{ $w->id }}" {{ (string)$selectedWarehouseId === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @endforeach
+                            </select>
+                            @if($warehouseSelectDisabled && ($lockedWarehouseId ?? null))
+                                <input type="hidden" name="warehouse_id" value="{{ $lockedWarehouseId }}">
+                            @endif
                         </div>
                     @endif
                     <div>

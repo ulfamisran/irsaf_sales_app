@@ -98,6 +98,8 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase min-w-[12rem]">{{ __('Spesifikasi Lengkap') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('HPP') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase w-28">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
@@ -128,10 +130,10 @@
                                 <td class="px-4 py-3 text-slate-700 text-sm max-w-[14rem]" title="{{ $specsText }}">{{ Str::limit($specsText, 50) }}</td>
                                 <td class="px-4 py-3">—</td>
                                 <td class="px-4 py-3 text-slate-700">{{ $product->distributor?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">—</td>
+                                <td class="px-4 py-3">—</td>
                                 <td colspan="5" class="px-4 py-3 text-slate-700">
                                     <span class="font-semibold">{{ __('In Stock') }}: {{ (int) ($inStockCounts[$product->id] ?? 0) }}</span>
-                                    <span class="mx-3">|</span>
-                                    <span>{{ __('Harga Modal') }}: {{ number_format($product->purchase_price ?? 0, 0, ',', '.') }}</span>
                                 </td>
                             </tr>
                             @forelse ($unitsByProduct->get($product->id, collect()) as $u)
@@ -156,6 +158,8 @@
                                     <td class="px-4 py-3 text-slate-600 text-sm max-w-[14rem]" title="{{ $uSpecsText }}">{{ Str::limit($uSpecsText, 50) }}</td>
                                     <td class="px-4 py-3 font-mono text-sm">{{ $u->serial_number }}</td>
                                     <td class="px-4 py-3 text-slate-600 text-sm">{{ $p?->distributor?->name ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-sm text-slate-700 text-right">{{ number_format($u->harga_hpp ?? 0, 0, ',', '.') }}</td>
+                                    <td class="px-4 py-3 text-sm text-slate-700 text-right">{{ number_format($u->harga_jual ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-4 py-3 text-sm text-slate-700">
                                         <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800' }}">
                                             {{ $statusOptions[$u->status] ?? $u->status }}
@@ -192,12 +196,12 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="12" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
+                                    <td colspan="14" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
                                 </tr>
                             @endforelse
                         @empty
                             <tr>
-                                <td colspan="12" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
+                                <td colspan="14" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

@@ -28,6 +28,10 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('stock-mutations.index') }}" class="flex flex-wrap gap-3 items-end">
+                    <div class="min-w-[200px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('SKU, brand, serial...') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
                     <div class="min-w-[220px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
                         <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -38,7 +42,6 @@
                                 </option>
                             @endforeach
                         </select>
-                        <p class="mt-1 text-xs text-emerald-600">{{ __('Angka di dalam kurung = stok tersedia') }}</p>
                     </div>
                     @if($canFilterLocation ?? false)
                     <div class="w-[120px]">
@@ -102,6 +105,8 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Ke') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Qty') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Biaya/Unit') }}</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Detail') }}</th>
                         </tr>
@@ -135,9 +140,36 @@
                                     {{ $mutation->serial_numbers ? \Illuminate\Support\Str::limit(str_replace("\n", ', ', $mutation->serial_numbers), 40) : '-' }}
                                 </td>
                                 <td class="px-4 py-3 text-right">{{ $mutation->quantity }}</td>
-                                <td class="px-4 py-3">{{ $mutation->user?->name }}</td>
+                                <td class="px-4 py-3 text-right">
+                                    @if (($mutation->biaya_distribusi_per_unit ?? 0) > 0)
+                                        {{ number_format($mutation->biaya_distribusi_per_unit, 0, ',', '.') }}/unit
+                                    @else
+                                        -
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-center">
                                     @php
+                                        $totalBiaya = (float) ($mutation->biaya_distribusi_per_unit ?? 0) * (int) $mutation->quantity;
+                                        $totalPaid = (float) ($distributionPaymentsByMutationId[$mutation->id] ?? 0);
+                                        $statusBayar = $totalBiaya <= 0 ? '-' : ($totalPaid + 0.02 >= $totalBiaya ? 'Lunas' : 'Belum Lunas');
+                                        $statusClass = $totalBiaya <= 0 ? 'text-slate-500' : ($totalPaid + 0.02 >= $totalBiaya ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium');
+                                    @endphp
+                                    <span class="{{ $statusClass }}">{{ $statusBayar }}</span>
+                                </td>
+                                <td class="px-4 py-3">{{ $mutation->user?->name }}</td>
+                                <td class="px-4 py-3 text-center">
+                                    <div class="flex flex-wrap items-center justify-center gap-1">
+                                        @if ($totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
+                                        <a href="{{ route('stock-mutations.add-payment', $mutation) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors" title="{{ __('Tambah Pembayaran') }}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                            {{ __('Bayar') }}
+                                        </a>
+                                        @endif
+                                        <a href="{{ route('stock-mutations.invoice', $mutation) }}" target="_blank" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors" title="{{ __('Invoice') }}">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                            {{ __('Invoice') }}
+                                        </a>
+                                        @php
                                         $fromIsWh = $mutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE;
                                         $fromName = $fromIsWh ? ($warehousesById[$mutation->from_location_id] ?? '#'.$mutation->from_location_id) : ($branchesById[$mutation->from_location_id] ?? '#'.$mutation->from_location_id);
                                         $fromLabel = $fromIsWh ? __('Gudang') : __('Cabang');
@@ -157,6 +189,10 @@
                                         data-serial="{{ $serial }}"
                                         data-user="{{ e($mutation->user?->name ?? '-') }}"
                                         data-notes="{{ e($mutation->notes ?? '-') }}"
+                                        data-biaya="{{ ($mutation->biaya_distribusi_per_unit ?? 0) > 0 ? number_format($mutation->biaya_distribusi_per_unit, 0, ',', '.') : '-' }}"
+                                        data-purchase-url="{{ $mutation->purchase ? route('purchases.show', $mutation->purchase) : '' }}"
+                                        data-purchase-invoice="{{ $mutation->purchase?->invoice_number ?? '' }}"
+                                        data-add-payment-url="{{ ($totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya) ? route('stock-mutations.add-payment', $mutation) : '' }}"
                                         title="{{ __('Lihat Detail') }}">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -164,11 +200,12 @@
                                         </svg>
                                         {{ __('Detail') }}
                                     </button>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data mutasi.') }}</td>
+                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data mutasi.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -192,9 +229,14 @@
                         '<div><span class="text-slate-500 block text-xs">Dari</span><span class="font-medium text-slate-800">' + escape(this.dataset.dari) + '</span></div>' +
                         '<div><span class="text-slate-500 block text-xs">Ke</span><span class="font-medium text-slate-800">' + escape(this.dataset.ke) + '</span></div>' +
                         '<div><span class="text-slate-500 block text-xs">Quantity</span><span class="font-medium text-slate-800">' + escape(this.dataset.qty) + '</span></div>' +
+                        '<div><span class="text-slate-500 block text-xs">Biaya/Unit</span><span class="font-medium text-slate-800">' + escape(this.dataset.biaya || '-') + '</span></div>' +
+                        (this.dataset.purchaseUrl ? '<div class="col-span-2"><a href="' + escape(this.dataset.purchaseUrl) + '" class="text-indigo-600 hover:underline text-sm">Pembelian: ' + escape(this.dataset.purchaseInvoice || '') + '</a></div>' : '') +
                         '<div class="col-span-2"><span class="text-slate-500 block text-xs">Catatan</span><span class="font-medium text-slate-800">' + escape(this.dataset.notes) + '</span></div>' +
                         '<div class="col-span-2"><span class="text-slate-500 block text-xs mb-1">Nomor Serial</span>' +
                         '<div class="max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm font-mono">' + serial + '</div></div>' +
+                        (this.dataset.addPaymentUrl ? '<div class="col-span-2 mt-3 pt-3 border-t border-slate-200"><a href="' + escape(this.dataset.addPaymentUrl) + '" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">' +
+                        '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>' +
+                        'Tambah Pembayaran</a></div>' : '') +
                         '</div>';
                     Swal.fire({
                         title: 'Detail Distribusi Barang',

@@ -51,7 +51,7 @@ class SaleService
         $branch = Branch::findOrFail($branchId);
 
         return DB::transaction(function () use ($branch, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns) {
-            [$details, $subTotal] = $this->buildDetails($items);
+            [$details, $subTotal] = $this->buildDetails($items, (int) $branch->id);
 
             $discountAmount = max(0, round($discountAmount, 2));
             $taxAmount = max(0, round($taxAmount, 2));
@@ -113,7 +113,7 @@ class SaleService
             foreach ($details as $detail) {
                 $serialNumbers = $detail['serial_numbers'] ?? [];
                 $product = Product::find($detail['product_id']);
-                $hpp = $product ? (float) $product->purchase_price : 0;
+                $hpp = isset($detail['hpp']) ? (float) $detail['hpp'] : ($product ? (float) $product->purchase_price : 0);
 
                 SaleDetail::create([
                     'sale_id' => $sale->id,
@@ -209,7 +209,7 @@ class SaleService
             // Release old reservations first (keep -> in_stock)
             $this->unreserveSaleUnits($sale, strict: false);
 
-            [$details, $subTotal] = $this->buildDetails($items);
+            [$details, $subTotal] = $this->buildDetails($items, (int) $sale->branch_id);
 
             $discountAmount = max(0, round($discountAmount, 2));
             $taxAmount = max(0, round($taxAmount, 2));
@@ -263,7 +263,7 @@ class SaleService
             foreach ($details as $detail) {
                 $serialNumbers = $detail['serial_numbers'] ?? [];
                 $product = Product::find($detail['product_id']);
-                $hpp = $product ? (float) $product->purchase_price : 0;
+                $hpp = isset($detail['hpp']) ? (float) $detail['hpp'] : ($product ? (float) $product->purchase_price : 0);
 
                 SaleDetail::create([
                     'sale_id' => $sale->id,
@@ -803,9 +803,9 @@ class SaleService
 
     /**
      * @param  array<int, array{product_id: int, quantity: int, price: float, serial_numbers?: array<int,string>}>  $items
-     * @return array{0: array<int, array{product_id:int, quantity:int, price:float, serial_numbers: array<int,string>}>, 1: float}
+     * @return array{0: array<int, array{product_id:int, quantity:int, price:float, hpp?: float, serial_numbers: array<int,string>}>, 1: float}
      */
-    private function buildDetails(array $items): array
+    private function buildDetails(array $items, int $branchId = 0): array
     {
         $subTotal = 0.0;
         $details = [];
@@ -822,13 +822,47 @@ class SaleService
             }
             $serialNumbers = array_values(array_unique(array_filter(array_map('trim', $serialNumbers))));
 
-            $details[] = [
-                'product_id' => (int) $item['product_id'],
-                'quantity' => $quantity,
-                'price' => $price,
-                'serial_numbers' => $serialNumbers,
-            ];
-            $subTotal += $quantity * $price;
+            $productId = (int) $item['product_id'];
+
+            // Jika ada serial numbers, ambil harga jual dan HPP dari ProductUnit (bukan dari Product)
+            if (! empty($serialNumbers) && $branchId > 0) {
+                $units = ProductUnit::query()
+                    ->where('product_id', $productId)
+                    ->where('location_type', Stock::LOCATION_BRANCH)
+                    ->where('location_id', $branchId)
+                    ->whereIn('serial_number', $serialNumbers)
+                    ->get(['serial_number', 'harga_jual', 'harga_hpp']);
+
+                if ($units->count() === count($serialNumbers)) {
+                    $totalHargaJual = $units->sum(fn ($u) => (float) ($u->harga_jual ?? 0));
+                    $totalHpp = $units->sum(fn ($u) => (float) ($u->harga_hpp ?? 0));
+                    $price = $quantity > 0 ? round($totalHargaJual / $quantity, 2) : 0;
+                    $hppPerUnit = $quantity > 0 ? round($totalHpp / $quantity, 2) : 0;
+                    $details[] = [
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'price' => $price,
+                        'hpp' => $hppPerUnit,
+                        'serial_numbers' => $serialNumbers,
+                    ];
+                } else {
+                    $details[] = [
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'price' => $price,
+                        'serial_numbers' => $serialNumbers,
+                    ];
+                }
+            } else {
+                $details[] = [
+                    'product_id' => $productId,
+                    'quantity' => $quantity,
+                    'price' => $price,
+                    'serial_numbers' => $serialNumbers,
+                ];
+            }
+
+            $subTotal += $quantity * ($details[array_key_last($details)]['price'] ?? $price);
         }
 
         if (empty($details)) {

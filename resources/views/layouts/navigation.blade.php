@@ -183,6 +183,8 @@
                         <li><x-sidebar-nav-link :href="route('debts.index')" :active="request()->routeIs('debts.*')">Data Utang</x-sidebar-nav-link></li>
                         @if ($isSuperAdmin || $isAdminCabang)
                         <li><x-sidebar-nav-link :href="route('cash-flows.out.index')" :active="request()->routeIs('cash-flows.out.index')">Pengeluaran Dana</x-sidebar-nav-link></li>
+                        @endif
+                        @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
                         <li><x-sidebar-nav-link :href="route('cash-flows.in.index')" :active="request()->routeIs('cash-flows.in.*')">Pemasukan Lainnya</x-sidebar-nav-link></li>
                         @endif
                     </ul>

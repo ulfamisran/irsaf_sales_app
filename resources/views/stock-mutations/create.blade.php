@@ -85,35 +85,6 @@
                                 </div>
                                 <x-input-error :messages="$errors->get('product_id')" class="mt-2" />
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <x-input-label for="to_location_type" :value="__('Tipe Tujuan')" />
-                                    <select id="to_location_type" name="to_location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="warehouse" {{ old('to_location_type') == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
-                                        <option value="branch" {{ old('to_location_type') == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <x-input-label for="to_location_id" :value="__('Lokasi Tujuan')" />
-                                    <select id="to_location_id" name="to_location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="">{{ __('Pilih') }}</option>
-                                    </select>
-                                    <x-input-error :messages="$errors->get('to_location_id')" class="mt-2" />
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <x-input-label for="quantity" :value="__('Jumlah')" />
-                                    <x-text-input id="quantity" class="block mt-1 w-full" type="number" name="quantity" min="1" :value="old('quantity')" />
-                                    <x-input-error :messages="$errors->get('quantity')" class="mt-2" />
-                                    <p class="mt-1 text-sm text-gray-500">{{ __('Jika mutasi menggunakan serial number, jumlah akan dihitung otomatis.') }}</p>
-                                </div>
-                                <div>
-                                    <x-input-label for="mutation_date" :value="__('Tanggal Mutasi')" />
-                                    <x-text-input id="mutation_date" class="block mt-1 w-full" type="date" name="mutation_date" :value="old('mutation_date', date('Y-m-d'))" required />
-                                    <x-input-error :messages="$errors->get('mutation_date')" class="mt-2" />
-                                </div>
-                            </div>
                             <div>
                                 <x-input-label :value="__('Nomor Serial (pilih yang akan dipindahkan)')" />
                                 <p id="serials_help" class="mt-1 text-sm text-gray-500">
@@ -144,6 +115,66 @@
                                 <x-input-error :messages="$errors->get('serial_numbers')" class="mt-2" />
                                 <x-input-error :messages="$errors->get('serial_numbers.*')" class="mt-2" />
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <x-input-label for="to_location_type" :value="__('Tipe Tujuan')" />
+                                    <select id="to_location_type" name="to_location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="warehouse" {{ old('to_location_type') == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                        <option value="branch" {{ old('to_location_type') == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <x-input-label for="to_location_id" :value="__('Lokasi Tujuan')" />
+                                    <select id="to_location_id" name="to_location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="">{{ __('Pilih') }}</option>
+                                    </select>
+                                    <x-input-error :messages="$errors->get('to_location_id')" class="mt-2" />
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <x-input-label for="quantity" :value="__('Jumlah')" />
+                                    <x-text-input id="quantity" class="block mt-1 w-full" type="number" name="quantity" min="1" :value="old('quantity')" />
+                                    <x-input-error :messages="$errors->get('quantity')" class="mt-2" />
+                                    <p class="mt-1 text-sm text-gray-500">{{ __('Jika mutasi menggunakan serial number, jumlah akan dihitung otomatis.') }}</p>
+                                </div>
+                                <div>
+                                    <x-input-label for="mutation_date" :value="__('Tanggal Mutasi')" />
+                                    <x-text-input id="mutation_date" class="block mt-1 w-full" type="date" name="mutation_date" :value="old('mutation_date', date('Y-m-d'))" required />
+                                    <x-input-error :messages="$errors->get('mutation_date')" class="mt-2" />
+                                </div>
+                            </div>
+                            <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                <h4 class="text-sm font-semibold text-slate-800 mb-1">{{ __('Biaya Distribusi (Opsional)') }}</h4>
+                                <p class="text-xs text-slate-500 mb-4">{{ __('Jika diisi, unit akan mengalami kenaikan HPP & Harga Jual, serta gudang/cabang asal mendapat pemasukan. Wajib pakai nomor serial.') }}</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <x-input-label for="biaya_distribusi_per_unit" :value="__('Biaya Distribusi per Unit (Rp)')" />
+                                        <x-text-input id="biaya_distribusi_per_unit" class="block mt-1 w-full" type="number" name="biaya_distribusi_per_unit" min="0" step="0.01" :value="old('biaya_distribusi_per_unit')" placeholder="0" />
+                                        <x-input-error :messages="$errors->get('biaya_distribusi_per_unit')" class="mt-2" />
+                                    </div>
+                                    <div class="rounded-md bg-white border border-slate-200 p-3">
+                                        <div class="text-xs text-slate-500">{{ __('Total Transaksi Distribusi') }}</div>
+                                        <div id="distribution_total_text" class="text-lg font-semibold text-emerald-700">Rp 0</div>
+                                        <div class="text-xs text-slate-500 mt-0.5"><span id="distribution_total_formula">0 unit × Rp 0</span></div>
+                                    </div>
+                                </div>
+                                <div id="distribution_payments_section" class="hidden">
+                                    <div class="flex items-center justify-between gap-3 mb-2">
+                                        <p class="font-semibold text-slate-800 text-sm">{{ __('Metode Pembayaran') }}</p>
+                                        <button type="button" id="add-distribution-payment" class="inline-flex px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">
+                                            + {{ __('Tambah') }}
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mb-3">{{ __('Bisa menggunakan lebih dari 1 metode pembayaran untuk membayar biaya distribusi. Pemasukan dicatat di lokasi asal.') }}</p>
+                                    <div id="distribution_payment_rows" class="space-y-2"></div>
+                                    <div class="mt-3 text-sm text-slate-700">
+                                        <span>{{ __('Total pembayaran') }}: </span><span id="distribution_payment_sum_text" class="font-semibold">Rp 0</span>
+                                        <span class="ml-2 text-slate-500">({{ __('selisih') }} <span id="distribution_payment_diff_text">Rp 0</span>)</span>
+                                    </div>
+                                    <x-input-error :messages="$errors->get('distribution_payments')" class="mt-2" />
+                                </div>
+                            </div>
                             <div>
                                 <x-input-label for="notes" :value="__('Catatan')" />
                                 <textarea id="notes" name="notes" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="2">{{ old('notes') }}</textarea>
@@ -171,17 +202,146 @@
             select.innerHTML = '<option value="">Pilih</option>' + options.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
         }
 
+        const formDataUrl = @json(route('data-by-location.form-data'));
+        let distributionPaymentMethods = [];
+        let distributionPaymentIndex = 0;
+
+        async function loadPaymentMethodsForOrigin() {
+            const fromType = document.getElementById('from_location_type')?.value;
+            const fromId = document.getElementById('from_location_id')?.value;
+            if (!fromType || !fromId) {
+                distributionPaymentMethods = [];
+                updateDistributionPaymentOptions();
+                return;
+            }
+            try {
+                const url = new URL(formDataUrl);
+                url.searchParams.set('location_type', fromType);
+                url.searchParams.set('location_id', fromId);
+                const res = await fetch(url);
+                const data = await res.json();
+                distributionPaymentMethods = data.payment_methods || [];
+                updateDistributionPaymentOptions();
+            } catch (e) {
+                distributionPaymentMethods = [];
+                updateDistributionPaymentOptions();
+            }
+        }
+
+        function updateDistributionPaymentOptions() {
+            const opts = '<option value="">' + @json(__('Pilih metode')) + '</option>' +
+                distributionPaymentMethods.map(pm => '<option value="' + pm.id + '">' + (pm.label || pm.id) + '</option>').join('');
+            document.querySelectorAll('#distribution_payment_rows select[name*="payment_method_id"]').forEach(sel => {
+                const oldVal = sel.value;
+                sel.innerHTML = opts;
+                if (oldVal && distributionPaymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
+            });
+        }
+
+        function getDistributionQty() {
+            const serialChecked = document.querySelectorAll('input[name="serial_numbers[]"]:checked').length;
+            if (serialChecked > 0) return serialChecked;
+            const qtyInput = document.getElementById('quantity');
+            return parseInt(qtyInput?.value || '0', 10) || 0;
+        }
+
+        function getDistributionBiaya() {
+            const inp = document.getElementById('biaya_distribusi_per_unit');
+            return parseFloat(inp?.value || '0') || 0;
+        }
+
+        function updateDistributionTotal() {
+            const qty = getDistributionQty();
+            const biaya = getDistributionBiaya();
+            const total = qty * biaya;
+            const totalEl = document.getElementById('distribution_total_text');
+            const formulaEl = document.getElementById('distribution_total_formula');
+            const sectionEl = document.getElementById('distribution_payments_section');
+            if (totalEl) totalEl.textContent = 'Rp ' + total.toLocaleString('id-ID');
+            if (formulaEl) formulaEl.textContent = qty + ' unit × Rp ' + biaya.toLocaleString('id-ID');
+            if (sectionEl) sectionEl.classList.toggle('hidden', total <= 0);
+            refreshDistributionPaymentSum();
+        }
+
+        function toNumberRupiah(val) {
+            if (typeof window.parseRupiahToNumber === 'function') return window.parseRupiahToNumber(val);
+            const raw = String(val ?? '').replace(/[^\d]/g, '');
+            return raw ? parseFloat(raw) : 0;
+        }
+
+        function refreshDistributionPaymentSum() {
+            let sum = 0;
+            document.querySelectorAll('#distribution_payment_rows input[name*="[amount]"]').forEach(inp => {
+                sum += toNumberRupiah(inp.value);
+            });
+            const total = getDistributionQty() * getDistributionBiaya();
+            const diff = total - sum;
+            const sumEl = document.getElementById('distribution_payment_sum_text');
+            const diffEl = document.getElementById('distribution_payment_diff_text');
+            if (sumEl) sumEl.textContent = 'Rp ' + sum.toLocaleString('id-ID');
+            if (diffEl) {
+                diffEl.textContent = 'Rp ' + diff.toLocaleString('id-ID');
+                diffEl.className = diff === 0 ? 'text-emerald-600' : (diff > 0 ? 'text-amber-600' : 'text-red-600');
+            }
+        }
+
+        function addDistributionPaymentRow(pref = {}) {
+            const container = document.getElementById('distribution_payment_rows');
+            if (!container) return;
+            const idx = distributionPaymentIndex++;
+            const opts = '<option value="">' + @json(__('Pilih metode')) + '</option>' +
+                distributionPaymentMethods.map(pm => '<option value="' + pm.id + '">' + (pm.label || pm.id) + '</option>').join('');
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-1 md:grid-cols-[minmax(260px,2fr)_minmax(160px,1fr)_auto] gap-3 items-end';
+            div.innerHTML = '<div><select name="distribution_payments[' + idx + '][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 min-h-[42px]">' + opts + '</select></div>' +
+                '<div><input type="text" name="distribution_payments[' + idx + '][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 min-h-[42px]" placeholder="Nominal"></div>' +
+                '<button type="button" class="remove-distribution-payment px-3 py-2.5 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm self-end min-h-[42px]">-</button>';
+            container.appendChild(div);
+            if (pref.payment_method_id) div.querySelector('select').value = String(pref.payment_method_id);
+            if (pref.amount) div.querySelector('input[name*="[amount]"]').value = String(pref.amount);
+            div.querySelectorAll('select,input').forEach(el => el.addEventListener('input', refreshDistributionPaymentSum));
+            div.querySelector('.remove-distribution-payment')?.addEventListener('click', () => { div.remove(); refreshDistributionPaymentSum(); });
+        }
+
+        document.getElementById('add-distribution-payment')?.addEventListener('click', () => addDistributionPaymentRow());
+        document.getElementById('quantity')?.addEventListener('input', updateDistributionTotal);
+        document.getElementById('biaya_distribusi_per_unit')?.addEventListener('input', updateDistributionTotal);
+
         document.getElementById('from_location_type').addEventListener('change', function() {
             updateLocationSelect('from_location_id', this.value);
+            loadPaymentMethodsForOrigin();
         });
         document.getElementById('to_location_type').addEventListener('change', function() {
             updateLocationSelect('to_location_id', this.value);
         });
+        document.getElementById('from_location_id').addEventListener('change', loadPaymentMethodsForOrigin);
 
         updateLocationSelect('from_location_id', document.getElementById('from_location_type').value);
         updateLocationSelect('to_location_id', document.getElementById('to_location_type').value);
         if (oldFromLocationId) document.getElementById('from_location_id').value = oldFromLocationId;
         if (oldToLocationId) document.getElementById('to_location_id').value = oldToLocationId;
+        (async function initDistributionSection() {
+            await loadPaymentMethodsForOrigin();
+            const oldPayments = @json(old('distribution_payments', []));
+            if (Array.isArray(oldPayments) && oldPayments.length > 0) {
+                oldPayments.forEach(p => {
+                    if (p && (p.payment_method_id || (p.amount && parseFloat(p.amount) > 0))) {
+                        addDistributionPaymentRow({
+                            payment_method_id: p.payment_method_id,
+                            amount: typeof p.amount === 'number' ? p.amount : (p.amount || '')
+                        });
+                    }
+                });
+            }
+            updateDistributionTotal();
+        })();
+
+        document.querySelector('form[action*="stock-mutations"]')?.addEventListener('submit', function() {
+            document.querySelectorAll('#distribution_payment_rows [data-rupiah="true"]').forEach(inp => {
+                const num = toNumberRupiah(inp.value);
+                inp.value = num > 0 ? num : '';
+            });
+        });
     </script>
 
     <script>
@@ -308,10 +468,11 @@
             setVisible(listEl, true);
 
             listEl.querySelectorAll('input[type="checkbox"][name="serial_numbers[]"]').forEach(cb => {
-                cb.addEventListener('change', updateQtyFromSelection);
+                cb.addEventListener('change', function() { updateQtyFromSelection(); if (typeof updateDistributionTotal === 'function') updateDistributionTotal(); });
             });
             applySearchFilter();
             updateQtyFromSelection();
+            if (typeof updateDistributionTotal === 'function') updateDistributionTotal();
         }
 
         async function loadSerials() {

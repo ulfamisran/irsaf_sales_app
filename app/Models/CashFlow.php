@@ -24,6 +24,7 @@ class CashFlow extends Model
     public const REFERENCE_TRADE_IN = 'trade_in';
     public const REFERENCE_PURCHASE = 'purchase';
     public const REFERENCE_PURCHASE_RETURN = 'purchase_return';
+    public const REFERENCE_DISTRIBUTION = 'distribution';
     public const REFERENCE_OTHER = 'lainnya';
 
     protected $fillable = [

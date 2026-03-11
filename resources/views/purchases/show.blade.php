@@ -45,6 +45,10 @@
                             </p>
                         </div>
                         <div>
+                            <p class="text-sm text-gray-500">{{ __('Jenis Pembelian') }}</p>
+                            <p class="font-medium">{{ $purchase->jenis_pembelian ?? __('Pembelian Unit') }}</p>
+                        </div>
+                        <div>
                             <p class="text-sm text-gray-500">{{ __('Distributor') }}</p>
                             <p class="font-medium">{{ $purchase->distributor?->name ?? '-' }}</p>
                         </div>
@@ -78,7 +82,7 @@
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{{ __('Produk') }}</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{{ __('Serial') }}</th>
                                 <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">{{ __('Qty') }}</th>
-                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">{{ __('Harga Beli') }}</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">{{ $purchase->isDistribusiUnit() ? __('Biaya Distribusi') : __('Harga Beli') }}</th>
                                 <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">{{ __('Subtotal') }}</th>
                             </tr>
                         </thead>

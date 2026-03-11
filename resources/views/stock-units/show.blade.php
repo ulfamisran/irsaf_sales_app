@@ -40,12 +40,12 @@
                         <p class="font-medium text-slate-800">{{ $unit->product?->laptop_type ? ucfirst($unit->product?->laptop_type) : '-' }}</p>
                     </div>
                     <div>
-                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Harga Beli') }}</p>
-                        <p class="font-medium text-slate-800">{{ number_format($unit->product?->purchase_price ?? 0, 0, ',', '.') }}</p>
+                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Harga HPP') }}</p>
+                        <p class="font-medium text-slate-800">{{ number_format($unit->harga_hpp ?? 0, 0, ',', '.') }}</p>
                     </div>
                     <div>
                         <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Harga Jual') }}</p>
-                        <p class="font-medium text-slate-800">{{ number_format($unit->product?->selling_price ?? 0, 0, ',', '.') }}</p>
+                        <p class="font-medium text-slate-800">{{ number_format($unit->harga_jual ?? 0, 0, ',', '.') }}</p>
                     </div>
                 </div>
                 @if ($unit->product?->specs)

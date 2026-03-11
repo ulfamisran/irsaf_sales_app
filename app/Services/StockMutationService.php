@@ -3,7 +3,12 @@
 namespace App\Services;
 
 use App\Models\Branch;
+use App\Models\CashFlow;
+use App\Models\Distributor;
+use App\Models\IncomeCategory;
 use App\Models\Product;
+use App\Models\Purchase;
+use App\Models\PurchaseDetail;
 use App\Models\Stock;
 use App\Models\StockMutation;
 use App\Models\ProductUnit;
@@ -17,6 +22,8 @@ class StockMutationService
     /**
      * Execute stock mutation from one location to another.
      *
+     * @param  array<int, string>|null  $serialNumbers
+     *
      * @throws InvalidArgumentException
      */
     public function mutate(
@@ -29,7 +36,9 @@ class StockMutationService
         string $mutationDate,
         ?string $notes = null,
         ?int $userId = null,
-        ?array $serialNumbers = null
+        ?array $serialNumbers = null,
+        float $biayaDistribusiPerUnit = 0,
+        array $distributionPayments = []
     ): StockMutation {
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
 
@@ -43,8 +52,14 @@ class StockMutationService
                 $serialNumbers,
                 $mutationDate,
                 $notes,
-                $userId
+                $userId,
+                $biayaDistribusiPerUnit,
+                $distributionPayments
             );
+        }
+
+        if ($biayaDistribusiPerUnit > 0) {
+            throw new InvalidArgumentException(__('Distribusi dengan biaya hanya untuk produk berserial. Pilih nomor serial.'));
         }
 
         if ($quantity <= 0) {
@@ -107,12 +122,15 @@ class StockMutationService
             $toStock->increment('quantity', $quantity);
 
             return StockMutation::create([
+                'invoice_number' => $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
                 'from_location_id' => $fromLocationId,
                 'to_location_type' => $toLocationType,
                 'to_location_id' => $toLocationId,
                 'quantity' => $quantity,
+                'biaya_distribusi_per_unit' => 0,
+                'distribution_payment_method_id' => null,
                 'mutation_date' => $mutationDate,
                 'notes' => $notes,
                 'serial_numbers' => null,
@@ -431,7 +449,9 @@ class StockMutationService
         array $serialNumbers,
         string $mutationDate,
         ?string $notes = null,
-        ?int $userId = null
+        ?int $userId = null,
+        float $biayaDistribusiPerUnit = 0,
+        array $distributionPayments = []
     ): StockMutation {
         if ($fromLocationType === $toLocationType && $fromLocationId === $toLocationId) {
             throw new InvalidArgumentException(__('Source and destination cannot be the same.'));
@@ -440,6 +460,9 @@ class StockMutationService
         $this->validateLocation($fromLocationType, $fromLocationId);
         $this->validateLocation($toLocationType, $toLocationId);
 
+        $biayaDistribusiPerUnit = round((float) $biayaDistribusiPerUnit, 2);
+        $quantity = count($serialNumbers);
+
         return DB::transaction(function () use (
             $product,
             $fromLocationType,
@@ -447,9 +470,12 @@ class StockMutationService
             $toLocationType,
             $toLocationId,
             $serialNumbers,
+            $quantity,
             $mutationDate,
             $notes,
-            $userId
+            $userId,
+            $biayaDistribusiPerUnit,
+            $distributionPayments
         ) {
             $units = ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $fromLocationType)
@@ -457,9 +483,9 @@ class StockMutationService
                 ->where('status', ProductUnit::STATUS_IN_STOCK)
                 ->whereIn('serial_number', $serialNumbers)
                 ->lockForUpdate()
-                ->get(['id', 'serial_number']);
+                ->get(['id', 'serial_number', 'harga_hpp', 'harga_jual']);
 
-            if ($units->count() !== count($serialNumbers)) {
+            if ($units->count() !== $quantity) {
                 $found = $units->pluck('serial_number')->all();
                 $missing = array_values(array_diff($serialNumbers, $found));
                 throw new InvalidArgumentException(
@@ -467,27 +493,131 @@ class StockMutationService
                 );
             }
 
-            ProductUnit::whereIn('id', $units->pluck('id')->all())->update([
-                'location_type' => $toLocationType,
-                'location_id' => $toLocationId,
-            ]);
+            $unitIds = $units->pluck('id')->all();
+            $totalPurchaseValue = 0.0;
 
-            // Keep quantity cache in sync for involved locations
-            $this->recalculateStockQuantity($product->id, $fromLocationType, $fromLocationId);
-            $this->recalculateStockQuantity($product->id, $toLocationType, $toLocationId);
+            foreach ($units as $unit) {
+                $oldHpp = (float) ($unit->harga_hpp ?? 0);
+                $oldJual = (float) ($unit->harga_jual ?? 0);
+                $newHpp = round($oldHpp + $biayaDistribusiPerUnit, 2);
+                $newJual = round($oldJual + $biayaDistribusiPerUnit, 2);
+                $totalPurchaseValue += $newHpp;
 
-            return StockMutation::create([
+                ProductUnit::where('id', $unit->id)->update([
+                    'location_type' => $toLocationType,
+                    'location_id' => $toLocationId,
+                    'harga_hpp' => $newHpp,
+                    'harga_jual' => $newJual,
+                ]);
+            }
+
+            $stockMutation = StockMutation::create([
+                'invoice_number' => $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
                 'from_location_id' => $fromLocationId,
                 'to_location_type' => $toLocationType,
                 'to_location_id' => $toLocationId,
-                'quantity' => count($serialNumbers),
+                'quantity' => $quantity,
+                'biaya_distribusi_per_unit' => $biayaDistribusiPerUnit,
+                'distribution_payment_method_id' => null,
                 'mutation_date' => $mutationDate,
                 'notes' => $notes,
                 'serial_numbers' => implode("\n", $serialNumbers),
                 'user_id' => $userId,
             ]);
+
+            $fromBranchId = $fromLocationType === Stock::LOCATION_BRANCH ? $fromLocationId : null;
+            $fromWarehouseId = $fromLocationType === Stock::LOCATION_WAREHOUSE ? $fromLocationId : null;
+            $toBranchId = $toLocationType === Stock::LOCATION_BRANCH ? $toLocationId : null;
+            $toWarehouseId = $toLocationType === Stock::LOCATION_WAREHOUSE ? $toLocationId : null;
+
+            if ($biayaDistribusiPerUnit > 0 && ! empty($distributionPayments)) {
+                $incomeCategory = IncomeCategory::firstOrCreate(
+                    ['code' => 'DIST-BRG'],
+                    [
+                        'name' => 'Distribusi Barang',
+                        'description' => 'Pemasukan dari biaya distribusi barang antar lokasi',
+                        'is_active' => true,
+                    ]
+                );
+                foreach ($distributionPayments as $payment) {
+                    $pmId = (int) ($payment['payment_method_id'] ?? 0);
+                    $amount = round((float) ($payment['amount'] ?? 0), 2);
+                    if ($pmId <= 0 || $amount <= 0) {
+                        continue;
+                    }
+                    $pm = \App\Models\PaymentMethod::find($pmId);
+                    if ($pm) {
+                        $pmBranch = (int) ($pm->branch_id ?? 0);
+                        $pmWarehouse = (int) ($pm->warehouse_id ?? 0);
+                        $validPm = ($fromLocationType === Stock::LOCATION_BRANCH && $pmBranch === $fromLocationId)
+                            || ($fromLocationType === Stock::LOCATION_WAREHOUSE && $pmWarehouse === $fromLocationId);
+                        if (! $validPm) {
+                            throw new InvalidArgumentException(__('Metode pembayaran harus dari lokasi asal.'));
+                        }
+                    }
+                    $pmLabel = $pm?->display_label ?? __('Pembayaran');
+                    CashFlow::create([
+                        'branch_id' => $fromBranchId,
+                        'warehouse_id' => $fromWarehouseId,
+                        'type' => CashFlow::TYPE_IN,
+                        'amount' => $amount,
+                        'description' => __('Distribusi Barang') . ' #' . $stockMutation->id . ' - ' . $pmLabel,
+                        'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
+                        'reference_id' => $stockMutation->id,
+                        'income_category_id' => $incomeCategory->id,
+                        'payment_method_id' => $pmId,
+                        'transaction_date' => $mutationDate,
+                        'user_id' => $userId,
+                    ]);
+                }
+            }
+
+            // Biaya pembelian/utang = jumlah_unit × biaya_distribusi_per_unit (bukan HPP atau harga jual)
+            $totalBiayaDistribusi = round($quantity * $biayaDistribusiPerUnit, 2);
+            if ($biayaDistribusiPerUnit > 0 && $totalBiayaDistribusi > 0) {
+                $distributor = Distributor::firstOrCreate(
+                    ['name' => 'Distribusi Internal'],
+                    [
+                        'placement_type' => Distributor::PLACEMENT_SEMUA,
+                        'branch_id' => null,
+                        'warehouse_id' => null,
+                        'address' => null,
+                        'phone' => null,
+                    ]
+                );
+                $invoiceNumber = 'DST-' . date('Ymd') . '-' . str_pad((string) $stockMutation->id, 4, '0', STR_PAD_LEFT);
+                $purchase = Purchase::create([
+                    'invoice_number' => $invoiceNumber,
+                    'jenis_pembelian' => Purchase::JENIS_DISTRIBUSI_UNIT,
+                    'distributor_id' => $distributor->id,
+                    'location_type' => $toLocationType,
+                    'warehouse_id' => $toWarehouseId,
+                    'branch_id' => $toBranchId,
+                    'purchase_date' => $mutationDate,
+                    'total' => $totalBiayaDistribusi,
+                    'total_paid' => 0,
+                    'description' => __('Pembelian dari distribusi') . ' #' . $stockMutation->id,
+                    'termin' => null,
+                    'due_date' => null,
+                    'user_id' => $userId,
+                    'stock_mutation_id' => $stockMutation->id,
+                ]);
+                PurchaseDetail::create([
+                    'purchase_id' => $purchase->id,
+                    'product_id' => $product->id,
+                    'quantity' => $quantity,
+                    'unit_price' => $biayaDistribusiPerUnit,
+                    'subtotal' => $totalBiayaDistribusi,
+                    'serial_numbers' => implode("\n", $serialNumbers),
+                ]);
+            }
+
+            $this->recalculateStockQuantity($product->id, $fromLocationType, $fromLocationId);
+            $this->recalculateStockQuantity($product->id, $toLocationType, $toLocationId);
+
+            return $stockMutation;
         });
     }
 
@@ -594,5 +724,16 @@ class StockMutationService
         $clean = array_values(array_unique($clean));
 
         return $clean;
+    }
+
+    private function generateDistributionInvoiceNumber(): string
+    {
+        $prefix = 'DIST-' . date('Ymd') . '-';
+        $last = StockMutation::where('invoice_number', 'like', $prefix . '%')
+            ->orderByDesc('id')
+            ->first();
+        $seq = $last ? (int) substr($last->invoice_number, -4) + 1 : 1;
+
+        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 }

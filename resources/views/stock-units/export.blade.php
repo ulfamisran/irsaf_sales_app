@@ -22,6 +22,8 @@
                 <th>Spesifikasi Lengkap</th>
                 <th>Serial</th>
                 <th>Distributor</th>
+                <th>HPP</th>
+                <th>Harga Jual</th>
                 <th>Status</th>
                 <th>Lokasi</th>
                 <th>Received</th>
@@ -45,7 +47,9 @@
                     <td>{{ $specsStr }}</td>
                     <td>—</td>
                     <td>{{ $product->distributor?->name ?? '-' }}</td>
-                    <td colspan="4">In Stock: {{ (int) ($inStockCounts[$product->id] ?? 0) }} | Harga Modal: {{ number_format($product->purchase_price ?? 0, 0, ',', '.') }}</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td colspan="4">In Stock: {{ (int) ($inStockCounts[$product->id] ?? 0) }}</td>
                 </tr>
                 @forelse ($unitsByProduct->get($product->id, collect()) as $u)
                     @php
@@ -76,6 +80,8 @@
                         <td class="muted">{{ $uSpecsStr }}</td>
                         <td>{{ $u->serial_number }}</td>
                         <td>{{ $p?->distributor?->name ?? '-' }}</td>
+                        <td>{{ number_format($u->harga_hpp ?? 0, 0, ',', '.') }}</td>
+                        <td>{{ number_format($u->harga_jual ?? 0, 0, ',', '.') }}</td>
                         <td>{{ $statusOptions[$u->status] ?? $u->status }}</td>
                         <td>{{ $locationLabel }}: {{ $locationName }}</td>
                         <td>{{ $u->received_date?->format('d/m/Y') ?? '' }}</td>
@@ -83,12 +89,12 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="11">Tidak ada unit untuk produk ini.</td>
+                        <td colspan="13">Tidak ada unit untuk produk ini.</td>
                     </tr>
                 @endforelse
             @empty
                 <tr>
-                    <td colspan="11">Tidak ada data unit.</td>
+                    <td colspan="13">Tidak ada data unit.</td>
                 </tr>
             @endforelse
         </tbody>

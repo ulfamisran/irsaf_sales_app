@@ -14,7 +14,9 @@ class ManualIncomeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'exists:branches,id'],
+            'location_type' => ['required', 'in:branch,warehouse'],
+            'branch_id' => ['required_if:location_type,branch', 'nullable', 'exists:branches,id'],
+            'warehouse_id' => ['required_if:location_type,warehouse', 'nullable', 'exists:warehouses,id'],
             'income_category_id' => ['required', 'exists:income_categories,id'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
             'transaction_date' => ['required', 'date'],

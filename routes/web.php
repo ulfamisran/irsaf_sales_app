@@ -195,6 +195,15 @@ Route::middleware('auth')->group(function () {
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
         ->middleware('role:admin_gudang')
         ->name('stock-mutations.store');
+    Route::get('stock-mutations/{stockMutation}/invoice', [StockMutationController::class, 'invoice'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.invoice');
+    Route::get('stock-mutations/{stockMutation}/add-payment', [StockMutationController::class, 'addPayment'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.add-payment');
+    Route::post('stock-mutations/{stockMutation}/add-payment', [StockMutationController::class, 'storePayment'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.store-payment');
 
     Route::get('stock-inout', [StockInOutController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang')
@@ -323,13 +332,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang')
         ->name('cash-flows.index');
     Route::get('cash-flows/in', [CashFlowController::class, 'inIndex'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.index');
     Route::get('cash-flows/in/create', [CashFlowController::class, 'createIn'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.create');
     Route::post('cash-flows/in', [CashFlowController::class, 'storeIn'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.store');
     Route::get('cash-flows/out/list', [CashFlowController::class, 'outIndex'])
         ->middleware('role:admin_cabang')
