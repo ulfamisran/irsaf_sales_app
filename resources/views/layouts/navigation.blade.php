@@ -156,7 +156,7 @@
                             <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
                         @endif
-                        @if ($isSuperAdmin || $isAdminGudang)
+                        @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                         @endif
                     </ul>
