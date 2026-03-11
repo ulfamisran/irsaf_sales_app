@@ -17,6 +17,15 @@
                         @csrf
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                @if (!empty($lockFromLocation) && $fromLocationLabel)
+                                    <div class="md:col-span-2">
+                                        <x-input-label :value="__('Lokasi Asal')" />
+                                        <x-locked-location label="{{ __('Lokasi Asal (default sesuai user)') }}" :value="$fromLocationLabel" />
+                                        <input type="hidden" id="from_location_type" name="from_location_type" value="{{ $defaultFromLocationType }}" />
+                                        <input type="hidden" id="from_location_id" name="from_location_id" value="{{ $defaultFromLocationId }}" />
+                                        <p class="mt-1 text-xs text-slate-500">{{ __('Lokasi asal mengikuti gudang/cabang Anda. Yang dapat diubah hanya lokasi tujuan.') }}</p>
+                                    </div>
+                                @else
                                 <div>
                                     <x-input-label for="from_location_type" :value="__('Tipe Asal')" />
                                     <select id="from_location_type" name="from_location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
@@ -31,6 +40,7 @@
                                     </select>
                                     <x-input-error :messages="$errors->get('from_location_id')" class="mt-2" />
                                 </div>
+                                @endif
                             </div>
                             <div id="product-selector-block" class="space-y-3">
                                 <x-input-label :value="__('Pilih Produk')" class="font-semibold" />
@@ -195,9 +205,11 @@
         const branches = @json($branches);
         const oldFromLocationId = @json(old('from_location_id'));
         const oldToLocationId = @json(old('to_location_id'));
+        const lockFromLocation = @json($lockFromLocation ?? false);
 
         function updateLocationSelect(selectId, type) {
             const select = document.getElementById(selectId);
+            if (!select || select.tagName !== 'SELECT') return;
             const options = type === 'warehouse' ? warehouses : branches;
             select.innerHTML = '<option value="">Pilih</option>' + options.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
         }
@@ -307,18 +319,23 @@
         document.getElementById('quantity')?.addEventListener('input', updateDistributionTotal);
         document.getElementById('biaya_distribusi_per_unit')?.addEventListener('input', updateDistributionTotal);
 
-        document.getElementById('from_location_type').addEventListener('change', function() {
-            updateLocationSelect('from_location_id', this.value);
-            loadPaymentMethodsForOrigin();
-        });
+        if (!lockFromLocation) {
+            document.getElementById('from_location_type').addEventListener('change', function() {
+                updateLocationSelect('from_location_id', this.value);
+                loadPaymentMethodsForOrigin();
+            });
+            document.getElementById('from_location_id').addEventListener('change', loadPaymentMethodsForOrigin);
+        }
         document.getElementById('to_location_type').addEventListener('change', function() {
             updateLocationSelect('to_location_id', this.value);
         });
-        document.getElementById('from_location_id').addEventListener('change', loadPaymentMethodsForOrigin);
+        document.getElementById('to_location_id').addEventListener('change', function() {});
 
-        updateLocationSelect('from_location_id', document.getElementById('from_location_type').value);
+        if (!lockFromLocation) {
+            updateLocationSelect('from_location_id', document.getElementById('from_location_type').value);
+            if (oldFromLocationId) document.getElementById('from_location_id').value = oldFromLocationId;
+        }
         updateLocationSelect('to_location_id', document.getElementById('to_location_type').value);
-        if (oldFromLocationId) document.getElementById('from_location_id').value = oldFromLocationId;
         if (oldToLocationId) document.getElementById('to_location_id').value = oldToLocationId;
         (async function initDistributionSection() {
             await loadPaymentMethodsForOrigin();

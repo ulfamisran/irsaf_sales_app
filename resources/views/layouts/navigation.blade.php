@@ -33,6 +33,7 @@
         @php
             $user = auth()->user();
             $isSuperAdmin = $user?->isSuperAdmin();
+            $isAdminPusat = $user?->hasAnyRole([\App\Models\Role::ADMIN_PUSAT]);
             $isAdminCabang = $user?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]);
             $isKasir = $user?->hasAnyRole([\App\Models\Role::KASIR]);
             $isAdminGudang = $user?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]);
@@ -98,7 +99,7 @@
                 @endif
 
                 <!-- Stok -->
-                @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
+                @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang || $isAdminGudang)
                 <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'purchases.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -120,7 +121,7 @@
                             <li><x-sidebar-nav-link :href="route('incoming-goods.index')" :active="request()->routeIs('incoming-goods.*')">Barang Masuk</x-sidebar-nav-link></li>
                         @endif
 
-                        @if ($isSuperAdmin || $isAdminGudang)
+                        @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('stock-mutations.index')" :active="request()->routeIs('stock-mutations.*')">Distribusi Stok</x-sidebar-nav-link></li>
                         @endif
 

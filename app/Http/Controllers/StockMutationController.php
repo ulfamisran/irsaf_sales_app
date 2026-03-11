@@ -349,7 +349,7 @@ class StockMutationController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -357,13 +357,41 @@ class StockMutationController extends Controller
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
-        return view('stock-mutations.create', compact('categories', 'warehouses', 'branches'));
+        $lockFromLocation = false;
+        $defaultFromLocationType = old('from_location_type');
+        $defaultFromLocationId = old('from_location_id');
+        $fromLocationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            $lockFromLocation = true;
+            if ($user->warehouse_id) {
+                $defaultFromLocationType = Stock::LOCATION_WAREHOUSE;
+                $defaultFromLocationId = (int) $user->warehouse_id;
+                $wh = Warehouse::find($defaultFromLocationId);
+                $fromLocationLabel = __('Gudang') . ': ' . ($wh?->name ?? '#' . $defaultFromLocationId);
+            } elseif ($user->branch_id) {
+                $defaultFromLocationType = Stock::LOCATION_BRANCH;
+                $defaultFromLocationId = (int) $user->branch_id;
+                $br = Branch::find($defaultFromLocationId);
+                $fromLocationLabel = __('Cabang') . ': ' . ($br?->name ?? '#' . $defaultFromLocationId);
+            }
+        }
+
+        return view('stock-mutations.create', compact(
+            'categories',
+            'warehouses',
+            'branches',
+            'lockFromLocation',
+            'defaultFromLocationType',
+            'defaultFromLocationId',
+            'fromLocationLabel'
+        ));
     }
 
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -420,7 +448,7 @@ class StockMutationController extends Controller
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -454,11 +482,24 @@ class StockMutationController extends Controller
     public function store(StockMutationRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
         try {
+            $fromLocationType = $request->from_location_type;
+            $fromLocationId = (int) $request->from_location_id;
+
+            if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+                if ($user->warehouse_id) {
+                    $fromLocationType = Stock::LOCATION_WAREHOUSE;
+                    $fromLocationId = (int) $user->warehouse_id;
+                } elseif ($user->branch_id) {
+                    $fromLocationType = Stock::LOCATION_BRANCH;
+                    $fromLocationId = (int) $user->branch_id;
+                }
+            }
+
             $product = Product::findOrFail($request->product_id);
             $serialNumbers = $this->normalizeSerialNumbersInput($request->input('serial_numbers'));
             $quantity = ! empty($serialNumbers) ? count($serialNumbers) : (int) $request->quantity;
@@ -476,8 +517,8 @@ class StockMutationController extends Controller
             }
             $this->stockMutationService->mutate(
                 $product,
-                $request->from_location_type,
-                (int) $request->from_location_id,
+                $fromLocationType,
+                $fromLocationId,
                 $request->to_location_type,
                 (int) $request->to_location_id,
                 $quantity,

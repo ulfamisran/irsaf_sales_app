@@ -331,6 +331,7 @@
             function attachOptionHandlers() {
                 const trigger = document.getElementById('ig_product_trigger');
                 const dropdown = document.getElementById('ig_product_dropdown');
+                const listEl = document.getElementById('ig_product_list');
                 const searchInput = document.getElementById('ig_product_search');
                 const productIdInput = document.getElementById('ig_product_id');
                 const labelEl = document.getElementById('ig_product_label');
@@ -358,7 +359,7 @@
                 }
 
                 if (brandEl) brandEl.onchange = () => {
-                    seriesEl.innerHTML = '<option value="">Semua Series</option>' + getSeries(brandEl.value).map(s => '<option value="' + escAttr(s) + '">' + escAttr(s) + '</option>').join('');
+                    if (seriesEl) seriesEl.innerHTML = '<option value="">Semua Series</option>' + getSeries(brandEl.value).map(s => '<option value="' + escAttr(s) + '">' + escAttr(s) + '</option>').join('');
                     filterProducts();
                 };
                 if (seriesEl) seriesEl.onchange = () => filterProducts();

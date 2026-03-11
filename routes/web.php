@@ -169,7 +169,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('warehouses', WarehouseController::class)->middleware('role:admin_gudang');
 
     Route::get('stock-mutations', [StockMutationController::class, 'index'])
-        ->middleware('role:admin_cabang,admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.index');
     Route::get('stock-units', [StockUnitController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
@@ -184,16 +184,16 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.show');
     Route::get('stock-mutations/create', [StockMutationController::class, 'create'])
-        ->middleware('role:admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.create');
     Route::get('stock-mutations/available-serials', [StockMutationController::class, 'availableSerials'])
-        ->middleware('role:admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.available-serials');
     Route::get('stock-mutations/available-products', [StockMutationController::class, 'availableProducts'])
-        ->middleware('role:admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.available-products');
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
-        ->middleware('role:admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.store');
     Route::get('stock-mutations/{stockMutation}/invoice', [StockMutationController::class, 'invoice'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
