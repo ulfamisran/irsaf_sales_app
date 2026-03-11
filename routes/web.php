@@ -6,6 +6,7 @@ use App\Http\Controllers\DebtController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DamagedGoodController;
 use App\Http\Controllers\DistributorController;
 use App\Http\Controllers\IncomingGoodsController;
 use App\Http\Controllers\ExpenseCategoryController;
@@ -208,6 +209,27 @@ Route::middleware('auth')->group(function () {
     Route::get('stock-inout', [StockInOutController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang')
         ->name('stock-inout.index');
+    Route::get('damaged-goods', [DamagedGoodController::class, 'index'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.index');
+    Route::get('damaged-goods/create', [DamagedGoodController::class, 'create'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.create');
+    Route::get('damaged-goods/available-products', [DamagedGoodController::class, 'availableProducts'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.available-products');
+    Route::get('damaged-goods/available-serials', [DamagedGoodController::class, 'availableSerials'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.available-serials');
+    Route::post('damaged-goods', [DamagedGoodController::class, 'store'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.store');
+    Route::get('damaged-goods/{damagedGood}/reactivate', [DamagedGoodController::class, 'reactivateForm'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.reactivate-form');
+    Route::post('damaged-goods/{damagedGood}/reactivate', [DamagedGoodController::class, 'reactivate'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.reactivate');
 
     Route::get('incoming-goods', [IncomingGoodsController::class, 'index'])
         ->middleware('role:admin_gudang,admin_cabang')
@@ -363,6 +385,9 @@ Route::middleware('auth')->group(function () {
     Route::get('finance/profit-loss', [FinanceController::class, 'profitLoss'])
         ->middleware('role:admin_cabang')
         ->name('finance.profit-loss');
+    Route::get('finance/profit-loss-comparison', [FinanceController::class, 'profitLossComparison'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('finance.profit-loss-comparison');
     Route::get('finance/cash-monitoring', [FinanceController::class, 'cashMonitoring'])
         ->middleware('role:admin_cabang')
         ->name('finance.cash-monitoring');

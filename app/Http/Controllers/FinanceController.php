@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\CashFlow;
+use App\Models\DamagedGood;
 use App\Models\ExpenseCategory;
 use App\Models\Role;
 use App\Models\PaymentMethod;
 use App\Models\Rental;
 use App\Models\Sale;
 use App\Models\Service;
+use App\Models\Stock;
 use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -120,10 +122,25 @@ class FinanceController extends Controller
                 ->sum('sale_trade_ins.trade_in_value');
         }
 
-        // Pemasukan Lainnya: filter tanggal (termasuk Distribusi Barang)
+        // Pemasukan Distribusi: filter tanggal (CashFlow IN reference_type = distribution)
+        $incomeDistributionQuery = CashFlow::query()
+            ->where('type', CashFlow::TYPE_IN)
+            ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+
+        if ($branchId) {
+            $incomeDistributionQuery->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $incomeDistributionQuery->where('warehouse_id', $warehouseId);
+        }
+
+        $totalDistributionIncome = (float) $incomeDistributionQuery->sum('amount');
+
+        // Pemasukan Lainnya (exclude distribusi): filter tanggal
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->whereIn('reference_type', [CashFlow::REFERENCE_OTHER, CashFlow::REFERENCE_DISTRIBUTION])
+            ->where('reference_type', CashFlow::REFERENCE_OTHER)
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
@@ -133,7 +150,8 @@ class FinanceController extends Controller
             $incomeOtherQuery->where('warehouse_id', $warehouseId);
         }
 
-        $totalOtherIncome = (float) $incomeOtherQuery->sum('amount');
+        $totalOtherIncomeOnly = (float) $incomeOtherQuery->sum('amount');
+        $totalOtherIncome = $totalDistributionIncome + $totalOtherIncomeOnly;
 
         // Pengeluaran: filter tanggal
         // EXCLUDE: SP-SVC (sudah di Biaya Material Service), REVERSAL (transaksi cancel tidak dihitung)
@@ -170,10 +188,23 @@ class FinanceController extends Controller
         $rentals = $rentalQuery->orderBy('pickup_date')->get();
         $totalRentalIncome = (float) $rentals->sum('total');
 
-        // Detail pemasukan lainnya (untuk POV table)
+        // Detail pemasukan distribusi (untuk POV table)
+        $incomeDistributionDetails = CashFlow::query()
+            ->where('type', CashFlow::TYPE_IN)
+            ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+        if ($branchId) {
+            $incomeDistributionDetails->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $incomeDistributionDetails->where('warehouse_id', $warehouseId);
+        }
+        $incomeDistributionDetails = $incomeDistributionDetails->orderBy('transaction_date')->orderBy('id')->get();
+
+        // Detail pemasukan lainnya (exclude distribusi)
         $incomeOtherDetails = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
-            ->whereIn('reference_type', [CashFlow::REFERENCE_OTHER, CashFlow::REFERENCE_DISTRIBUTION])
+            ->where('reference_type', CashFlow::REFERENCE_OTHER)
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
         if ($branchId) {
             $incomeOtherDetails->where('branch_id', $branchId);
@@ -183,9 +214,29 @@ class FinanceController extends Controller
         }
         $incomeOtherDetails = $incomeOtherDetails->orderBy('transaction_date')->orderBy('id')->get();
 
-        // Laba = Pemasukan Penjualan (sales+service+rental) + Pemasukan Lainnya - Pengeluaran
+        // Beban barang rusak cadangan: sum DamagedGood.harga_hpp by recorded_date, filter lokasi via product_unit
+        $damagedGoodsQuery = DamagedGood::query()
+            ->whereNull('reactivated_at')
+            ->whereBetween('recorded_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereHas('productUnit');
+
+        if ($branchId) {
+            $damagedGoodsQuery->whereHas('productUnit', fn ($q) => $q
+                ->where('location_type', Stock::LOCATION_BRANCH)
+                ->where('location_id', $branchId));
+        }
+        if ($warehouseId) {
+            $damagedGoodsQuery->whereHas('productUnit', fn ($q) => $q
+                ->where('location_type', Stock::LOCATION_WAREHOUSE)
+                ->where('location_id', $warehouseId));
+        }
+
+        $damagedGoodsDetails = $damagedGoodsQuery->with('productUnit.product')->orderBy('recorded_date')->orderBy('id')->get();
+        $totalDamagedGoodsExpense = (float) $damagedGoodsDetails->sum('harga_hpp');
+
+        // Laba = Pemasukan Penjualan (sales+service+rental) + Pemasukan Distribusi + Pemasukan Lainnya - Pengeluaran - Beban Barang Rusak Cadangan
         $totalSalesIncome = $totalSalesProfit + $totalServiceProfit + $totalRentalIncome;
-        $netProfit = $totalSalesIncome + $totalOtherIncome - $totalExpense;
+        $netProfit = $totalSalesIncome + $totalOtherIncome - $totalExpense - $totalDamagedGoodsExpense;
 
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
@@ -228,13 +279,18 @@ class FinanceController extends Controller
             'totalSalesIncome' => $totalSalesIncome,
             'totalTradeIn' => $totalTradeIn,
             'totalRentalIncome' => $totalRentalIncome,
+            'totalDistributionIncome' => $totalDistributionIncome ?? 0,
+            'totalOtherIncomeOnly' => $totalOtherIncomeOnly ?? 0,
             'totalOtherIncome' => $totalOtherIncome,
+            'totalDamagedGoodsExpense' => $totalDamagedGoodsExpense ?? 0,
             'totalExpense' => $totalExpense,
             'netProfit' => $netProfit,
             'sales' => $sales,
             'services' => $services,
             'rentals' => $rentals,
+            'incomeDistributionDetails' => $incomeDistributionDetails ?? collect(),
             'incomeOtherDetails' => $incomeOtherDetails ?? collect(),
+            'damagedGoodsDetails' => $damagedGoodsDetails ?? collect(),
             'expenseDetails' => $expenseDetails,
             'branches' => $branches,
             'selectedBranchId' => $branchId,
@@ -860,6 +916,136 @@ class FinanceController extends Controller
             ->whereRaw('TRIM(COALESCE(no_rekening, "")) = ?', [$rek])
             ->pluck('id')
             ->toArray();
+    }
+
+    /**
+     * Perbandingan laba rugi antar semua gudang dan cabang.
+     * Hanya Super Admin dan Admin Pusat.
+     */
+    public function profitLossComparison(Request $request): View
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $dateFrom = $request->filled('date_from')
+            ? Carbon::parse($request->input('date_from'))->startOfDay()
+            : Carbon::today()->startOfMonth();
+        $dateTo = $request->filled('date_to')
+            ? Carbon::parse($request->input('date_to'))->endOfDay()
+            : Carbon::today()->endOfDay();
+
+        if ($dateFrom->gt($dateTo)) {
+            [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+        }
+
+        $excludeExpenseCodes = ['SP-SVC', 'REVERSAL', 'REV'];
+        $dateFromStr = $dateFrom->toDateString();
+        $dateToStr = $dateTo->toDateString();
+
+        $locations = [];
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+
+        foreach ($branches as $b) {
+            $locations[] = ['type' => 'branch', 'id' => $b->id, 'name' => $b->name, 'label' => __('Cabang') . ' ' . $b->name];
+        }
+        foreach ($warehouses as $w) {
+            $locations[] = ['type' => 'warehouse', 'id' => $w->id, 'name' => $w->name, 'label' => __('Gudang') . ' ' . $w->name];
+        }
+
+        $comparisonData = [];
+        foreach ($locations as $loc) {
+            $isBranch = $loc['type'] === 'branch';
+            $branchId = $isBranch ? $loc['id'] : null;
+            $warehouseId = ! $isBranch ? $loc['id'] : null;
+
+            $totalPemasukan = 0.0;
+
+            if ($isBranch) {
+                $salesPaid = (float) DB::table('sale_payments')
+                    ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+                    ->where('sales.status', Sale::STATUS_RELEASED)
+                    ->where('sales.branch_id', $branchId)
+                    ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
+                    ->sum('sale_payments.amount');
+                $totalPemasukan += $salesPaid;
+
+                $servicesForBranch = Service::query()
+                    ->with('serviceMaterials')
+                    ->where('branch_id', $branchId)
+                    ->where('status', Service::STATUS_COMPLETED)
+                    ->whereBetween(DB::raw('COALESCE(exit_date, entry_date)'), [$dateFromStr, $dateToStr])
+                    ->get();
+                $serviceTotal = (float) $servicesForBranch->sum->total_service_price;
+                $totalPemasukan += $serviceTotal;
+            }
+
+            $rentalTotal = (float) Rental::query()
+                ->where('status', Rental::STATUS_RELEASED)
+                ->whereBetween('pickup_date', [$dateFromStr, $dateToStr])
+                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->sum('total');
+            $totalPemasukan += $rentalTotal;
+
+            $cfIn = (float) CashFlow::query()
+                ->where('type', CashFlow::TYPE_IN)
+                ->whereIn('reference_type', [CashFlow::REFERENCE_DISTRIBUTION, CashFlow::REFERENCE_OTHER])
+                ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
+                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->sum('amount');
+            $totalPemasukan += $cfIn;
+
+            $totalPengeluaran = (float) CashFlow::query()
+                ->where('type', CashFlow::TYPE_OUT)
+                ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
+                ->where(function ($q) use ($excludeExpenseCodes) {
+                    $q->whereNull('expense_category_id')
+                        ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
+                            $sub->select('id')->from('expense_categories')->whereIn('code', $excludeExpenseCodes);
+                        });
+                })
+                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->sum('amount');
+
+            $danaTukarTambah = 0.0;
+            if ($isBranch) {
+                $danaTukarTambah = (float) DB::table('sale_trade_ins')
+                    ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+                    ->where('sales.status', Sale::STATUS_RELEASED)
+                    ->where('sales.branch_id', $branchId)
+                    ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
+                    ->sum('sale_trade_ins.trade_in_value');
+            }
+
+            $bebanBarangRusak = (float) DamagedGood::query()
+                ->whereNull('reactivated_at')
+                ->whereBetween('recorded_date', [$dateFromStr, $dateToStr])
+                ->whereHas('productUnit', fn ($q) => $q
+                    ->where('location_type', $isBranch ? Stock::LOCATION_BRANCH : Stock::LOCATION_WAREHOUSE)
+                    ->where('location_id', $isBranch ? $branchId : $warehouseId))
+                ->sum('harga_hpp');
+
+            $comparisonData[] = [
+                'location' => $loc,
+                'total_pemasukan' => $totalPemasukan,
+                'total_pengeluaran' => $totalPengeluaran,
+                'dana_tukar_tambah' => $danaTukarTambah,
+                'beban_barang_rusak' => $bebanBarangRusak,
+                'laba_bersih' => $totalPemasukan - $totalPengeluaran - $bebanBarangRusak,
+            ];
+        }
+
+        return view('finance.profit-loss-comparison', [
+            'dateFrom' => $dateFromStr,
+            'dateTo' => $dateToStr,
+            'comparisonData' => $comparisonData,
+            'locations' => $locations,
+        ]);
     }
 
     private function kasKeyFromPaymentMethod(string $jenis, string $bank, string $rek): string

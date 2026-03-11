@@ -192,7 +192,26 @@
                                 <td class="px-4 py-2 text-right font-semibold {{ $totalServiceProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalServiceProfit, 0, ',', '.') }}</td>
                             </tr>
 
-                            {{-- 4. Pemasukan Lainnya --}}
+                            {{-- 4. Pemasukan Distribusi --}}
+                            <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pemasukan Distribusi') }}</td>
+                            </tr>
+                            @forelse($incomeDistributionDetails ?? [] as $inc)
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $inc->description }} ({{ $inc->transaction_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($inc->amount, 0, ',', '.') }}</td>
+                            </tr>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pemasukan distribusi') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pemasukan Distribusi') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalDistributionIncome ?? 0, 0, ',', '.') }}</td>
+                            </tr>
+
+                            {{-- 5. Pemasukan Lainnya --}}
                             <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
                                 <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pemasukan Lainnya') }}</td>
                             </tr>
@@ -208,10 +227,10 @@
                             @endforelse
                             <tr class="border-t border-slate-200 profit-loss-subtotal">
                                 <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pemasukan Lainnya') }}</td>
-                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalOtherIncome, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalOtherIncomeOnly ?? 0, 0, ',', '.') }}</td>
                             </tr>
 
-                            {{-- 5. Pengeluaran --}}
+                            {{-- 6. Pengeluaran --}}
                             <tr class="bg-red-50/50 border-t-2 border-slate-200">
                                 <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pengeluaran') }}</td>
                             </tr>
@@ -232,6 +251,29 @@
                                 <td class="px-4 py-2 text-right">-</td>
                                 <td class="px-4 py-2 text-right">-</td>
                                 <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</td>
+                            </tr>
+
+                            {{-- 7. Beban Barang Rusak Cadangan --}}
+                            <tr class="bg-red-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Beban Barang Rusak Cadangan') }}</td>
+                            </tr>
+                            @forelse($damagedGoodsDetails ?? [] as $dg)
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $dg->serial_number }} - {{ $dg->productUnit?->product?->brand ?? '-' }} {{ $dg->productUnit?->product?->series ?? '' }} ({{ $dg->recorded_date?->format('d/m/Y') }})</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right text-red-600">{{ number_format($dg->harga_hpp, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($dg->harga_hpp, 0, ',', '.') }}</td>
+                            </tr>
+                            @empty
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada beban barang rusak') }}</td>
+                            </tr>
+                            @endforelse
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Beban Barang Rusak Cadangan') }}</td>
+                                <td class="px-4 py-2 text-right">-</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">{{ number_format($totalDamagedGoodsExpense ?? 0, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($totalDamagedGoodsExpense ?? 0, 0, ',', '.') }}</td>
                             </tr>
 
                             {{-- Laba Keseluruhan --}}
@@ -313,7 +355,7 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="card-modern p-6">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Penyewaan Laptop') }}</h3>
                     <div class="flex justify-between text-sm">
@@ -322,20 +364,66 @@
                     </div>
                 </div>
                 <div class="card-modern p-6">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pemasukan Distribusi') }}</h3>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600">{{ __('Total Pemasukan Distribusi') }}</span>
+                        <span class="font-semibold text-emerald-600">+{{ number_format($totalDistributionIncome ?? 0, 0, ',', '.') }}</span>
+                    </div>
+                </div>
+                <div class="card-modern p-6">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pemasukan Lainnya') }}</h3>
                     <div class="flex justify-between text-sm">
                         <span class="text-slate-600">{{ __('Total Pemasukan Lainnya') }}</span>
-                        <span class="font-semibold text-emerald-600">+{{ number_format($totalOtherIncome, 0, ',', '.') }}</span>
+                        <span class="font-semibold text-emerald-600">+{{ number_format($totalOtherIncomeOnly ?? 0, 0, ',', '.') }}</span>
                     </div>
                 </div>
             </div>
 
             <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card-modern p-6">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran (Semua Jenis)') }}</h3>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-600">{{ __('Total Pengeluaran') }}</span>
+                            <span class="font-semibold text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</span>
+                        </div>
+                    </div>
+                    <div class="card-modern p-6">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Beban Barang Rusak Cadangan') }}</h3>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-600">{{ __('Total Beban Barang Rusak') }}</span>
+                            <span class="font-semibold text-red-600">-{{ number_format($totalDamagedGoodsExpense ?? 0, 0, ',', '.') }}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card-modern p-6">
-                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran (Semua Jenis)') }}</h3>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">{{ __('Total Pengeluaran') }}</span>
-                        <span class="font-semibold text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</span>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Beban Barang Rusak Cadangan') }}</h3>
+                    <div class="overflow-x-auto mb-4">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead>
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Serial') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Produk') }}</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Beban HPP') }}</th>
+                            </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                            @forelse ($damagedGoodsDetails ?? [] as $dg)
+                                <tr>
+                                    <td class="px-4 py-2">{{ $dg->recorded_date?->format('d/m/Y') ?? '-' }}</td>
+                                    <td class="px-4 py-2">{{ $dg->serial_number ?? '-' }}</td>
+                                    <td class="px-4 py-2">{{ ($dg->productUnit?->product?->brand ?? '') . ' ' . ($dg->productUnit?->product?->series ?? '') ?: '-' }}</td>
+                                    <td class="px-4 py-2 text-right text-red-600">-{{ number_format($dg->harga_hpp, 0, ',', '.') }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada beban barang rusak untuk periode ini.') }}</td>
+                                </tr>
+                            @endforelse
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 

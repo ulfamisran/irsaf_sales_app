@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ProductUnit extends Model
 {
@@ -15,6 +16,10 @@ class ProductUnit extends Model
      * Reserved for an OPEN (unpaid) sale.
      */
     public const STATUS_KEEP = 'keep';
+    /**
+     * Reserved for damaged goods recording.
+     */
+    public const STATUS_RESERVED = 'reserved';
     public const STATUS_SOLD = 'sold';
     public const STATUS_IN_RENT = 'in_rent';
     public const STATUS_INACTIVE = 'inactive';
@@ -72,6 +77,11 @@ class ProductUnit extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class, 'location_id');
+    }
+
+    public function damagedGood(): HasOne
+    {
+        return $this->hasOne(DamagedGood::class)->whereNull('reactivated_at');
     }
 }
 
