@@ -23,11 +23,6 @@ class ProductRequest extends FormRequest
      */
     public function rules(): array
     {
-        $user = $this->user();
-        $isBranchAdmin = $user && $user->hasAnyRole([Role::ADMIN_CABANG]);
-        $isSuperAdminOrAdminPusat = $user && $user->isSuperAdminOrAdminPusat();
-        $isAdminGudang = $user && $user->hasAnyRole([Role::ADMIN_GUDANG]);
-
         $rules = [
             'category_id' => ['required', 'exists:categories,id'],
             'distributor_id' => ['required', 'exists:distributors,id'],
@@ -38,7 +33,7 @@ class ProductRequest extends FormRequest
             'storage' => ['nullable', 'string', 'max:255'],
             'color' => ['nullable', 'string', 'max:255'],
             'specs' => ['nullable', 'string'],
-            'laptop_type' => $isBranchAdmin ? ['required', 'in:baru'] : ['required', 'in:baru,bekas'],
+            'laptop_type' => ['required', 'in:baru,bekas'],
             'purchase_price' => ['required', 'numeric', 'min:0'],
             'selling_price' => ['nullable', 'numeric', 'min:0'],
         ];

@@ -82,17 +82,10 @@
                             </div>
                             <div>
                                 <x-input-label for="laptop_type" :value="__('Jenis Produk')" />
-                                @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG]))
-                                    <input type="hidden" name="laptop_type" value="baru" />
-                                    <select id="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 bg-slate-100 shadow-sm" disabled>
-                                        <option value="baru" selected>{{ __('Baru') }}</option>
-                                    </select>
-                                @else
-                                    <select id="laptop_type" name="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                        <option value="baru" {{ old('laptop_type', 'baru') === 'baru' ? 'selected' : '' }}>{{ __('Baru') }}</option>
-                                        <option value="bekas" {{ old('laptop_type') === 'bekas' ? 'selected' : '' }}>{{ __('Bekas') }}</option>
-                                    </select>
-                                @endif
+                                <select id="laptop_type" name="laptop_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="baru" {{ old('laptop_type', 'baru') === 'baru' ? 'selected' : '' }}>{{ __('Baru') }}</option>
+                                    <option value="bekas" {{ old('laptop_type') === 'bekas' ? 'selected' : '' }}>{{ __('Bekas') }}</option>
+                                </select>
                                 <x-input-error :messages="$errors->get('laptop_type')" class="mt-2" />
                             </div>
                             <div>
