@@ -65,6 +65,14 @@ class RentalController extends Controller
         if ($request->filled('return_status')) {
             $query->where('return_status', $request->return_status);
         }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
 
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {

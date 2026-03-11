@@ -14,30 +14,49 @@
                             $warehouseSelectDisabled = $filterLocked ?? false;
                             $selectedBranchId = $filterLocked && ($lockedBranchId ?? null) ? $lockedBranchId : request('branch_id');
                             $selectedWarehouseId = $filterLocked && ($lockedWarehouseId ?? null) ? $lockedWarehouseId : request('warehouse_id');
+                            $locType = request('location_type') ?? '';
+                            if ($filterLocked) {
+                                $locType = ($lockedWarehouseId ?? null) ? 'warehouse' : (($lockedBranchId ?? null) ? 'branch' : '');
+                            }
+                            if ($locType === '' && ($selectedBranchId || $selectedWarehouseId)) {
+                                $locType = $selectedWarehouseId ? 'warehouse' : 'branch';
+                            }
                         @endphp
-                        <div class="min-w-[180px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                            <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $branchSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $branchSelectDisabled ? 'disabled' : '' }}>
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($branches ?? [] as $b)
-                                    <option value="{{ $b->id }}" {{ (string)$selectedBranchId === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
-                                @endforeach
+                        <div class="min-w-[160px]">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
+                            <select name="location_type" id="debt_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ ($filterLocked ?? false) ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ ($filterLocked ?? false) ? 'disabled' : '' }}>
+                                <option value="" {{ $locType === '' ? 'selected' : '' }}>{{ __('Semua') }}</option>
+                                <option value="warehouse" {{ $locType === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                <option value="branch" {{ $locType === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                             </select>
-                            @if($branchSelectDisabled && ($lockedBranchId ?? null))
-                                <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
+                            @if($filterLocked ?? false)
+                                <input type="hidden" name="location_type" value="{{ $locType }}">
                             @endif
                         </div>
-                        <div class="min-w-[180px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                            <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $warehouseSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $warehouseSelectDisabled ? 'disabled' : '' }}>
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses ?? [] as $w)
-                                    <option value="{{ $w->id }}" {{ (string)$selectedWarehouseId === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                            @if($warehouseSelectDisabled && ($lockedWarehouseId ?? null))
-                                <input type="hidden" name="warehouse_id" value="{{ $lockedWarehouseId }}">
-                            @endif
+                        <div id="debt_location_wrapper" class="min-w-[180px]" style="{{ $locType === '' ? 'display:none' : '' }}">
+                            <label class="block text-sm font-medium text-slate-700 mb-1" id="debt_location_label">{{ $locType === 'warehouse' ? __('Gudang') : __('Cabang') }}</label>
+                            <div class="filter-debt-warehouse" style="{{ $locType !== 'warehouse' ? 'display:none' : '' }}">
+                                <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $warehouseSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $warehouseSelectDisabled ? 'disabled' : '' }}>
+                                    <option value="">{{ __('Semua') }}</option>
+                                    @foreach ($warehouses ?? [] as $w)
+                                        <option value="{{ $w->id }}" {{ (string)$selectedWarehouseId === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                    @endforeach
+                                </select>
+                                @if($warehouseSelectDisabled && ($lockedWarehouseId ?? null))
+                                    <input type="hidden" name="warehouse_id" value="{{ $lockedWarehouseId }}">
+                                @endif
+                            </div>
+                            <div class="filter-debt-branch" style="{{ $locType !== 'branch' ? 'display:none' : '' }}">
+                                <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $branchSelectDisabled ? 'bg-slate-100 cursor-not-allowed' : '' }}" {{ $branchSelectDisabled ? 'disabled' : '' }}>
+                                    <option value="">{{ __('Semua') }}</option>
+                                    @foreach ($branches ?? [] as $b)
+                                        <option value="{{ $b->id }}" {{ (string)$selectedBranchId === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                    @endforeach
+                                </select>
+                                @if($branchSelectDisabled && ($lockedBranchId ?? null))
+                                    <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
+                                @endif
+                            </div>
                         </div>
                     @endif
                     <div>
@@ -151,6 +170,49 @@
             </div>
         </div>
     </div>
+
+    @if(($canFilterLocation ?? false) || ($filterLocked ?? false))
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const locType = document.getElementById('debt_location_type');
+            const wrapper = document.getElementById('debt_location_wrapper');
+            const label = document.getElementById('debt_location_label');
+            const whBlock = document.querySelector('.filter-debt-warehouse');
+            const brBlock = document.querySelector('.filter-debt-branch');
+            const whSelect = whBlock?.querySelector('select[name="warehouse_id"]');
+            const brSelect = brBlock?.querySelector('select[name="branch_id"]');
+            if (locType && !locType.disabled) {
+                function toggle() {
+                    const v = locType.value;
+                    if (!v) {
+                        wrapper.style.display = 'none';
+                        if (whSelect) { whSelect.value = ''; whSelect.disabled = true; }
+                        if (brSelect) { brSelect.value = ''; brSelect.disabled = true; }
+                        return;
+                    }
+                    wrapper.style.display = '';
+                    if (v === 'warehouse') {
+                        if (label) label.textContent = '{{ __("Gudang") }}';
+                        if (whBlock) whBlock.style.display = '';
+                        if (brBlock) brBlock.style.display = 'none';
+                        if (whSelect) { whSelect.disabled = false; }
+                        if (brSelect) { brSelect.value = ''; brSelect.disabled = true; }
+                    } else {
+                        if (label) label.textContent = '{{ __("Cabang") }}';
+                        if (whBlock) whBlock.style.display = 'none';
+                        if (brBlock) brBlock.style.display = '';
+                        if (whSelect) { whSelect.value = ''; whSelect.disabled = true; }
+                        if (brSelect) { brSelect.disabled = false; }
+                    }
+                }
+                locType.addEventListener('change', toggle);
+                toggle();
+            }
+        });
+    </script>
+    @endpush
+    @endif
 
     @push('scripts')
     <script>
