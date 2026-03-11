@@ -151,7 +151,7 @@ class IncomingGoodsController extends Controller
             $query->where('category_id', $categoryId);
         }
 
-        $products = $query->limit(500)->get(['id', 'sku', 'brand', 'series', 'category_id']);
+        $products = $query->limit(500)->get(['id', 'sku', 'brand', 'series', 'category_id', 'purchase_price', 'selling_price']);
 
         return response()->json([
             'products' => $products->map(fn ($p) => [
@@ -159,6 +159,8 @@ class IncomingGoodsController extends Controller
                 'sku' => $p->sku ?? '',
                 'brand' => $p->brand ?? '',
                 'series' => $p->series ?? '',
+                'purchase_price' => (float) ($p->purchase_price ?? 0),
+                'selling_price' => (float) ($p->selling_price ?? 0),
             ])->values(),
         ]);
     }
@@ -175,10 +177,17 @@ class IncomingGoodsController extends Controller
             abort(403, __('User branch not set.'));
         }
 
+        $request->merge([
+            'purchase_price' => $this->parseRupiahToFloat($request->input('purchase_price')),
+            'selling_price' => $this->parseRupiahToFloat($request->input('selling_price')),
+        ]);
+
         $rules = [
             'product_id' => ['required', 'exists:products,id'],
             'quantity' => ['nullable', 'integer', 'min:1', 'required_without:serial_numbers'],
             'serial_numbers' => ['nullable', 'string', 'required_without:quantity'],
+            'purchase_price' => ['nullable', 'numeric', 'min:0'],
+            'selling_price' => ['nullable', 'numeric', 'min:0'],
         ];
         if ($isBranchUser) {
             // Cabang: fixed ke branch user
@@ -194,6 +203,13 @@ class IncomingGoodsController extends Controller
             $serialNumbers = $this->parseSerialNumbers($validated['serial_numbers'] ?? null);
             $quantity = ! empty($serialNumbers) ? count($serialNumbers) : (int) $validated['quantity'];
 
+            $purchasePrice = $validated['purchase_price'] !== null && $validated['purchase_price'] !== ''
+                ? round((float) $validated['purchase_price'], 2)
+                : null;
+            $sellingPrice = $validated['selling_price'] !== null && $validated['selling_price'] !== ''
+                ? round((float) $validated['selling_price'], 2)
+                : null;
+
             $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : ($validated['location_type'] ?? 'warehouse');
             $locationId = $isBranchUser
                 ? (int) $user->branch_id
@@ -206,7 +222,9 @@ class IncomingGoodsController extends Controller
                 $quantity,
                 $user->id,
                 $serialNumbers,
-                now()->toDateString()
+                now()->toDateString(),
+                $purchasePrice,
+                $sellingPrice
             );
 
             $warehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $locationId : null;
@@ -294,6 +312,19 @@ class IncomingGoodsController extends Controller
             'units' => $units,
             'has_serial' => ! empty($serials),
         ]);
+    }
+
+    private function parseRupiahToFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        $str = preg_replace('/[^\d]/', '', (string) $value);
+
+        return $str !== '' ? (float) $str : null;
     }
 
     /**

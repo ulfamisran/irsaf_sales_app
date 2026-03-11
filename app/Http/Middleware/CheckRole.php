@@ -34,7 +34,18 @@ class CheckRole
             }
         }
 
-        if (! $request->user()->hasAnyRole($roles)) {
+        // Normalize: handle both multiple args and single comma-separated string
+        $roleList = [];
+        foreach ($roles as $r) {
+            foreach (array_map('trim', explode(',', $r)) as $part) {
+                if ($part !== '') {
+                    $roleList[] = $part;
+                }
+            }
+        }
+        $roleList = array_unique($roleList);
+
+        if (empty($roleList) || ! $request->user()->hasAnyRole($roleList)) {
             abort(403, __('Unauthorized.'));
         }
 

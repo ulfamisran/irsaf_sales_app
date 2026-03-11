@@ -168,7 +168,7 @@
                         </div>
                     @endif
 
-                    @if (!$purchase->isCancelled() && request('view') === 'cancel')
+                    @if (!$purchase->isCancelled() && request('view') === 'cancel' && (auth()->user()->isSuperAdminOrAdminPusat() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])))
                         <div id="cancel-section" class="mt-6 border rounded-lg p-4 bg-red-50 border-red-200">
                             <p class="font-semibold text-slate-800">{{ __('Batalkan / Retur Pembelian') }}</p>
                             <p class="text-xs text-slate-600 mt-1">{{ __('Pembatalan akan mengubah status unit menjadi cancel, produk menjadi nonaktif, dan mengembalikan dana pembayaran sebagai pemasukan (Retur Pembelian).') }}</p>

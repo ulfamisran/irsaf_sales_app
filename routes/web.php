@@ -235,7 +235,7 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');
     Route::post('purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])
-        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->middleware('role:admin_gudang,super_admin,admin_pusat')
         ->name('purchases.cancel');
     Route::resource('purchases', PurchaseController::class)
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')

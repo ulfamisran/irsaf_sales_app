@@ -139,6 +139,22 @@
                                 <x-input-error :messages="$errors->get('serial_numbers')" class="mt-2" />
                                 <p class="mt-1 text-sm text-gray-500">{{ __('Jika diisi, sistem akan menghitung quantity otomatis dari jumlah baris serial.') }}</p>
                             </div>
+                            <div id="price-input-section" class="hidden rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                <h4 class="text-sm font-semibold text-slate-800 mb-1">{{ __('Harga per Unit') }}</h4>
+                                <p class="text-xs text-slate-500 mb-3">{{ __('Default dari produk, dapat diubah. Berlaku per unit saat menggunakan nomor serial.') }}</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <x-input-label for="purchase_price" :value="__('Harga Beli (Rp)')" />
+                                        <x-text-input id="purchase_price" name="purchase_price" type="text" data-rupiah="true" :value="old('purchase_price', $selectedProduct?->purchase_price ?? '')" />
+                                        <x-input-error :messages="$errors->get('purchase_price')" class="mt-2" />
+                                    </div>
+                                    <div>
+                                        <x-input-label for="selling_price" :value="__('Harga Jual (Rp)')" />
+                                        <x-text-input id="selling_price" name="selling_price" type="text" data-rupiah="true" :value="old('selling_price', $selectedProduct?->selling_price ?? '')" />
+                                        <x-input-error :messages="$errors->get('selling_price')" class="mt-2" />
+                                    </div>
+                                </div>
+                            </div>
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Save') }}</x-primary-button>
                                 <a href="{{ route('incoming-goods.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Cancel') }}</a>
@@ -191,21 +207,35 @@
                 return [...dups];
             }
 
+            function updatePriceSectionVisibility() {
+                const productId = document.querySelector('input[name="product_id"]')?.value?.trim();
+                const section = document.getElementById('price-input-section');
+                if (section) {
+                    const shouldShow = !!productId;
+                    section.classList.toggle('hidden', !shouldShow);
+                }
+            }
+            window.updatePriceSectionVisibility = updatePriceSectionVisibility;
+
             const serialEl = document.getElementById('serial_numbers');
             const qtyEl = document.getElementById('quantity');
             const form = serialEl?.closest('form');
 
-            if (serialEl && qtyEl) {
+            if (serialEl) {
                 const sync = () => {
                     const c = countSerials(serialEl.value);
-                    if (c > 0) {
-                        qtyEl.value = c;
-                        qtyEl.setAttribute('readonly', 'readonly');
-                    } else {
-                        qtyEl.removeAttribute('readonly');
+                    if (qtyEl) {
+                        if (c > 0) {
+                            qtyEl.value = c;
+                            qtyEl.setAttribute('readonly', 'readonly');
+                        } else {
+                            qtyEl.removeAttribute('readonly');
+                        }
                     }
+                    updatePriceSectionVisibility();
                 };
                 serialEl.addEventListener('input', sync);
+                serialEl.addEventListener('change', sync);
                 sync();
             }
 
@@ -221,9 +251,19 @@
                             confirmButtonText: 'Baik',
                             confirmButtonColor: '#dc2626'
                         });
+                        return;
+                    }
+                    if (document.getElementById('price-input-section') && !document.getElementById('price-input-section').classList.contains('hidden')) {
+                        document.querySelectorAll('#price-input-section [data-rupiah="true"]').forEach(inp => {
+                            if (typeof window.parseRupiahToNumber === 'function') {
+                                const num = window.parseRupiahToNumber(inp.value);
+                                inp.value = num > 0 ? num : '';
+                            }
+                        });
                     }
                 });
             }
+            setTimeout(updatePriceSectionVisibility, 150);
         })();
 
         @if (!$selectedProduct)
@@ -286,8 +326,15 @@
                 return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
             }
             function productOptionHtml(p) {
-                return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + escAttr(p.brand) + '" data-series="' + escAttr(p.series) + '" data-sku="' + escAttr(p.sku) + '">' +
+                return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + escAttr(p.brand) + '" data-series="' + escAttr(p.series) + '" data-sku="' + escAttr(p.sku) + '" data-purchase-price="' + (p.purchase_price ?? 0) + '" data-selling-price="' + (p.selling_price ?? 0) + '">' +
                     '<span class="text-xs text-slate-500">' + escAttr(p.sku) + '</span> <span class="text-slate-400">-</span> <span class="text-slate-800">' + escAttr(p.brand) + ' ' + escAttr(p.series) + '</span></div>';
+            }
+
+            function formatNumberForRupiahInput(num) {
+                if (num == null || num === '') return '';
+                const n = parseFloat(num);
+                if (isNaN(n)) return '';
+                return String(Math.round(n));
             }
 
             function filterProducts() {
@@ -374,7 +421,12 @@
                             labelEl.textContent = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || '');
                             labelEl.classList.remove('text-slate-500');
                         }
+                        const purchaseInput = document.getElementById('purchase_price');
+                        const sellingInput = document.getElementById('selling_price');
+                        if (purchaseInput && p != null) purchaseInput.value = formatNumberForRupiahInput(p.purchase_price);
+                        if (sellingInput && p != null) sellingInput.value = formatNumberForRupiahInput(p.selling_price);
                         dropdown.classList.add('hidden');
+                        updatePriceSectionVisibility();
                     };
                 });
             }

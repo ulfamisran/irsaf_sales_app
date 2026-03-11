@@ -164,13 +164,15 @@ class StockMutationService
         int $quantity,
         ?int $userId = null,
         ?array $serialNumbers = null,
-        ?string $receivedDate = null
+        ?string $receivedDate = null,
+        ?float $purchasePrice = null,
+        ?float $sellingPrice = null
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
         if (! empty($serialNumbers)) {
-            return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId);
+            return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $purchasePrice, $sellingPrice);
         }
 
         return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $userId) {
@@ -630,13 +632,18 @@ class StockMutationService
         int $locationId,
         array $serialNumbers,
         ?string $receivedDate = null,
-        ?int $userId = null
+        ?int $userId = null,
+        ?float $purchasePrice = null,
+        ?float $sellingPrice = null
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
         $receivedDate = $receivedDate ?: Carbon::now()->toDateString();
+        $hpp = $purchasePrice !== null ? round((float) $purchasePrice, 2) : (float) ($product->purchase_price ?? 0);
+        $jual = $sellingPrice !== null ? round((float) $sellingPrice, 2) : (float) ($product->selling_price ?? 0);
+        $unitStatus = $jual > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus) {
             $exists = ProductUnit::whereIn('serial_number', $serialNumbers)
                 ->pluck('serial_number')
                 ->all();
@@ -646,13 +653,12 @@ class StockMutationService
                 );
             }
 
-            $sellingPrice = (float) ($product->selling_price ?? 0);
-            $unitStatus = $sellingPrice > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
-
             foreach ($serialNumbers as $sn) {
                 ProductUnit::create([
                     'product_id' => $product->id,
                     'user_id' => $userId,
+                    'harga_hpp' => $hpp,
+                    'harga_jual' => $jual,
                     'serial_number' => $sn,
                     'location_type' => $locationType,
                     'location_id' => $locationId,
