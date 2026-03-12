@@ -824,25 +824,23 @@ class SaleService
 
             $productId = (int) $item['product_id'];
 
-            // Jika ada serial numbers, ambil harga jual dan HPP dari ProductUnit (bukan dari Product)
+            // Jika ada serial numbers, ambil HPP dari ProductUnit. Harga jual SELALU dari input user.
             if (! empty($serialNumbers) && $branchId > 0) {
                 $units = ProductUnit::query()
                     ->where('product_id', $productId)
                     ->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', $branchId)
                     ->whereIn('serial_number', $serialNumbers)
-                    ->get(['serial_number', 'harga_jual', 'harga_hpp']);
+                    ->get(['serial_number', 'harga_hpp']);
 
                 if ($units->count() === count($serialNumbers)) {
-                    $totalHargaJual = $units->sum(fn ($u) => (float) ($u->harga_jual ?? 0));
                     $totalHpp = $units->sum(fn ($u) => (float) ($u->harga_hpp ?? 0));
-                    $price = $quantity > 0 ? round($totalHargaJual / $quantity, 2) : 0;
                     $hppPerUnit = $quantity > 0 ? round($totalHpp / $quantity, 2) : 0;
                     $details[] = [
                         'product_id' => $productId,
                         'quantity' => $quantity,
-                        'price' => $price,
-                        'hpp' => $hppPerUnit,
+                        'price' => $price, // Selalu dari input Harga Jual
+                        'hpp' => $hppPerUnit, // Dari ProductUnit.harga_hpp
                         'serial_numbers' => $serialNumbers,
                     ];
                 } else {
