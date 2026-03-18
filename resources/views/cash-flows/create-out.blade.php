@@ -213,8 +213,7 @@
                         pmSelect.innerHTML = '<option value="">' + @json(__('Pilih Sumber Dana')) + '</option>' +
                             methods.map(m => {
                                 const saldo = saldoPerPm[m.id] !== undefined ? Number(saldoPerPm[m.id]) : 0;
-                                const disabled = saldo <= 0 ? ' disabled' : '';
-                                return '<option value="' + m.id + '"' + disabled + '>' + (m.label || '') + ' (Saldo: ' + Number(saldo).toLocaleString('id-ID') + ')</option>';
+                                return '<option value="' + m.id + '">' + (m.label || '') + ' (Saldo: ' + Number(saldo).toLocaleString('id-ID') + ')</option>';
                             }).join('');
                         if (oldVal && methods.some(m => m.id == oldVal)) pmSelect.value = oldVal;
                         this.paymentMethodId = pmSelect.value || '';

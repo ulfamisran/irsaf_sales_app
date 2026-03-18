@@ -250,9 +250,8 @@
                     const optionsHtml = '<option value="">' + @json(__('Pilih Sumber Dana')) + '</option>' +
                         this.paymentMethods.map(m => {
                             const saldo = saldoMap[m.id] !== undefined ? Number(saldoMap[m.id]) : 0;
-                            const disabled = saldo <= 0 ? ' disabled' : '';
                             const sel = String(prefill.payment_method_id) === String(m.id) ? ' selected' : '';
-                            return '<option value="' + m.id + '"' + disabled + sel + '>' + (m.label || '') + ' (Saldo: ' + Number(saldo).toLocaleString('id-ID') + ')</option>';
+                            return '<option value="' + m.id + '"' + sel + '>' + (m.label || '') + ' (Saldo: ' + Number(saldo).toLocaleString('id-ID') + ')</option>';
                         }).join('');
                     let amountVal = prefill.amount || '';
                     if (amountVal) {
