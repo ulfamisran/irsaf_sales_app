@@ -224,6 +224,11 @@
         $statusText = $sale->status === \App\Models\Sale::STATUS_CANCEL ? 'DIBATALKAN' : (($sale->status === \App\Models\Sale::STATUS_OPEN || !$isPaid) ? 'BELUM LUNAS' : 'LUNAS');
         $isCancelled = $sale->status === \App\Models\Sale::STATUS_CANCEL;
 
+        // In invoice, do not show detail lines whose price is 0.
+        $detailLines = ($sale->saleDetails ?? collect())
+            ->filter(fn ($d) => (float) ($d->price ?? 0) > 0)
+            ->values();
+
         $trxAt = $sale->released_at ?? $sale->created_at ?? now();
 
         if (!function_exists('irsaf_terbilang')) {
@@ -328,7 +333,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($sale->saleDetails as $i => $d)
+                    @forelse ($detailLines as $i => $d)
                         @php
                             $lineTotal = (float) $d->quantity * (float) $d->price;
                             $serialText = trim((string) ($d->serial_numbers ?? ''));
@@ -349,10 +354,10 @@
                                 @endif
                             </td>
                             <td class="num">{{ number_format((float) $d->quantity, 2, ',', '.') }}</td>
-                            <td class="num">{{ number_format((float) $d->price, 0, ',', '.') }}</td>
-                            <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
-                            <td class="num">0</td>
-                            <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
+                            <td class="num">Rp {{ number_format((float) $d->price, 0, ',', '.') }}</td>
+                            <td class="num">Rp {{ number_format($lineTotal, 0, ',', '.') }}</td>
+                            <td class="num">Rp 0</td>
+                            <td class="num">Rp {{ number_format($lineTotal, 0, ',', '.') }}</td>
                         </tr>
                     @empty
                         <tr>
@@ -371,19 +376,19 @@
                     <table>
                         <tr>
                             <td class="lbl">Subtotal</td>
-                            <td class="val">{{ number_format($sub, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($sub, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl">Diskon</td>
-                            <td class="val">{{ number_format($discount, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($discount, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl">Penyesuaian</td>
-                            <td class="val">{{ number_format($adjustment, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($adjustment, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl"><strong>Total</strong></td>
-                            <td class="val"><strong>{{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
+                            <td class="val"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
                         </tr>
                     </table>
                 </div>
@@ -415,7 +420,7 @@
                                 <td class="center">{{ ++$payIdx }}</td>
                                 <td class="center">{{ $pDate->translatedFormat('d F Y') }}</td>
                                 <td>{{ $method }}</td>
-                                <td class="num">{{ number_format((float) $p->amount, 0, ',', '.') }}</td>
+                                <td class="num">Rp {{ number_format((float) $p->amount, 0, ',', '.') }}</td>
                             </tr>
                         @endforeach
                         @foreach ($sale->tradeIns ?? [] as $ti)
@@ -423,7 +428,7 @@
                                 <td class="center">{{ ++$payIdx }}</td>
                                 <td class="center">{{ $payDate->translatedFormat('d F Y') }}</td>
                                 <td>TUKAR TAMBAH ({{ $ti->brand ?? '-' }} {{ $ti->serial_number }})</td>
-                                <td class="num">{{ number_format((float) $ti->trade_in_value, 0, ',', '.') }}</td>
+                                <td class="num">Rp {{ number_format((float) $ti->trade_in_value, 0, ',', '.') }}</td>
                             </tr>
                         @endforeach
                         @if ($payIdx === 0)
@@ -436,8 +441,8 @@
 
                 <div class="inv-pay-summary">
                     <div class="box">
-                        <div class="row"><span>Total Bayar</span><strong>{{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
-                        <div class="row"><span>Kembali</span><strong>{{ number_format($change, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Total Bayar</span><strong>Rp {{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Kembali</span><strong>Rp {{ number_format($change, 0, ',', '.') }}</strong></div>
                     </div>
                 </div>
             </div>

@@ -77,7 +77,7 @@ class SaleController extends Controller
         }
 
         $totalSales = (float) (clone $query)
-            ->whereIn('status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
+            ->where('status', Sale::STATUS_RELEASED)
             ->sum('total');
         $totalSalesCash = (float) DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
@@ -86,7 +86,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
+            ->where('sales.status', Sale::STATUS_RELEASED)
             ->sum('sale_payments.amount');
         $totalTradeIn = (float) DB::table('sale_trade_ins')
             ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
@@ -95,7 +95,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
+            ->where('sales.status', Sale::STATUS_RELEASED)
             ->sum('sale_trade_ins.trade_in_value');
         $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
             ? (int) $user->branch_id
@@ -115,7 +115,7 @@ class SaleController extends Controller
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->whereIn('sales.status', [Sale::STATUS_OPEN, Sale::STATUS_RELEASED])
+            ->where('sales.status', Sale::STATUS_RELEASED)
             ->selectRaw('sale_payments.payment_method_id, SUM(sale_payments.amount) as total')
             ->groupBy('sale_payments.payment_method_id')
             ->pluck('total', 'sale_payments.payment_method_id');
