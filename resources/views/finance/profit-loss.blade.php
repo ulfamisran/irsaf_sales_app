@@ -69,6 +69,13 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <div class="w-full">
+                        <input type="hidden" name="include_external_expense" value="0">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="include_external_expense" value="1" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {{ ($includeExternalExpense ?? true) ? 'checked' : '' }}>
+                            <span class="text-sm font-medium text-slate-700">{{ __('Hitung Pengeluaran Dana Eksternal') }}</span>
+                        </label>
+                    </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tampilan') }}</label>
                         <select name="pov" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -230,21 +237,56 @@
                                 <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalOtherIncomeOnly ?? 0, 0, ',', '.') }}</td>
                             </tr>
 
-                            {{-- 6. Pengeluaran --}}
+                            {{-- 6. Pengeluaran Dana Eksternal --}}
+                            <tr class="bg-red-50/50 border-t-2 border-slate-200">
+                                <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pengeluaran Dana Eksternal') }}</td>
+                            </tr>
+                            @if(($includeExternalExpense ?? true))
+                                @forelse($externalExpenseDetails ?? [] as $exp)
+                                    <tr class="profit-loss-detail-row">
+                                        <td class="px-4 py-2 pl-6 text-slate-600">{{ $exp->description }} ({{ $exp->transaction_date?->format('d/m/Y') }})</td>
+                                        <td class="px-4 py-2 text-right">-</td>
+                                        <td class="px-4 py-2 text-right">-</td>
+                                        <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($exp->amount, 0, ',', '.') }}</td>
+                                    </tr>
+                                @empty
+                                    <tr class="profit-loss-detail-row">
+                                        <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pengeluaran dana eksternal') }}</td>
+                                    </tr>
+                                @endforelse
+                                <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                    <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pengeluaran Dana Eksternal') }}</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($totalExternalExpenseForProfit ?? 0, 0, ',', '.') }}</td>
+                                </tr>
+                            @else
+                                <tr class="profit-loss-detail-row">
+                                    <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Pengeluaran Dana Eksternal dikecualikan dari perhitungan') }}</td>
+                                </tr>
+                                <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                    <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pengeluaran Dana Eksternal') }}</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format(0, 0, ',', '.') }}</td>
+                                </tr>
+                            @endif
+
+                            {{-- 7. Pengeluaran (Non Eksternal) --}}
                             <tr class="bg-red-50/50 border-t-2 border-slate-200">
                                 <td colspan="4" class="px-4 py-2 font-semibold text-slate-800">{{ __('Pengeluaran') }}</td>
                             </tr>
                             @forelse($expenseDetails ?? [] as $exp)
-                            <tr class="profit-loss-detail-row">
-                                <td class="px-4 py-2 pl-6 text-slate-600">{{ $exp->description }} ({{ $exp->transaction_date?->format('d/m/Y') }})</td>
-                                <td class="px-4 py-2 text-right">-</td>
-                                <td class="px-4 py-2 text-right">-</td>
-                                <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($exp->amount, 0, ',', '.') }}</td>
-                            </tr>
+                                <tr class="profit-loss-detail-row">
+                                    <td class="px-4 py-2 pl-6 text-slate-600">{{ $exp->description }} ({{ $exp->transaction_date?->format('d/m/Y') }})</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right">-</td>
+                                    <td class="px-4 py-2 text-right font-medium text-red-600">-{{ number_format($exp->amount, 0, ',', '.') }}</td>
+                                </tr>
                             @empty
-                            <tr class="profit-loss-detail-row">
-                                <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pengeluaran') }}</td>
-                            </tr>
+                                <tr class="profit-loss-detail-row">
+                                    <td class="px-4 py-2 pl-6 text-slate-400 italic" colspan="4">{{ __('Tidak ada pengeluaran') }}</td>
+                                </tr>
                             @endforelse
                             <tr class="border-t border-slate-200 profit-loss-subtotal">
                                 <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pengeluaran') }}</td>
@@ -380,12 +422,19 @@
             </div>
 
             <div class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="card-modern p-6">
-                        <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran (Semua Jenis)') }}</h3>
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran (Non Eksternal)') }}</h3>
                         <div class="flex justify-between text-sm">
                             <span class="text-slate-600">{{ __('Total Pengeluaran') }}</span>
                             <span class="font-semibold text-red-600">-{{ number_format($totalExpense, 0, ',', '.') }}</span>
+                        </div>
+                    </div>
+                    <div class="card-modern p-6">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pengeluaran Dana Eksternal') }}</h3>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-600">{{ __('Total Pengeluaran Eksternal') }}</span>
+                            <span class="font-semibold text-red-600">-{{ number_format($totalExternalExpenseForProfit ?? 0, 0, ',', '.') }}</span>
                         </div>
                     </div>
                     <div class="card-modern p-6">
@@ -428,7 +477,7 @@
                 </div>
 
                 <div class="card-modern p-6">
-                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Pengeluaran') }}</h3>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Pengeluaran Dana Eksternal') }}</h3>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead>
@@ -440,7 +489,43 @@
                             </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
-                            @forelse ($expenseDetails as $row)
+                            @if(($includeExternalExpense ?? true))
+                                @forelse ($externalExpenseDetails ?? [] as $row)
+                                    <tr>
+                                        <td class="px-4 py-2">{{ $row->transaction_date?->format('d/m/Y') ?? '-' }}</td>
+                                        <td class="px-4 py-2">{{ $row->expenseCategory?->name ?? '-' }}</td>
+                                        <td class="px-4 py-2">{{ $row->description ?? '-' }}</td>
+                                        <td class="px-4 py-2 text-right text-red-600">-{{ number_format($row->amount, 0, ',', '.') }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada data pengeluaran dana eksternal untuk periode ini.') }}</td>
+                                    </tr>
+                                @endforelse
+                            @else
+                                <tr>
+                                    <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ __('Pengeluaran Dana Eksternal dikecualikan dari perhitungan.') }}</td>
+                                </tr>
+                            @endif
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-modern p-6">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Rincian Pengeluaran (Non Eksternal)') }}</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead>
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Pengeluaran') }}</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
+                            </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                            @forelse ($expenseDetails ?? [] as $row)
                                 <tr>
                                     <td class="px-4 py-2">{{ $row->transaction_date?->format('d/m/Y') ?? '-' }}</td>
                                     <td class="px-4 py-2">{{ $row->expenseCategory?->name ?? '-' }}</td>

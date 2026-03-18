@@ -24,6 +24,10 @@ class FinanceController extends Controller
     {
         $user = $request->user();
 
+        // Toggle: apakah kategori "Pengeluaran Dana Eksternal" ikut mengurangi Laba Rugi?
+        // Catatan: checkbox di Blade memakai hidden input sehingga parameter selalu dikirim.
+        $includeExternalExpense = (int) $request->input('include_external_expense', 1) === 1;
+
         $dateFrom = $request->filled('date_from')
             ? Carbon::parse($request->input('date_from'))->startOfDay()
             : Carbon::today()->startOfMonth();
@@ -156,22 +160,44 @@ class FinanceController extends Controller
         // Pengeluaran: filter tanggal
         // EXCLUDE: SP-SVC (sudah di Biaya Material Service), REVERSAL (transaksi cancel tidak dihitung)
         $excludeExpenseCodes = ['SP-SVC', 'REVERSAL', 'REV'];
-        $expenseQuery = CashFlow::query()
+        $externalExpenseCategoryId = ExpenseCategory::query()
+            ->where('code', 'PENGELUARAN_EKSTERNAL')
+            ->value('id');
+
+        $expenseBaseQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_OUT)
-            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+
+        if ($branchId) {
+            $expenseBaseQuery->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $expenseBaseQuery->where('warehouse_id', $warehouseId);
+        }
+
+        // Pengeluaran Dana Eksternal (kategori dipisah)
+        $totalExternalExpense = 0.0;
+        if ($externalExpenseCategoryId) {
+            $totalExternalExpense = (float) (clone $expenseBaseQuery)
+                ->where('expense_category_id', $externalExpenseCategoryId)
+                ->sum('amount');
+        }
+
+        // Pengeluaran non-eksternal (sesuai excludeExpenseCodes + tidak termasuk kategori eksternal)
+        $expenseQuery = (clone $expenseBaseQuery)
             ->where(function ($q) use ($excludeExpenseCodes) {
                 $q->whereNull('expense_category_id')
                     ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
                         $sub->select('id')->from('expense_categories')->whereIn('code', $excludeExpenseCodes);
                     });
+            })
+            ->when($externalExpenseCategoryId, function ($q) use ($externalExpenseCategoryId) {
+                // Simpan transaksi dengan expense_category_id null, tapi exclude kategori eksternal.
+                $q->where(function ($q2) use ($externalExpenseCategoryId) {
+                    $q2->whereNull('expense_category_id')
+                        ->orWhere('expense_category_id', '!=', $externalExpenseCategoryId);
+                });
             });
-
-        if ($branchId) {
-            $expenseQuery->where('branch_id', $branchId);
-        }
-        if ($warehouseId) {
-            $expenseQuery->where('warehouse_id', $warehouseId);
-        }
 
         $totalExpense = (float) $expenseQuery->sum('amount');
 
@@ -236,7 +262,21 @@ class FinanceController extends Controller
 
         // Laba = Pemasukan Penjualan (sales+service+rental) + Pemasukan Distribusi + Pemasukan Lainnya - Pengeluaran - Beban Barang Rusak Cadangan
         $totalSalesIncome = $totalSalesProfit + $totalServiceProfit + $totalRentalIncome;
-        $netProfit = $totalSalesIncome + $totalOtherIncome - $totalExpense - $totalDamagedGoodsExpense;
+        $totalExternalExpenseForProfit = $includeExternalExpense ? $totalExternalExpense : 0.0;
+        $netProfit = $totalSalesIncome + $totalOtherIncome - ($totalExpense + $totalExternalExpenseForProfit) - $totalDamagedGoodsExpense;
+
+        $externalExpenseDetails = collect();
+        if ($externalExpenseCategoryId) {
+            $externalExpenseDetails = CashFlow::with('expenseCategory')
+                ->where('type', CashFlow::TYPE_OUT)
+                ->where('expense_category_id', $externalExpenseCategoryId)
+                ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->orderByDesc('transaction_date')
+                ->orderByDesc('id')
+                ->get();
+        }
 
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
@@ -246,6 +286,12 @@ class FinanceController extends Controller
                     ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
                         $sub->select('id')->from('expense_categories')->whereIn('code', $excludeExpenseCodes);
                     });
+            })
+            ->when($externalExpenseCategoryId, function ($q) use ($externalExpenseCategoryId) {
+                $q->where(function ($q2) use ($externalExpenseCategoryId) {
+                    $q2->whereNull('expense_category_id')
+                        ->orWhere('expense_category_id', '!=', $externalExpenseCategoryId);
+                });
             })
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
@@ -283,6 +329,9 @@ class FinanceController extends Controller
             'totalOtherIncomeOnly' => $totalOtherIncomeOnly ?? 0,
             'totalOtherIncome' => $totalOtherIncome,
             'totalDamagedGoodsExpense' => $totalDamagedGoodsExpense ?? 0,
+            'totalExternalExpense' => $totalExternalExpense ?? 0,
+            'totalExternalExpenseForProfit' => $totalExternalExpenseForProfit,
+            'includeExternalExpense' => $includeExternalExpense,
             'totalExpense' => $totalExpense,
             'netProfit' => $netProfit,
             'sales' => $sales,
@@ -291,6 +340,7 @@ class FinanceController extends Controller
             'incomeDistributionDetails' => $incomeDistributionDetails ?? collect(),
             'incomeOtherDetails' => $incomeOtherDetails ?? collect(),
             'damagedGoodsDetails' => $damagedGoodsDetails ?? collect(),
+            'externalExpenseDetails' => $externalExpenseDetails ?? collect(),
             'expenseDetails' => $expenseDetails,
             'branches' => $branches,
             'selectedBranchId' => $branchId,
@@ -929,6 +979,8 @@ class FinanceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
+        $includeExternalExpense = (int) $request->input('include_external_expense', 1) === 1;
+
         $dateFrom = $request->filled('date_from')
             ? Carbon::parse($request->input('date_from'))->startOfDay()
             : Carbon::today()->startOfMonth();
@@ -941,6 +993,9 @@ class FinanceController extends Controller
         }
 
         $excludeExpenseCodes = ['SP-SVC', 'REVERSAL', 'REV'];
+        $externalExpenseCategoryId = ExpenseCategory::query()
+            ->where('code', 'PENGELUARAN_EKSTERNAL')
+            ->value('id');
         $dateFromStr = $dateFrom->toDateString();
         $dateToStr = $dateTo->toDateString();
 
@@ -1012,6 +1067,18 @@ class FinanceController extends Controller
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->sum('amount');
 
+            if (! $includeExternalExpense && $externalExpenseCategoryId) {
+                $externalExpenseAmount = (float) CashFlow::query()
+                    ->where('type', CashFlow::TYPE_OUT)
+                    ->where('expense_category_id', $externalExpenseCategoryId)
+                    ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
+                    ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                    ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                    ->sum('amount');
+
+                $totalPengeluaran -= $externalExpenseAmount;
+            }
+
             $danaTukarTambah = 0.0;
             if ($isBranch) {
                 $danaTukarTambah = (float) DB::table('sale_trade_ins')
@@ -1045,6 +1112,7 @@ class FinanceController extends Controller
             'dateTo' => $dateToStr,
             'comparisonData' => $comparisonData,
             'locations' => $locations,
+            'includeExternalExpense' => $includeExternalExpense,
         ]);
     }
 

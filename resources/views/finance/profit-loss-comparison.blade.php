@@ -29,6 +29,13 @@
                             {{ __('Reset') }}
                         </a>
                     </div>
+                    <div class="w-full">
+                        <input type="hidden" name="include_external_expense" value="0">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="include_external_expense" value="1" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {{ ($includeExternalExpense ?? true) ? 'checked' : '' }}>
+                            <span class="text-sm font-medium text-slate-700">{{ __('Hitung Pengeluaran Dana Eksternal') }}</span>
+                        </label>
+                    </div>
                 </form>
             </div>
         </div>

@@ -371,6 +371,15 @@ Route::middleware('auth')->group(function () {
     Route::get('cash-flows/out/create', [CashFlowController::class, 'createOut'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.create');
+    Route::get('cash-flows/out/external/list', [CashFlowController::class, 'outExternalIndex'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.out.external.index');
+    Route::get('cash-flows/out/external/create', [CashFlowController::class, 'createOutExternal'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.out.external.create');
+    Route::post('cash-flows/out/external', [CashFlowController::class, 'storeOutExternal'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.out.external.store');
     Route::get('cash-flows/out/{cashFlow}', [CashFlowController::class, 'showOut'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.show');

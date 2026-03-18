@@ -19,6 +19,18 @@ use Illuminate\View\View;
 
 class CashFlowController extends Controller
 {
+    private function resolveExternalExpenseCategoryId(): ?int
+    {
+        $id = ExpenseCategory::query()
+            ->where(function ($q) {
+                $q->where('code', 'PENGELUARAN_EKSTERNAL')
+                    ->orWhere('name', 'Pengeluaran Eksternal');
+            })
+            ->value('id');
+
+        return $id ? (int) $id : null;
+    }
+
     public function outIndex(Request $request): View
     {
         $user = $request->user();
@@ -31,6 +43,11 @@ class CashFlowController extends Controller
         $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
         if ($reversalCategoryId) {
             $query->where('expense_category_id', '!=', $reversalCategoryId);
+        }
+        // Exclude Pengeluaran Eksternal dari halaman Pengeluaran Dana (arus kas umum)
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if ($externalExpenseCategoryId) {
+            $query->where('expense_category_id', '!=', $externalExpenseCategoryId);
         }
         $query->where(function ($q) {
             $q->whereNull('reference_type')
@@ -99,6 +116,9 @@ class CashFlowController extends Controller
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
+        if ($externalExpenseCategoryId) {
+            $expenseCategories = $expenseCategories->where('id', '!=', $externalExpenseCategoryId)->values();
+        }
 
         $totalOut = (float) (clone $query)->sum('amount');
         $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
@@ -121,6 +141,170 @@ class CashFlowController extends Controller
             ->pluck('total', 'payment_method_id');
 
         return view('cash-flows.out-index', compact('expenses', 'branches', 'warehouses', 'canFilterLocation', 'filterLocked', 'locationLabel', 'lockedBranchId', 'lockedWarehouseId', 'expenseCategories', 'totalOut', 'paymentMethods', 'paymentMethodTotals'));
+    }
+
+    public function outExternalIndex(Request $request): View
+    {
+        $user = $request->user();
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'paymentMethod'])
+            ->where('type', CashFlow::TYPE_OUT)
+            ->when($externalExpenseCategoryId, fn ($q) => $q->where('expense_category_id', $externalExpenseCategoryId))
+            ->when(! $externalExpenseCategoryId, fn ($q) => $q->whereRaw('1 = 0'))
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('id');
+
+        // Exclude Reversal (transaksi cancel) - tidak dihitung & ditampilkan di pengeluaran
+        $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
+        if ($reversalCategoryId) {
+            $query->where('expense_category_id', '!=', $reversalCategoryId);
+        }
+
+        $query->where(function ($q) {
+            $q->whereNull('reference_type')
+                ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                ->orWhereIn('reference_id', function ($sq) {
+                    $sq->select('id')
+                        ->from('rentals')
+                        ->where('status', '!=', 'cancel');
+                })
+                ->orWhere(function ($sq) {
+                    $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                        ->where('type', CashFlow::TYPE_OUT);
+                });
+        });
+
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+        $lockedBranchId = null;
+        $lockedWarehouseId = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $lockedBranchId = (int) $user->branch_id;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+                $filterLocked = true;
+                $lockedWarehouseId = (int) $user->warehouse_id;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        } else {
+            $canFilterLocation = true;
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            } elseif ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('transaction_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('transaction_date', '<=', $request->date_to);
+        }
+
+        $expenses = $query->paginate(20)->withQueryString();
+
+        $branches = $user->isSuperAdminOrAdminPusat()
+            ? Branch::orderBy('name')->get(['id', 'name'])
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $warehouses = $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get(['id', 'name'])
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+
+        $totalOut = (float) (clone $query)->sum('amount');
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+            ? (int) $user->branch_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id
+            ? (int) $user->warehouse_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+
+        $paymentMethodTotals = (clone $query)
+            ->reorder()
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
+            ->pluck('total', 'payment_method_id');
+
+        return view('cash-flows.out-external-index', compact(
+            'expenses',
+            'branches',
+            'warehouses',
+            'canFilterLocation',
+            'filterLocked',
+            'locationLabel',
+            'lockedBranchId',
+            'lockedWarehouseId',
+            'totalOut',
+            'paymentMethods',
+            'paymentMethodTotals'
+        ));
+    }
+
+    public function createOutExternal(Request $request): View
+    {
+        $user = $request->user();
+
+        $externalExpenseCategory = ExpenseCategory::query()
+            ->where(function ($q) {
+                $q->where('code', 'PENGELUARAN_EKSTERNAL')
+                    ->orWhere('name', 'Pengeluaran Eksternal');
+            })
+            ->first();
+
+        if (! $externalExpenseCategory) {
+            abort(404, __('Kategori Pengeluaran Eksternal belum tersedia di database. Silakan buat dulu di Pengaturan Kategori Pengeluaran.'));
+        }
+
+        $branches = $user->isSuperAdmin()
+            ? Branch::orderBy('name')->get(['id', 'name'])
+            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
+
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? (int) $user->branch_id : null;
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get();
+
+        $branchIds = $branches->pluck('id')->toArray();
+        $warehouseIds = $warehouses->pluck('id')->toArray();
+
+        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+        $saldoMapWarehouse = (new KasBalanceService)->getSaldoPerWarehouseAndPm($warehouseIds);
+
+        return view('cash-flows.create-out-external', compact(
+            'branches',
+            'warehouses',
+            'externalExpenseCategory',
+            'paymentMethods',
+            'saldoMapBranch',
+            'saldoMapWarehouse'
+        ));
     }
 
     public function showOut(Request $request, CashFlow $cashFlow): View|RedirectResponse
@@ -530,6 +714,73 @@ class CashFlowController extends Controller
         }
 
         return redirect()->route('cash-flows.out.index')->with('success', __('Pengeluaran berhasil dicatat.')); 
+    }
+
+    public function storeOutExternal(CashOutRequest $request): RedirectResponse
+    {
+        $user = $request->user();
+        $validated = $request->validated();
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if (! $externalExpenseCategoryId) {
+            return redirect()->back()->withInput()->withErrors([
+                'items' => __('Kategori Pengeluaran Eksternal tidak ditemukan. Jalankan migrasi kategori terlebih dahulu.'),
+            ]);
+        }
+
+        $branchId = $user->isSuperAdmin()
+            ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
+            : (int) $user->branch_id;
+        $warehouseId = null;
+
+        if (! $branchId) {
+            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
+        }
+
+        $items = $validated['items'];
+        $totalAmount = collect($items)->sum(fn ($item) => (float) $item['amount']);
+
+        $saldo = (new KasBalanceService)->getSaldoForLocation(
+            $warehouseId ? 'warehouse' : 'branch',
+            $warehouseId ?: $branchId,
+            (int) $validated['payment_method_id']
+        );
+
+        if ($totalAmount > $saldo) {
+            return redirect()->back()->withInput()->withErrors([
+                'items' => __('Total pengeluaran (Rp :total) melebihi saldo tersedia (Rp :saldo).', [
+                    'total' => number_format($totalAmount, 0, ',', '.'),
+                    'saldo' => number_format($saldo, 0, ',', '.'),
+                ]),
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            foreach ($items as $item) {
+                CashFlow::create([
+                    'branch_id' => $branchId,
+                    'warehouse_id' => $warehouseId,
+                    'type' => CashFlow::TYPE_OUT,
+                    'amount' => (float) $item['amount'],
+                    'description' => $item['name'],
+                    'reference_type' => CashFlow::REFERENCE_EXPENSE,
+                    'reference_id' => null,
+                    // Paksa selalu menggunakan kategori eksternal
+                    'expense_category_id' => $externalExpenseCategoryId,
+                    'payment_method_id' => (int) $validated['payment_method_id'],
+                    'transaction_date' => $validated['transaction_date'],
+                    'user_id' => $user->id,
+                ]);
+            }
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('cash-flows.out.external.index')->with('success', __('Pengeluaran dana eksternal berhasil dicatat.'));
     }
 
     public function storeIn(ManualIncomeRequest $request): RedirectResponse
