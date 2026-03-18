@@ -209,7 +209,7 @@
 <body class="bg-slate-100">
     @php
         $invNo = $stockMutation->invoice_number ?? ('DIST-#' . $stockMutation->id);
-        $totalBiaya = (float) ($stockMutation->biaya_distribusi_per_unit ?? 0) * (int) $stockMutation->quantity;
+        $totalBiaya = $allMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
         $totalPaid = (float) $cashFlows->sum('amount');
         $isPaid = $totalBiaya <= 0 || ($totalPaid + 0.02 >= $totalBiaya);
         $statusText = $totalBiaya <= 0 ? 'N/A' : ($isPaid ? 'LUNAS' : 'BELUM LUNAS');
@@ -311,7 +311,7 @@
                     </tr>
                     <tr>
                         <td class="lbl">Produk</td><td class="colon">:</td>
-                        <td class="val">{{ $stockMutation->product?->sku ?? '-' }} - {{ $stockMutation->product?->brand ?? '' }} {{ $stockMutation->product?->series ?? '' }}</td>
+                        <td class="val">{{ $allMutations->count() }} produk</td>
                     </tr>
                 </table>
                 <div class="trx">
@@ -333,31 +333,33 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @php
-                        $lineTotal = $totalBiaya;
-                        $serialText = trim((string) ($stockMutation->serial_numbers ?? ''));
-                    @endphp
-                    <tr>
-                        <td class="center">1</td>
-                        <td class="inv-desc">
-                            <div class="sku">
-                                {{ $stockMutation->product?->sku ?? '-' }}
-                                {{ $stockMutation->product?->brand ? $stockMutation->product->brand : '' }}
-                                {{ $stockMutation->product?->series ? $stockMutation->product->series : '' }}
-                            </div>
-                            @if ($serialText !== '')
-                                <div class="muted">{{ $serialText }}</div>
-                            @endif
-                            @if ($stockMutation->notes)
-                                <div>{{ $stockMutation->notes }}</div>
-                            @endif
-                        </td>
-                        <td class="num">{{ number_format((float) $stockMutation->quantity, 2, ',', '.') }}</td>
-                        <td class="num">{{ number_format((float) ($stockMutation->biaya_distribusi_per_unit ?? 0), 0, ',', '.') }}</td>
-                        <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
-                        <td class="num">0</td>
-                        <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
-                    </tr>
+                    @foreach ($allMutations as $idx => $mut)
+                        @php
+                            $lineTotal = (float) ($mut->biaya_distribusi_per_unit ?? 0) * (int) $mut->quantity;
+                            $serialText = trim((string) ($mut->serial_numbers ?? ''));
+                        @endphp
+                        <tr>
+                            <td class="center">{{ $idx + 1 }}</td>
+                            <td class="inv-desc">
+                                <div class="sku">
+                                    {{ $mut->product?->sku ?? '-' }}
+                                    {{ $mut->product?->brand ? $mut->product->brand : '' }}
+                                    {{ $mut->product?->series ? $mut->product->series : '' }}
+                                </div>
+                                @if ($serialText !== '')
+                                    <div class="muted">{{ $serialText }}</div>
+                                @endif
+                                @if ($mut->notes && $idx === 0)
+                                    <div>{{ $mut->notes }}</div>
+                                @endif
+                            </td>
+                            <td class="num">{{ number_format((float) $mut->quantity, 2, ',', '.') }}</td>
+                            <td class="num">{{ number_format((float) ($mut->biaya_distribusi_per_unit ?? 0), 0, ',', '.') }}</td>
+                            <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
+                            <td class="num">0</td>
+                            <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
+                        </tr>
+                    @endforeach
                 </tbody>
             </table>
 

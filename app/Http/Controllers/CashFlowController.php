@@ -113,7 +113,7 @@ class CashFlowController extends Controller
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = (clone $query)
             ->reorder()
             ->selectRaw('payment_method_id, SUM(amount) as total')
@@ -252,7 +252,7 @@ class CashFlowController extends Controller
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = (clone $query)
             ->reorder()
             ->selectRaw('payment_method_id, SUM(amount) as total')
@@ -382,7 +382,7 @@ class CashFlowController extends Controller
             ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
         return view('cash-flows.index', compact('cashFlows', 'summary', 'branches', 'warehouses', 'paymentMethods', 'canFilterLocation', 'filterLocked', 'locationLabel', 'lockedBranchId', 'lockedWarehouseId', 'totalTradeIn', 'branchId', 'warehouseId', 'orderDirection'));
     }
@@ -487,35 +487,49 @@ class CashFlowController extends Controller
             return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
         }
 
+        $items = $validated['items'];
+        $totalAmount = collect($items)->sum(fn ($item) => (float) $item['amount']);
+
         $saldo = (new KasBalanceService)->getSaldoForLocation(
             $warehouseId ? 'warehouse' : 'branch',
             $warehouseId ?: $branchId,
             (int) $validated['payment_method_id']
         );
-        $amount = (float) $validated['amount'];
-        if ($amount > $saldo) {
+
+        if ($totalAmount > $saldo) {
             return redirect()->back()->withInput()->withErrors([
-                'amount' => __('Saldo tidak mencukupi. Saldo tersedia: Rp :saldo', [
+                'items' => __('Total pengeluaran (Rp :total) melebihi saldo tersedia (Rp :saldo).', [
+                    'total' => number_format($totalAmount, 0, ',', '.'),
                     'saldo' => number_format($saldo, 0, ',', '.'),
                 ]),
             ]);
         }
 
-        CashFlow::create([
-            'branch_id' => $branchId,
-            'warehouse_id' => $warehouseId,
-            'type' => CashFlow::TYPE_OUT,
-            'amount' => $validated['amount'],
-            'description' => $validated['description'] ?? null,
-            'reference_type' => CashFlow::REFERENCE_EXPENSE,
-            'reference_id' => null,
-            'expense_category_id' => $validated['expense_category_id'],
-            'payment_method_id' => (int) $validated['payment_method_id'],
-            'transaction_date' => $validated['transaction_date'],
-            'user_id' => $user->id,
-        ]);
+        DB::beginTransaction();
+        try {
+            foreach ($items as $item) {
+                CashFlow::create([
+                    'branch_id' => $branchId,
+                    'warehouse_id' => $warehouseId,
+                    'type' => CashFlow::TYPE_OUT,
+                    'amount' => (float) $item['amount'],
+                    'description' => $item['name'],
+                    'reference_type' => CashFlow::REFERENCE_EXPENSE,
+                    'reference_id' => null,
+                    'expense_category_id' => (int) $item['expense_category_id'],
+                    'payment_method_id' => (int) $validated['payment_method_id'],
+                    'transaction_date' => $validated['transaction_date'],
+                    'user_id' => $user->id,
+                ]);
+            }
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
 
-        return redirect()->route('cash-flows.index')->with('success', __('Expense recorded successfully.'));
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('cash-flows.out.index')->with('success', __('Pengeluaran berhasil dicatat.')); 
     }
 
     public function storeIn(ManualIncomeRequest $request): RedirectResponse

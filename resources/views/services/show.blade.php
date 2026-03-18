@@ -9,7 +9,7 @@
                 <a href="{{ route('services.invoice', $service) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Print Invoice') }}
                 </a>
-                @if (auth()->user()?->isSuperAdmin())
+                @if ($service->status === \App\Models\Service::STATUS_OPEN && (auth()->user()?->isSuperAdminOrAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR])))
                     <a href="{{ route('services.edit', $service) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
                         {{ __('Edit') }}
                     </a>

@@ -280,6 +280,9 @@ Route::middleware('auth')->group(function () {
     Route::post('sales/{sale}/release', [SaleController::class, 'release'])
         ->middleware('role:admin_cabang,kasir')
         ->name('sales.release');
+    Route::post('sales/{sale}/payment', [SaleController::class, 'storePayment'])
+        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->name('sales.store-payment');
     Route::post('sales/{sale}/cancel', [SaleController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('sales.cancel');
@@ -340,7 +343,7 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,kasir')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('services', ServiceController::class)
-        ->middleware('role:super_admin,admin_pusat')
+        ->middleware('role:super_admin,admin_pusat,admin_cabang,kasir')
         ->only(['edit', 'update']);
 
     Route::get('debts', [DebtController::class, 'index'])
@@ -374,6 +377,19 @@ Route::middleware('auth')->group(function () {
     Route::post('cash-flows/out', [CashFlowController::class, 'storeOut'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.store');
+
+    Route::get('mutasi-dana', [\App\Http\Controllers\MutasiDanaController::class, 'index'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('mutasi-dana.index');
+    Route::get('mutasi-dana/create', [\App\Http\Controllers\MutasiDanaController::class, 'create'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('mutasi-dana.create');
+    Route::post('mutasi-dana', [\App\Http\Controllers\MutasiDanaController::class, 'store'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('mutasi-dana.store');
+    Route::get('mutasi-dana/form-data', [\App\Http\Controllers\MutasiDanaController::class, 'formData'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('mutasi-dana.form-data');
 
     Route::resource('expense-categories', ExpenseCategoryController::class)
         ->middleware('role:admin_cabang')

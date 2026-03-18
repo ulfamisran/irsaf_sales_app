@@ -493,6 +493,70 @@ class SaleService
     }
 
     /**
+     * Add a partial payment to an already-released sale.
+     */
+    public function addPayment(
+        Sale $sale,
+        int $paymentMethodId,
+        float $amount,
+        ?int $userId = null,
+        ?string $transactionDate = null,
+        ?string $notes = null
+    ): SalePayment {
+        if ($sale->status !== Sale::STATUS_RELEASED) {
+            throw new InvalidArgumentException(__('Pembayaran hanya bisa ditambahkan pada penjualan yang sudah dirilis.'));
+        }
+
+        $amount = round($amount, 2);
+        if ($amount <= 0) {
+            throw new InvalidArgumentException(__('Nominal pembayaran harus lebih dari 0.'));
+        }
+
+        $remaining = round((float) $sale->total - (float) $sale->total_paid, 2);
+        if ($amount > $remaining + 0.02) {
+            throw new InvalidArgumentException(
+                __('Nominal pembayaran (:amount) melebihi sisa tagihan (:remaining).', [
+                    'amount' => number_format($amount, 0, ',', '.'),
+                    'remaining' => number_format($remaining, 0, ',', '.'),
+                ])
+            );
+        }
+
+        $transactionDate = $transactionDate ?: now()->toDateString();
+
+        return DB::transaction(function () use ($sale, $paymentMethodId, $amount, $userId, $transactionDate, $notes) {
+            $payment = SalePayment::create([
+                'sale_id' => $sale->id,
+                'payment_method_id' => $paymentMethodId,
+                'amount' => $amount,
+                'notes' => $notes,
+            ]);
+
+            $pm = $payment->paymentMethod;
+            $pmLabel = $pm ? $pm->display_label : __('Payment');
+            $penjualanCategory = IncomeCategory::resolveByCode('SALE', 'Penjualan');
+
+            CashFlow::create([
+                'branch_id' => $sale->branch_id,
+                'type' => CashFlow::TYPE_IN,
+                'amount' => $amount,
+                'description' => __('Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
+                'reference_type' => CashFlow::REFERENCE_SALE,
+                'reference_id' => $sale->id,
+                'income_category_id' => $penjualanCategory->id,
+                'payment_method_id' => $paymentMethodId,
+                'transaction_date' => $transactionDate,
+                'user_id' => $userId ?? auth()->id(),
+            ]);
+
+            $newTotalPaid = round((float) $sale->total_paid + $amount, 2);
+            $sale->update(['total_paid' => $newTotalPaid]);
+
+            return $payment;
+        });
+    }
+
+    /**
      * @param  array<int, array{amount?: float}>  $payments
      */
     private function sumPayments(array $payments): float

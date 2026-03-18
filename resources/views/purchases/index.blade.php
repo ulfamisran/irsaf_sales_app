@@ -89,6 +89,20 @@
             </div>
         </div>
 
+        @if ($totalUnpaid > 0)
+        <div class="mb-6 rounded-xl bg-amber-50 border border-amber-200 p-5 flex items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-amber-800">{{ __('Total Biaya Pembelian Belum Dibayar') }}</p>
+                <p class="text-2xl font-bold text-amber-700">Rp {{ number_format($totalUnpaid, 0, ',', '.') }}</p>
+            </div>
+        </div>
+        @endif
+
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
@@ -101,6 +115,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Terbayar') }}</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
@@ -129,8 +144,19 @@
                                     <span class="{{ $p->isPaidOff() ? 'text-emerald-600 font-medium' : 'text-amber-600' }}">
                                         {{ number_format($p->total_paid, 0, ',', '.') }}
                                     </span>
-                                    @if (!$p->isPaidOff())
-                                        <span class="text-xs text-slate-500">(sisa {{ number_format((float)$p->total - (float)$p->total_paid, 0, ',', '.') }})</span>
+                                    @if (!$p->isPaidOff() && !$p->isCancelled() && (float)$p->total > 0)
+                                        <div class="text-xs text-slate-500">(sisa {{ number_format((float)$p->total - (float)$p->total_paid, 0, ',', '.') }})</div>
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    @if ($p->isCancelled())
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">{{ __('Dibatalkan') }}</span>
+                                    @elseif ((float)$p->total <= 0)
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">-</span>
+                                    @elseif ($p->isPaidOff())
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
+                                    @else
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">{{ __('Belum Lunas') }}</span>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $p->user?->name ?? '-' }}</td>
@@ -156,7 +182,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
+                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

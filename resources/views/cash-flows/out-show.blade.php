@@ -62,7 +62,7 @@
                     @endif
                     @if ($cashFlow->description)
                         <div class="md:col-span-2">
-                            <p class="text-sm text-slate-500">{{ __('Deskripsi') }}</p>
+                            <p class="text-sm text-slate-500">{{ __('Nama Pengeluaran') }}</p>
                             <p class="text-slate-700 whitespace-pre-line">{{ $cashFlow->description }}</p>
                         </div>
                     @endif

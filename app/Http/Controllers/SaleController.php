@@ -107,7 +107,7 @@ class SaleController extends Controller
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
             ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
@@ -177,6 +177,7 @@ class SaleController extends Controller
                 'series' => $p->series ?? '',
                 'color' => $p->color ?? '',
                 'price' => $p->selling_price,
+                'category_id' => $p->category_id,
             ];
         })->values();
 
@@ -318,7 +319,9 @@ class SaleController extends Controller
                 'sku' => $p->sku,
                 'brand' => $p->brand,
                 'series' => $p->series,
+                'color' => $p->color ?? '',
                 'price' => $p->selling_price,
+                'category_id' => $p->category_id,
             ];
         })->values();
 
@@ -456,6 +459,36 @@ class SaleController extends Controller
         return redirect()->route('sales.show', $sale)->with('success', __('Penjualan berhasil dirilis.'));
     }
 
+    public function storePayment(Request $request, Sale $sale): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $validated = $request->validate([
+            'payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'amount' => ['required', 'numeric', 'min:1'],
+            'transaction_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->saleService->addPayment(
+                $sale,
+                (int) $validated['payment_method_id'],
+                (float) $validated['amount'],
+                $user->id,
+                $validated['transaction_date'] ?? null,
+                $validated['notes'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('sales.show', $sale)->with('success', __('Pembayaran berhasil ditambahkan.'));
+    }
+
     public function availableSerials(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -541,7 +574,7 @@ class SaleController extends Controller
             ->orderBy('series')
             ->orderBy('sku')
             ->limit(500)
-            ->get(['id', 'sku', 'brand', 'series', 'color', 'selling_price']);
+            ->get(['id', 'sku', 'brand', 'series', 'color', 'selling_price', 'category_id']);
 
         return response()->json([
             'products' => $products->map(function ($p) {
@@ -552,6 +585,7 @@ class SaleController extends Controller
                     'series' => $p->series ?? '',
                     'color' => $p->color ?? '',
                     'price' => $p->selling_price,
+                    'category_id' => $p->category_id,
                 ];
             })->values(),
         ]);

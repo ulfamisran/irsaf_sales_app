@@ -262,21 +262,21 @@
                     const row = document.createElement('div');
                     row.className = 'payment-row flex flex-wrap gap-2 items-end';
                     row.innerHTML = `
-                        <div class="min-w-[180px]">
+                        <div class="flex-1 min-w-[150px]">
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Sumber Dana'))}</label>
                             <select name="payments[${idx}][payment_method_id]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5">
                                 ${optionsHtml}
                             </select>
                         </div>
-                        <div class="w-28">
+                        <div class="flex-1 min-w-[150px]">
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Nominal'))}</label>
                             <input type="text" name="payments[${idx}][amount]" class="payment-amount-input block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" placeholder="0" value="${amountVal}" data-rupiah="true">
                         </div>
-                        <div class="w-32">
+                        <div class="w-36">
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Tanggal'))}</label>
                             <input type="date" name="payments[${idx}][payment_date]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" value="${prefill.payment_date || this.today}">
                         </div>
-                        <div class="min-w-[120px] flex-1">
+                        <div class="flex-1 min-w-[120px]">
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Catatan'))}</label>
                             <input type="text" name="payments[${idx}][notes]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" placeholder="Opsional" value="${prefill.notes || ''}">
                         </div>
@@ -298,6 +298,7 @@
                         }
                     });
                     updateRemoveBtns();
+                    if (window.attachRupiahFormatter) window.attachRupiahFormatter(row);
                     document.querySelectorAll('#payment-rows [data-rupiah="true"]').forEach(inp => {
                         if (inp.dataset.rupiahInit) return;
                         inp.dataset.rupiahInit = '1';

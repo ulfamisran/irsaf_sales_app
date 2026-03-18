@@ -155,7 +155,7 @@
             div.className = 'flex gap-2 items-end';
             div.innerHTML = `
                 <div class="flex-1"><select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>${paymentOpts()}</select></div>
-                <div class="w-40"><input type="number" name="payments[${i}][amount]" step="0.01" min="0.01" class="block w-full rounded-md border-gray-300" placeholder="Nominal" required></div>
+                <div class="w-40"><input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300" placeholder="Nominal" required></div>
                 <div class="flex-1"><input type="text" name="payments[${i}][notes]" class="block w-full rounded-md border-gray-300" placeholder="Catatan"></div>
                 <button type="button" class="remove-pay px-3 py-2 bg-red-100 text-red-700 rounded">-</button>
             `;
@@ -165,6 +165,7 @@
             if (p.notes) div.querySelector('input[name*="[notes]"]').value = p.notes || '';
             div.querySelector('.remove-pay')?.addEventListener('click', () => { div.remove(); refresh(); });
             div.querySelectorAll('select,input').forEach(el => el.addEventListener('input', refresh));
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter(div);
         }
         function toNumber(val) {
             if (typeof window.parseRupiahToNumber === 'function') {

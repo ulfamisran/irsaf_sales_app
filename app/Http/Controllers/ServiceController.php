@@ -94,7 +94,7 @@ class ServiceController extends Controller
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
             ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
@@ -214,17 +214,19 @@ class ServiceController extends Controller
     public function edit(Service $service): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin()) {
+        $canEdit = $user->isSuperAdminOrAdminPusat()
+            || $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]);
+        if (! $canEdit) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $service->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
         }
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
 
@@ -253,10 +255,12 @@ class ServiceController extends Controller
     public function update(ServiceRequest $request, Service $service): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdmin()) {
+        $canEdit = $user->isSuperAdminOrAdminPusat()
+            || $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]);
+        if (! $canEdit) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $service->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
 

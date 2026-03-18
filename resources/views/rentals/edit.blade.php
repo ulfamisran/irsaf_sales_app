@@ -177,13 +177,14 @@
         $editItems = old('items', ($rental->items ?? collect())->map(fn ($i) => ['product_id' => $i->product_id, 'serial_number' => $i->serial_number, 'rental_price' => (float)$i->rental_price])->toArray());
     @endphp
     <script>
-        const paymentMethods = @json($editPaymentMethods);
+        let paymentMethods = @json($editPaymentMethods);
         const editPayments = @json($editPayments);
         const editItems = @json($editItems);
         const rentalId = @json($rental->id);
         const appBaseUrl = @json(request()->getBaseUrl());
         const availableProductsPath = @json(route('rentals.available-products', [], false));
         const availableSerialsPath = @json(route('rentals.available-serials', [], false));
+        const formDataUrl = @json(route('data-by-location.form-data', [], false));
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
         const warehouses = @json($warehouses ?? []);
@@ -594,12 +595,40 @@
         customerSelect?.addEventListener('change', toggleCustomerFields);
         toggleCustomerFields();
 
+        async function loadFormDataForLocation() {
+            const locationType = document.getElementById('location_type')?.value;
+            const locationId = document.getElementById('location_id')?.value;
+            if (!locationId) {
+                paymentMethods = [];
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
+                    sel.innerHTML = '<option value="">{{ __('Pilih metode') }}</option>';
+                });
+                return;
+            }
+            try {
+                const url = new URL(appBaseUrl + formDataUrl, window.location.origin);
+                url.searchParams.set('location_type', locationType);
+                url.searchParams.set('location_id', locationId);
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('Fetch failed');
+                const data = await res.json();
+                paymentMethods = (data.payment_methods || []).map(m => ({ id: m.id, label: m.label }));
+                document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
+                    const oldVal = sel.value;
+                    sel.innerHTML = paymentOptionsHtml();
+                    if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
+                });
+            } catch (e) { console.error('loadFormDataForLocation failed', e); }
+        }
+
         document.getElementById('location_type')?.addEventListener('change', function() {
             updateLocationSelect();
+            loadFormDataForLocation();
             loadProductsForLocation();
             document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
         });
         document.getElementById('location_id')?.addEventListener('change', async function() {
+            await loadFormDataForLocation();
             await loadProductsForLocation();
             document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
         });

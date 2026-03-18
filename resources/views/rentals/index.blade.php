@@ -58,6 +58,15 @@
                     </div>
                     @endif
                     <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
+                        <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
+                            <option value="released" {{ request('status') === 'released' ? 'selected' : '' }}>{{ __('Released') }}</option>
+                            <option value="cancel" {{ request('status') === 'cancel' ? 'selected' : '' }}>{{ __('Cancel') }}</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Pengembalian') }}</label>
                         <select name="return_status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
@@ -132,6 +141,7 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Penyewa') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Ambil') }}</th>
@@ -146,6 +156,15 @@
                         @forelse ($rentals as $rental)
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3">{{ $rental->invoice_number }}</td>
+                                <td class="px-4 py-3">
+                                    @if ($rental->status === \App\Models\Rental::STATUS_CANCEL)
+                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800">{{ __('Cancel') }}</span>
+                                    @elseif ($rental->status === \App\Models\Rental::STATUS_RELEASED)
+                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-800">{{ __('Released') }}</span>
+                                    @else
+                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-800">{{ __('Open') }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ ($rental->location_type ?? 'warehouse') === 'branch' ? ($rental->branch?->name ?? '-') : ($rental->warehouse?->name ?? '-') }}</td>
                                 <td class="px-4 py-3">{{ $rental->customer?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $rental->pickup_date?->format('d/m/Y') }}</td>
@@ -178,7 +197,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penyewaan.') }}</td>
+                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penyewaan.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

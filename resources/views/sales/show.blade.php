@@ -169,31 +169,140 @@
                     </table>
 
                     @if ($sale->status === 'released' || $sale->status === 'open')
+                        @php
+                            $totalPaid = (float) $sale->total_paid;
+                            $totalSale = (float) $sale->total;
+                            $sisa = max(0, round($totalSale - $totalPaid, 2));
+                            $isLunasNow = $sale->isPaidOff();
+                        @endphp
                         <div class="mt-6 mb-8">
-                            <p class="text-sm font-semibold text-gray-800">{{ __('Pembayaran') }}</p>
-                            @if ($sale->status === 'released' && !$sale->isPaidOff())
-                                <p class="text-xs text-amber-700 mt-1">{{ __('Belum lunas') }} - {{ __('Sisa') }}: {{ number_format((float)$sale->total - (float)$sale->total_paid, 0, ',', '.') }}</p>
-                            @endif
-                            <div class="mt-2 space-y-1 text-sm text-gray-700">
-                                @forelse ($sale->payments as $p)
-                                    <div class="flex justify-between">
-                                        <span>
-                                            {{ $p->paymentMethod?->display_label }}
-                                        </span>
-                                        <span class="font-medium">{{ number_format($p->amount, 0, ',', '.') }}</span>
-                                    </div>
-                                @empty
-                                    @if (!$sale->tradeIns || $sale->tradeIns->isEmpty())
-                                        <div class="text-gray-500">{{ __('-') }}</div>
-                                    @endif
-                                @endforelse
-                                @foreach ($sale->tradeIns ?? [] as $ti)
-                                    <div class="flex justify-between text-amber-800">
-                                        <span>{{ __('Tukar Tambah') }}: {{ $ti->brand ?? '-' }} {{ $ti->series ?? '' }} ({{ $ti->serial_number }})</span>
-                                        <span class="font-medium">{{ number_format($ti->trade_in_value, 0, ',', '.') }}</span>
-                                    </div>
-                                @endforeach
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-sm font-semibold text-gray-800">{{ __('Riwayat Pembayaran') }}</p>
+                                @if ($sale->status === 'released')
+                                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold {{ $isLunasNow ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
+                                        {{ $isLunasNow ? __('Lunas') : __('Belum Lunas') }}
+                                    </span>
+                                @endif
                             </div>
+
+                            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No') }}</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Metode Pembayaran') }}</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Catatan') }}</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Nominal') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        @php $paymentNo = 1; @endphp
+                                        @forelse ($sale->payments as $p)
+                                            <tr>
+                                                <td class="px-4 py-2 text-slate-600">{{ $paymentNo++ }}</td>
+                                                <td class="px-4 py-2">{{ $p->paymentMethod?->display_label ?? '-' }}</td>
+                                                <td class="px-4 py-2 text-slate-600">{{ $p->created_at?->format('d/m/Y H:i') }}</td>
+                                                <td class="px-4 py-2 text-slate-500 text-sm">{{ $p->notes ?? '-' }}</td>
+                                                <td class="px-4 py-2 text-right font-medium">Rp {{ number_format($p->amount, 0, ',', '.') }}</td>
+                                            </tr>
+                                        @empty
+                                            @if (!$sale->tradeIns || $sale->tradeIns->isEmpty())
+                                                <tr>
+                                                    <td colspan="5" class="px-4 py-3 text-center text-slate-500">{{ __('Belum ada pembayaran.') }}</td>
+                                                </tr>
+                                            @endif
+                                        @endforelse
+                                        @foreach ($sale->tradeIns ?? [] as $ti)
+                                            <tr class="bg-amber-50/50">
+                                                <td class="px-4 py-2 text-amber-700">{{ $paymentNo++ }}</td>
+                                                <td class="px-4 py-2 text-amber-800">{{ __('Tukar Tambah') }}: {{ $ti->brand ?? '-' }} {{ $ti->series ?? '' }} ({{ $ti->serial_number }})</td>
+                                                <td class="px-4 py-2 text-amber-700">{{ $sale->sale_date->format('d/m/Y') }}</td>
+                                                <td class="px-4 py-2 text-slate-500">-</td>
+                                                <td class="px-4 py-2 text-right font-medium text-amber-800">Rp {{ number_format($ti->trade_in_value, 0, ',', '.') }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                    <tfoot class="bg-slate-50">
+                                        <tr class="font-semibold">
+                                            <td colspan="3" class="px-4 py-2 text-right text-sm">{{ __('Total Dibayar') }}</td>
+                                            <td class="px-4 py-2 text-right text-sm">Rp {{ number_format($totalPaid, 0, ',', '.') }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="3" class="px-4 py-2 text-right text-sm text-slate-600">{{ __('Total Tagihan') }}</td>
+                                            <td class="px-4 py-2 text-right text-sm text-slate-600">Rp {{ number_format($totalSale, 0, ',', '.') }}</td>
+                                        </tr>
+                                        @if (!$isLunasNow)
+                                            <tr class="text-amber-700 font-semibold">
+                                                <td colspan="3" class="px-4 py-2 text-right text-sm">{{ __('Sisa Tagihan') }}</td>
+                                                <td class="px-4 py-2 text-right text-sm">Rp {{ number_format($sisa, 0, ',', '.') }}</td>
+                                            </tr>
+                                        @endif
+                                    </tfoot>
+                                </table>
+                            </div>
+
+                            {{-- Tambah Pembayaran form --}}
+                            @if ($sale->status === 'released' && !$isLunasNow)
+                                <div class="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                                    <p class="font-semibold text-sm text-indigo-800 mb-3">{{ __('Tambah Pembayaran') }}</p>
+                                    <form method="POST" action="{{ route('sales.store-payment', $sale) }}">
+                                        @csrf
+                                        <div class="flex flex-wrap items-end gap-3">
+                                            <div class="flex-1 min-w-[150px]">
+                                                <x-input-label for="add_payment_method" :value="__('Metode Pembayaran')" class="text-xs" />
+                                                <select id="add_payment_method" name="payment_method_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
+                                                    <option value="">{{ __('Pilih Metode') }}</option>
+                                                    @foreach ($paymentMethods as $pm)
+                                                        <option value="{{ $pm->id }}">{{ $pm->display_label }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="flex-1 min-w-[130px]">
+                                                <x-input-label for="add_payment_amount" :value="__('Nominal')" class="text-xs" />
+                                                <div class="relative mt-1">
+                                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 text-sm">Rp</span>
+                                                    <input type="text" id="add_payment_amount_display" class="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="0" inputmode="numeric" value="{{ old('amount') ? number_format(old('amount'), 0, ',', '.') : number_format($sisa, 0, ',', '.') }}">
+                                                    <input type="hidden" name="amount" id="add_payment_amount" value="{{ old('amount', $sisa) }}">
+                                                </div>
+                                            </div>
+                                            <div class="w-36">
+                                                <x-input-label for="add_payment_date" :value="__('Tanggal')" class="text-xs" />
+                                                <input type="date" id="add_payment_date" name="transaction_date" value="{{ old('transaction_date', date('Y-m-d')) }}" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            </div>
+                                            <div class="flex-1 min-w-[120px]">
+                                                <x-input-label for="add_payment_notes" :value="__('Catatan')" class="text-xs" />
+                                                <input type="text" id="add_payment_notes" name="notes" value="{{ old('notes') }}" placeholder="{{ __('Opsional') }}" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            </div>
+                                            <div>
+                                                <button type="submit" class="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                                    {{ __('Bayar') }}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                                @push('scripts')
+                                <script>
+                                document.addEventListener('DOMContentLoaded', function() {
+                                    const maxAmount = {{ $sisa }};
+                                    const display = document.getElementById('add_payment_amount_display');
+                                    const hidden = document.getElementById('add_payment_amount');
+
+                                    function formatRupiah(num) {
+                                        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                                    }
+
+                                    display.addEventListener('input', function() {
+                                        let raw = parseInt(this.value.replace(/\D/g, '')) || 0;
+                                        this.value = raw > 0 ? formatRupiah(raw) : '';
+                                        hidden.value = raw > 0 ? raw : '';
+                                    });
+                                });
+                                </script>
+                                @endpush
+                            @endif
                         </div>
                     @endif
 
@@ -298,7 +407,7 @@
                                         </select>
                                     </div>
                                     <div class="w-full md:w-48">
-                                        <input type="number" name="payments[${i}][amount]" step="0.01" min="0" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal">
+                                        <input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal">
                                     </div>
                                     <button type="button" class="remove-release-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
                                 `;
@@ -312,6 +421,7 @@
                                     if (inp) inp.value = String(pref.amount);
                                 }
                                 div.querySelector('.remove-release-payment')?.addEventListener('click', () => div.remove());
+                                if (window.attachRupiahFormatter) window.attachRupiahFormatter(div);
                             }
 
                             document.getElementById('release-add-payment')?.addEventListener('click', () => addReleasePaymentRow());

@@ -445,7 +445,7 @@ class FinanceController extends Controller
         $allPaymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($branchId, $warehouseId)
-            ->get(['jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         foreach ($allPaymentMethods as $pm) {
             $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? '')));
             $bank = trim((string) ($pm->nama_bank ?? ''));
@@ -541,7 +541,7 @@ class FinanceController extends Controller
             }
             return $bank . '|' . $rek;
         };
-        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('branch_id')->get(['branch_id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']) as $pm) {
+        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('branch_id')->get(['branch_id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']) as $pm) {
             $key = $pmToKey($pm);
             $bid = $pm->branch_id;
             if (! isset($branchKasKeys[$bid])) {
@@ -549,7 +549,7 @@ class FinanceController extends Controller
             }
             $branchKasKeys[$bid][$key] = true;
         }
-        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('warehouse_id')->get(['warehouse_id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']) as $pm) {
+        foreach (PaymentMethod::query()->where('is_active', true)->whereNotNull('warehouse_id')->get(['warehouse_id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']) as $pm) {
             $key = $pmToKey($pm);
             $wid = $pm->warehouse_id;
             if (! isset($warehouseKasKeys[$wid])) {

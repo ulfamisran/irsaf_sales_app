@@ -40,21 +40,18 @@ class StockMutationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'product_id' => ['required', 'exists:products,id'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'exists:products,id'],
+            'items.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'items.*.serial_numbers' => ['nullable', 'array'],
+            'items.*.serial_numbers.*' => ['string'],
+            'items.*.biaya_distribusi_per_unit' => ['nullable', 'numeric', 'min:0'],
             'from_location_type' => ['required', Rule::in([Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH])],
             'from_location_id' => ['required', 'integer', 'min:1'],
             'to_location_type' => ['required', Rule::in([Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH])],
             'to_location_id' => ['required', 'integer', 'min:1'],
-            'quantity' => ['nullable', 'integer', 'min:1', 'required_without:serial_numbers'],
-            'serial_numbers' => [
-                'nullable',
-                'required_without:quantity',
-                Rule::when(is_array($this->input('serial_numbers')), ['array', 'min:1'], ['string']),
-            ],
-            'serial_numbers.*' => ['string'],
             'mutation_date' => ['required', 'date'],
             'notes' => ['nullable', 'string'],
-            'biaya_distribusi_per_unit' => ['nullable', 'numeric', 'min:0'],
             'distribution_payments' => ['nullable', 'array'],
             'distribution_payments.*.payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'distribution_payments.*.amount' => ['nullable', 'numeric', 'min:0'],

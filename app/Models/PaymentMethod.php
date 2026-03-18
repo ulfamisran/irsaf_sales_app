@@ -59,25 +59,27 @@ class PaymentMethod extends Model
         ];
     }
 
-    /**
-     * Label untuk dropdown pilihan metode pembayaran.
-     * Untuk Tunai (cash) hanya tampilkan "Tunai", tanpa bank/rekening.
-     */
     public function getDisplayLabelAttribute(): string
     {
         $jenis = trim($this->jenis_pembayaran ?? '');
-        if (strtolower($jenis) === 'tunai') {
-            return $jenis ?: 'Tunai';
-        }
-        $label = $jenis;
-        if (! empty(trim((string) ($this->nama_bank ?? '')))) {
-            $label .= ' - ' . trim($this->nama_bank);
-        }
-        if (! empty(trim((string) ($this->no_rekening ?? '')))) {
-            $label .= ' (' . trim($this->no_rekening) . ')';
+        $label = $jenis ?: 'Tunai';
+
+        $bank = trim((string) ($this->nama_bank ?? ''));
+        if ($bank !== '') {
+            $label .= ' - ' . $bank;
         }
 
-        return trim($label);
+        $atasNama = trim((string) ($this->atas_nama_bank ?? ''));
+        if ($atasNama !== '') {
+            $label .= ' - ' . $atasNama;
+        }
+
+        $noRek = trim((string) ($this->no_rekening ?? ''));
+        if ($noRek !== '') {
+            $label .= ' (' . $noRek . ')';
+        }
+
+        return $label;
     }
 }
 

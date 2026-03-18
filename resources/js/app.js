@@ -40,10 +40,36 @@ export function parseRupiahToNumber(value) {
     return parseFloat(numeric);
 }
 
-function attachRupiahFormatter() {
-    const inputs = document.querySelectorAll('input[data-rupiah="true"]');
+function wrapWithRpPrefix(input) {
+    if (input.dataset.rpWrapped) return;
+    input.dataset.rpWrapped = '1';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'relative';
+
+    const prefix = document.createElement('span');
+    prefix.className = 'absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 text-sm pointer-events-none';
+    prefix.textContent = 'Rp';
+
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(prefix);
+    wrapper.appendChild(input);
+
+    if (!input.classList.contains('pl-10')) {
+        input.classList.remove('pl-3', 'px-3');
+        input.classList.add('pl-10');
+    }
+}
+
+function attachRupiahFormatter(container) {
+    const root = container || document;
+    const inputs = root.querySelectorAll('input[data-rupiah="true"]');
     inputs.forEach((input) => {
-        // initial format
+        wrapWithRpPrefix(input);
+
+        if (input.dataset.rpFormatBound) return;
+        input.dataset.rpFormatBound = '1';
+
         if (input.value) {
             input.value = formatRupiah(input.value);
         }
@@ -56,7 +82,6 @@ function attachRupiahFormatter() {
 
         if (input.form && !input.form.__rupiahFormatterBound) {
             input.form.addEventListener('submit', (e) => {
-                // Pastikan nilai Rupiah dinormalisasi SEBELUM form dikirim
                 const moneyInputs = input.form.querySelectorAll('input[data-rupiah="true"]');
                 moneyInputs.forEach((el) => {
                     const raw = toNumericString(el.value);

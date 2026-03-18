@@ -85,7 +85,7 @@ class KasBalanceService
      *
      * @return array<int, float> [payment_method_id => saldo]
      */
-    private function getSaldoPerPaymentMethodForLocation(string $locationType, int $locationId): array
+    public function getSaldoPerPaymentMethodForLocation(string $locationType, int $locationId): array
     {
         $totals = [];
 

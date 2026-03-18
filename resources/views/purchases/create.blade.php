@@ -321,6 +321,7 @@
             const row = document.getElementById('payment-rows').lastElementChild;
             row.querySelector('.remove-payment')?.addEventListener('click', () => { row.remove(); updateAllTotals(); });
             if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
             row.querySelector('.payment-amount')?.addEventListener('input', updateAllTotals);
         }
 
@@ -383,6 +384,7 @@
             attachItemTotalListeners(tpl);
             itemIdx++;
             if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
             updateAllTotals();
         });
 

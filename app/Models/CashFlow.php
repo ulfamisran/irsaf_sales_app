@@ -26,6 +26,8 @@ class CashFlow extends Model
     public const REFERENCE_PURCHASE_RETURN = 'purchase_return';
     public const REFERENCE_DISTRIBUTION = 'distribution';
     public const REFERENCE_OTHER = 'lainnya';
+    public const REFERENCE_SETOR_TUNAI = 'setor_tunai';
+    public const REFERENCE_MUTASI_DANA = 'mutasi_dana';
 
     protected $fillable = [
         'branch_id',

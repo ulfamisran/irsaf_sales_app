@@ -83,66 +83,96 @@
                                     <x-input-error :messages="$errors->get('customer_new_address')" class="mt-2" />
                                 </div>
                             </div>
-                            <div>
-                                <x-input-label :value="__('Items')" />
-                                <p class="mt-1 mb-3 text-xs text-slate-500">{{ __('Produk akan tampil sesuai stok cabang yang dipilih.') }}</p>
-                                <div id="sale-items" class="space-y-4">
-                                    <div class="sale-item relative rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                                        <div class="space-y-4">
+                            <div class="rounded-xl border border-slate-200 overflow-hidden">
+                                <div class="bg-gradient-to-r from-indigo-50 to-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-100">
+                                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-sm font-semibold text-slate-800">{{ __('Produk Penjualan') }}</h3>
+                                            <p class="text-xs text-slate-500">{{ __('Produk akan tampil sesuai stok cabang yang dipilih.') }}</p>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="add-item" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 shadow-sm transition">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                        {{ __('Tambah Produk') }}
+                                    </button>
+                                </div>
+
+                                <div id="sale-items" class="divide-y divide-slate-100">
+                                    <div class="sale-item">
+                                        <div class="flex items-center justify-between px-4 py-2 bg-slate-50/80">
+                                            <span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                                <span class="item-number flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">1</span>
+                                                {{ __('Produk') }}
+                                            </span>
+                                            <button type="button" class="remove-item inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-red-50 text-red-600 hover:bg-red-100 transition" style="display:none">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                {{ __('Hapus') }}
+                                            </button>
+                                        </div>
+                                        <div class="px-4 py-3 space-y-3">
                                             <div class="product-selector-block">
-                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                                <div class="grid grid-cols-3 gap-3 mb-3">
                                                     <div>
-                                                        <x-input-label :value="__('Brand')" class="mb-1" />
+                                                        <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Kategori') }}</label>
+                                                        <select class="category-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Brand') }}</label>
                                                         <select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select>
                                                     </div>
                                                     <div>
-                                                        <x-input-label :value="__('Series')" class="mb-1" />
+                                                        <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Series') }}</label>
                                                         <select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select>
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <x-input-label :value="__('Produk')" class="mb-1" />
-                                                    <input type="hidden" name="items[0][product_id]" class="product-id-input" value="" required>
-                                                    <div class="product-dropdown-wrapper relative">
-                                                        <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                                            <span class="product-select-label text-slate-500">{{ __('Pilih Produk') }}</span>
-                                                            <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
-                                                        </button>
-                                                        <div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                                                            <div class="p-2 border-b border-gray-100">
-                                                                <input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="{{ __('Cari SKU, brand, series, atau warna...') }}">
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Produk') }}</label>
+                                                        <input type="hidden" name="items[0][product_id]" class="product-id-input" value="" required>
+                                                        <div class="product-dropdown-wrapper relative">
+                                                            <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                                                <span class="product-select-label text-slate-500">{{ __('Pilih Produk') }}</span>
+                                                                <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                                                            </button>
+                                                            <div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                                                <div class="p-2 border-b border-gray-100">
+                                                                    <input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="{{ __('Cari SKU, brand, series, atau warna...') }}">
+                                                                </div>
+                                                                <div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>
+                                                                <div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">{{ __('Tidak ada produk yang cocok.') }}</div>
                                                             </div>
-                                                            <div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>
-                                                            <div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">{{ __('Tidak ada produk yang cocok.') }}</div>
                                                         </div>
                                                     </div>
-                                                </div>
                                             </div>
-                                            <div>
-                                                <x-input-label :value="__('Nomor Serial')" class="mb-1" />
-                                                <input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="{{ __('Search serial...') }}" disabled>
-                                                <input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="{{ __('Scan barcode/QR serial + Enter') }}" disabled>
-                                                <x-input-label :value="__('Daftar serial dipilih')" class="mb-1 text-xs" />
-                                                <select name="items[0][serial_numbers][]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 serial-select text-sm" multiple size="3" disabled></select>
-                                                <p class="mt-1 text-xs text-gray-500">{{ __('Pilih serial jika stok serial-based.') }}</p>
-                                            </div>
-                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                 <div>
-                                                    <x-input-label :value="__('Quantity')" class="mb-1" />
-                                                    <x-text-input type="number" name="items[0][quantity]" min="1" value="1" placeholder="Qty" required />
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Nomor Serial') }}</label>
+                                                    <input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Search serial...') }}" disabled>
                                                 </div>
                                                 <div>
-                                                    <x-input-label :value="__('Harga Jual')" class="mb-1" />
-                                                    <x-text-input type="text" name="items[0][price]" data-rupiah="true" placeholder="Harga" required />
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Scan Serial') }}</label>
+                                                    <input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Scan barcode/QR + Enter') }}" disabled>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Serial Dipilih') }}</label>
+                                                    <select name="items[0][serial_numbers][]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 serial-select text-sm" multiple size="2" disabled></select>
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div class="absolute top-3 right-3">
-                                            <button type="button" class="remove-item inline-flex items-center px-3 py-2 rounded-md text-sm bg-red-100 text-red-700 hover:bg-red-200" style="display:none">{{ __('Hapus Item') }}</button>
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Quantity') }}</label>
+                                                    <x-text-input type="number" name="items[0][quantity]" min="1" value="1" placeholder="Qty" required class="!text-sm" />
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Harga Jual') }}</label>
+                                                    <x-text-input type="text" name="items[0][price]" data-rupiah="true" placeholder="Harga" required class="!text-sm" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                                <button type="button" id="add-item" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium">+ {{ __('Add Item') }}</button>
                             </div>
 
                             <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
@@ -245,6 +275,7 @@
         const categories = @json($categories ?? []);
         @php
             $i18n = [
+                'kategori' => __('Kategori'),
                 'brand' => __('Brand'),
                 'series' => __('Series'),
                 'produk' => __('Produk'),
@@ -253,12 +284,14 @@
                 'tidakAdaProduk' => __('Tidak ada produk yang cocok.'),
                 'nomorSerial' => __('Nomor Serial'),
                 'searchSerial' => __('Search serial...'),
-                'scanSerial' => __('Scan barcode/QR serial + Enter'),
+                'scanSerial' => __('Scan barcode/QR + Enter'),
+                'scanSerialLabel' => __('Scan Serial'),
                 'daftarSerial' => __('Daftar serial dipilih'),
                 'pilihSerialInfo' => __('Pilih serial jika stok serial-based.'),
                 'quantity' => __('Quantity'),
                 'hargaJual' => __('Harga Jual'),
-                'hapusItem' => __('Hapus Item'),
+                'hapusItem' => __('Hapus'),
+                'produkLabel' => __('Produk'),
                 'pilihCabangDulu' => __('Pilih cabang dulu'),
                 'pilihPelanggan' => __('Pilih Pelanggan (atau isi pelanggan baru)'),
             ];
@@ -288,7 +321,7 @@
             const color = esc(p.color || '');
             let colorPart = '';
             if (color) colorPart = ' <span class="text-slate-400">-</span> <span class="text-xs text-slate-600">' + color + '</span>';
-            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series || '') + '" data-sku="' + esc(p.sku) + '" data-color="' + esc(p.color || '') + '">' +
+            return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-category-id="' + (p.category_id || '') + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series || '') + '" data-sku="' + esc(p.sku) + '" data-color="' + esc(p.color || '') + '">' +
                 '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">' +
                 '<span class="text-xs text-slate-500">' + sku + '</span>' +
                 '<span class="text-slate-400">-</span>' +
@@ -298,13 +331,15 @@
 
         function productSelectorHtml(itemIndex) {
             return '<div class="product-selector-block">' +
-                '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.brand + '</label>' +
+                '<div class="grid grid-cols-3 gap-3 mb-3">' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.kategori + '</label>' +
+                '<select class="category-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.brand + '</label>' +
                 '<select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.series + '</label>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.series + '</label>' +
                 '<select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
                 '</div>' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.produk + '</label>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.produk + '</label>' +
                 '<input type="hidden" name="items[' + itemIndex + '][product_id]" class="product-id-input" value="" required>' +
                 '<div class="product-dropdown-wrapper relative">' +
                 '<button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">' +
@@ -317,70 +352,106 @@
                 '</div>' +
                 '<div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>' +
                 '<div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">' + i18n.tidakAdaProduk + '</div>' +
-                '</div></div></div></div>';
+                '</div></div></div>' +
+                '</div>';
         }
 
         function createSerialSelectHtml(name) {
-            return '<label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.nomorSerial + '</label>' +
-                '<input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + i18n.searchSerial + '" disabled>' +
-                '<input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm mb-2" placeholder="' + i18n.scanSerial + '" disabled>' +
-                '<label class="block text-xs font-medium text-gray-600 mb-1">' + i18n.daftarSerial + '</label>' +
-                '<select name="' + name + '" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 serial-select text-sm" multiple size="3" disabled></select>' +
-                '<p class="mt-1 text-xs text-gray-500">' + i18n.pilihSerialInfo + '</p>';
+            return '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.nomorSerial + '</label>' +
+                '<input type="text" class="serial-search block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="' + i18n.searchSerial + '" disabled></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.scanSerialLabel + '</label>' +
+                '<input type="text" class="serial-scan block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="' + i18n.scanSerial + '" disabled></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.daftarSerial + '</label>' +
+                '<select name="' + name + '" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 serial-select text-sm" multiple size="2" disabled></select></div>' +
+                '</div>';
         }
 
         let itemIndex = 1;
         document.getElementById('add-item')?.addEventListener('click', function() {
             const container = document.getElementById('sale-items');
             if (!container) return;
+            const itemNum = container.querySelectorAll('.sale-item').length + 1;
             const div = document.createElement('div');
-            div.className = 'sale-item relative rounded-lg border border-slate-200 bg-slate-50/50 p-4';
+            div.className = 'sale-item';
             div.innerHTML =
-                '<div class="space-y-4">' +
+                '<div class="flex items-center justify-between px-4 py-2 bg-slate-50/80">' +
+                '<span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">' +
+                '<span class="item-number flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">' + itemNum + '</span>' +
+                i18n.produkLabel +
+                '</span>' +
+                '<button type="button" class="remove-item inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-red-50 text-red-600 hover:bg-red-100 transition">' +
+                '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
+                i18n.hapusItem +
+                '</button>' +
+                '</div>' +
+                '<div class="px-4 py-3 space-y-3">' +
                 productSelectorHtml(itemIndex) +
-                '<div>' + createSerialSelectHtml('items[' + itemIndex + '][serial_numbers][]') + '</div>' +
-                '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.quantity + '</label><input type="number" name="items[' + itemIndex + '][quantity]" min="1" value="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required></div>' +
-                '<div><label class="block text-sm font-medium text-gray-700 mb-1">' + i18n.hargaJual + '</label><input type="text" name="items[' + itemIndex + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Harga" required></div>' +
+                createSerialSelectHtml('items[' + itemIndex + '][serial_numbers][]') +
+                '<div class="grid grid-cols-2 gap-3">' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.quantity + '</label><input type="number" name="items[' + itemIndex + '][quantity]" min="1" value="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Qty" required></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.hargaJual + '</label><input type="text" name="items[' + itemIndex + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Harga" required></div>' +
                 '</div>' +
-                '</div>' +
-                '<div class="absolute top-3 right-3"><button type="button" class="remove-item inline-flex items-center px-3 py-2 rounded-md text-sm bg-red-100 text-red-700 hover:bg-red-200">' + i18n.hapusItem + '</button></div>';
+                '</div>';
             container.appendChild(div);
             populateRowProductDropdown(div);
             itemIndex++;
             toggleRemoveButtons();
+            renumberItems();
         });
 
         document.getElementById('sale-items')?.addEventListener('click', function(e) {
-            if (e.target.classList.contains('remove-item')) {
+            if (e.target.closest('.remove-item')) {
                 e.target.closest('.sale-item').remove();
                 toggleRemoveButtons();
+                renumberItems();
             }
         });
 
         const rowSerials = new WeakMap(); // row -> full serial array
         const rowUnits = new WeakMap();   // row -> [{serial_number, harga_jual, harga_hpp}, ...]
 
-        function getBrandsFromProducts() {
-            const set = new Set();
-            products.forEach(p => { if (p.brand) set.add(p.brand); });
-            return Array.from(set).sort();
+        function getCategoriesFromProducts() {
+            const map = new Map();
+            products.forEach(p => {
+                if (p.category_id) {
+                    const cat = (categories || []).find(c => c.id == p.category_id);
+                    if (cat && !map.has(cat.id)) map.set(cat.id, cat.name);
+                }
+            });
+            return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
         }
-        function getSeriesFromProducts(brandVal) {
+        function getBrandsFromProducts(categoryVal) {
             const set = new Set();
             products.forEach(p => {
-                if ((!brandVal || (p.brand || '') === brandVal) && p.series) set.add(p.series);
+                if ((!categoryVal || String(p.category_id || '') === categoryVal) && p.brand) set.add(p.brand);
             });
             return Array.from(set).sort();
         }
+        function getSeriesFromProducts(categoryVal, brandVal) {
+            const set = new Set();
+            products.forEach(p => {
+                if ((!categoryVal || String(p.category_id || '') === categoryVal) && (!brandVal || (p.brand || '') === brandVal) && p.series) set.add(p.series);
+            });
+            return Array.from(set).sort();
+        }
+        function updateRowBrandFilter(row) {
+            const categoryVal = row.querySelector('.category-filter')?.value || '';
+            const brandSel = row.querySelector('.brand-filter');
+            if (!brandSel) return;
+            const brands = getBrandsFromProducts(categoryVal);
+            brandSel.innerHTML = '<option value="">Semua Brand</option>' + brands.map(b => '<option value="' + b + '">' + b + '</option>').join('');
+        }
         function updateRowSeriesFilter(row) {
+            const categoryVal = row.querySelector('.category-filter')?.value || '';
             const brandVal = row.querySelector('.brand-filter')?.value || '';
             const seriesSel = row.querySelector('.series-filter');
             if (!seriesSel) return;
-            const list = getSeriesFromProducts(brandVal);
+            const list = getSeriesFromProducts(categoryVal, brandVal);
             seriesSel.innerHTML = '<option value="">Semua Series</option>' + list.map(s => '<option value="' + s + '">' + s + '</option>').join('');
         }
         function filterRowProductOptions(row) {
+            const categoryVal = row.querySelector('.category-filter')?.value || '';
             const brandVal = row.querySelector('.brand-filter')?.value || '';
             const seriesVal = row.querySelector('.series-filter')?.value || '';
             const searchVal = (row.querySelector('.product-search')?.value || '').trim().toLowerCase();
@@ -388,15 +459,15 @@
             const listEl = row.querySelector('.product-dropdown-list');
             const emptyEl = row.querySelector('.product-dropdown-empty');
             let visibleCount = 0;
-            let firstId = '';
             options.forEach(opt => {
+                const matchCategory = !categoryVal || (opt.getAttribute('data-category-id') || '') === categoryVal;
                 const matchBrand = !brandVal || (opt.getAttribute('data-brand') || '') === brandVal;
                 const matchSeries = !seriesVal || (opt.getAttribute('data-series') || '') === seriesVal;
                 const searchStr = ((opt.getAttribute('data-sku') || '') + ' ' + (opt.getAttribute('data-brand') || '') + ' ' + (opt.getAttribute('data-series') || '') + ' ' + (opt.getAttribute('data-color') || '')).toLowerCase();
                 const matchSearch = !searchVal || searchStr.includes(searchVal);
-                const visible = matchBrand && matchSeries && matchSearch;
+                const visible = matchCategory && matchBrand && matchSeries && matchSearch;
                 opt.classList.toggle('hidden', !visible);
-                if (visible) { visibleCount++; if (!firstId) firstId = opt.getAttribute('data-id'); }
+                if (visible) visibleCount++;
             });
             if (listEl) listEl.classList.toggle('hidden', visibleCount === 0);
             if (emptyEl) emptyEl.classList.toggle('hidden', visibleCount > 0);
@@ -405,9 +476,10 @@
             const listEl = row.querySelector('.product-dropdown-list');
             if (!listEl) return;
             listEl.innerHTML = products.map(p => productOptionDivHtml(p)).join('');
-            const brandSel = row.querySelector('.brand-filter');
-            const brands = getBrandsFromProducts();
-            if (brandSel) brandSel.innerHTML = '<option value="">Semua Brand</option>' + brands.map(b => '<option value="' + b + '">' + b + '</option>').join('');
+            const catSel = row.querySelector('.category-filter');
+            const cats = getCategoriesFromProducts();
+            if (catSel) catSel.innerHTML = '<option value="">Semua Kategori</option>' + cats.map(([id, name]) => '<option value="' + id + '">' + name + '</option>').join('');
+            updateRowBrandFilter(row);
             updateRowSeriesFilter(row);
             filterRowProductOptions(row);
             attachProductOptionHandlers(row);
@@ -446,8 +518,10 @@
                     loadSerialsForRow(row);
                 };
             });
+            const categoryEl = row.querySelector('.category-filter');
             const brandEl = row.querySelector('.brand-filter');
             const seriesEl = row.querySelector('.series-filter');
+            if (categoryEl) categoryEl.onchange = () => { updateRowBrandFilter(row); updateRowSeriesFilter(row); filterRowProductOptions(row); };
             if (brandEl) brandEl.onchange = () => { updateRowSeriesFilter(row); filterRowProductOptions(row); };
             if (seriesEl) seriesEl.onchange = () => filterRowProductOptions(row);
         }
@@ -787,9 +861,15 @@
 
         function toggleRemoveButtons() {
             const items = document.querySelectorAll('.sale-item');
-            items.forEach((item, i) => {
+            items.forEach((item) => {
                 const btn = item.querySelector('.remove-item');
-                if (btn) btn.style.display = items.length > 1 ? 'inline-block' : 'none';
+                if (btn) btn.style.display = items.length > 1 ? 'inline-flex' : 'none';
+            });
+        }
+        function renumberItems() {
+            document.querySelectorAll('.sale-item').forEach((item, i) => {
+                const numEl = item.querySelector('.item-number');
+                if (numEl) numEl.textContent = i + 1;
             });
         }
         toggleRemoveButtons();

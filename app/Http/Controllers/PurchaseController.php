@@ -16,6 +16,7 @@ use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use App\Services\PurchaseService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -83,12 +84,18 @@ class PurchaseController extends Controller
             });
         }
 
+        $totalUnpaid = (float) (clone $query)->reorder()
+            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->where('total', '>', 0)
+            ->whereColumn('total_paid', '<', 'total')
+            ->sum(DB::raw('total - total_paid'));
+
         $purchases = $query->paginate(20)->withQueryString();
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $distributors = Distributor::orderBy('name')->get(['id', 'name']);
 
-        return view('purchases.index', compact('purchases', 'warehouses', 'branches', 'distributors', 'canFilterLocation', 'filterLocked', 'locationLabel'));
+        return view('purchases.index', compact('purchases', 'warehouses', 'branches', 'distributors', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalUnpaid'));
     }
 
     public function create(Request $request): View
@@ -149,7 +156,7 @@ class PurchaseController extends Controller
                 ->forLocation($branchId, $warehouseId)
                 ->orderBy('jenis_pembayaran')
                 ->orderBy('nama_bank')
-                ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+                ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         }
 
         $categories = Category::orderBy('name')->get(['id', 'name']);
@@ -400,7 +407,7 @@ class PurchaseController extends Controller
             ->forLocation($branchId, $warehouseId)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening'])
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
             ->map(fn ($pm) => ['id' => $pm->id, 'label' => $pm->display_label])
             ->values();
 

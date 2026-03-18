@@ -62,6 +62,9 @@ class RentalController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('pickup_date', '<=', $request->date_to);
         }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
         if ($request->filled('return_status')) {
             $query->where('return_status', $request->return_status);
         }
@@ -98,7 +101,7 @@ class RentalController extends Controller
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'no_rekening']);
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('rental_payments')
             ->join('rentals', 'rental_payments.rental_id', '=', 'rentals.id')
             ->when($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
@@ -205,6 +208,7 @@ class RentalController extends Controller
         $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod']);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($rental->branch_id, $rental->warehouse_id)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -233,6 +237,7 @@ class RentalController extends Controller
             ->get(['id', 'name', 'phone']);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->forLocation($rental->branch_id, $rental->warehouse_id)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')

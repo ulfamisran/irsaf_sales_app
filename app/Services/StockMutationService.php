@@ -38,7 +38,8 @@ class StockMutationService
         ?int $userId = null,
         ?array $serialNumbers = null,
         float $biayaDistribusiPerUnit = 0,
-        array $distributionPayments = []
+        array $distributionPayments = [],
+        ?string $invoiceNumber = null
     ): StockMutation {
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
 
@@ -54,7 +55,8 @@ class StockMutationService
                 $notes,
                 $userId,
                 $biayaDistribusiPerUnit,
-                $distributionPayments
+                $distributionPayments,
+                $invoiceNumber
             );
         }
 
@@ -83,7 +85,8 @@ class StockMutationService
             $mutationDate,
             $notes,
             $userId,
-            $serialNumbers
+            $serialNumbers,
+            $invoiceNumber
         ) {
             // If this product/location already uses serial-numbered units, force serial mutation.
             $hasUnitsAtFrom = ProductUnit::where('product_id', $product->id)
@@ -122,7 +125,7 @@ class StockMutationService
             $toStock->increment('quantity', $quantity);
 
             return StockMutation::create([
-                'invoice_number' => $this->generateDistributionInvoiceNumber(),
+                'invoice_number' => $invoiceNumber ?? $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
                 'from_location_id' => $fromLocationId,
@@ -453,7 +456,8 @@ class StockMutationService
         ?string $notes = null,
         ?int $userId = null,
         float $biayaDistribusiPerUnit = 0,
-        array $distributionPayments = []
+        array $distributionPayments = [],
+        ?string $invoiceNumber = null
     ): StockMutation {
         if ($fromLocationType === $toLocationType && $fromLocationId === $toLocationId) {
             throw new InvalidArgumentException(__('Source and destination cannot be the same.'));
@@ -477,7 +481,8 @@ class StockMutationService
             $notes,
             $userId,
             $biayaDistribusiPerUnit,
-            $distributionPayments
+            $distributionPayments,
+            $invoiceNumber
         ) {
             $units = ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $fromLocationType)
@@ -514,7 +519,7 @@ class StockMutationService
             }
 
             $stockMutation = StockMutation::create([
-                'invoice_number' => $this->generateDistributionInvoiceNumber(),
+                'invoice_number' => $invoiceNumber ?? $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
                 'from_location_id' => $fromLocationId,
@@ -732,7 +737,7 @@ class StockMutationService
         return $clean;
     }
 
-    private function generateDistributionInvoiceNumber(): string
+    public function generateDistributionInvoiceNumber(): string
     {
         $prefix = 'DIST-' . date('Ymd') . '-';
         $last = StockMutation::where('invoice_number', 'like', $prefix . '%')

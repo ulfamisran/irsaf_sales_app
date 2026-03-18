@@ -201,7 +201,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penjualan.') }}</td>
+                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penjualan.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
