@@ -165,6 +165,16 @@
                                     </svg>
                                     {{ __('Detail') }}
                                 </a>
+                                @if (auth()->user()?->isSuperAdminOrAdminPusat())
+                                    <div class="mt-2 flex items-center justify-center gap-2">
+                                        <x-icon-btn-edit :href="route('cash-flows.out.external.edit', $exp)" :label="__('Edit')" />
+                                        <form method="POST" action="{{ route('cash-flows.out.external.destroy', $exp) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <x-icon-btn-delete :label="__('Hapus')" />
+                                        </form>
+                                    </div>
+                                @endif
                             </td>
                         </tr>
                     @empty

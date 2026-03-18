@@ -307,6 +307,328 @@ class CashFlowController extends Controller
         ));
     }
 
+    public function editOut(Request $request, CashFlow $cashFlow): View
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if ($externalExpenseCategoryId && (int) $cashFlow->expense_category_id === $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
+        if ($reversalCategoryId && (int) $cashFlow->expense_category_id === (int) $reversalCategoryId) {
+            abort(404);
+        }
+
+        $cashFlow->load(['branch', 'warehouse', 'expenseCategory', 'paymentMethod', 'user']);
+
+        $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
+        $locationId = $cashFlow->warehouse_id ? (int) $cashFlow->warehouse_id : (int) $cashFlow->branch_id;
+        $pmBranchId = $locationType === 'branch' ? $locationId : null;
+        $pmWarehouseId = $locationType === 'warehouse' ? $locationId : null;
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get();
+
+        $locationLabel = $cashFlow->warehouse_id
+            ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
+            : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
+
+        return view('cash-flows.out-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+    }
+
+    public function updateOut(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if ($externalExpenseCategoryId && (int) $cashFlow->expense_category_id === $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
+        if ($reversalCategoryId && (int) $cashFlow->expense_category_id === (int) $reversalCategoryId) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'transaction_date' => ['required', 'date'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'description' => ['required', 'string', 'max:255'],
+            'payment_method_id' => ['required', 'exists:payment_methods,id'],
+        ]);
+
+        if (! $cashFlow->payment_method_id) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Metode pembayaran tidak tersedia untuk transaksi ini.'),
+            ]);
+        }
+
+        $newAmount = (float) $validated['amount'];
+        $oldAmount = (float) $cashFlow->amount;
+        $oldPmId = (int) $cashFlow->payment_method_id;
+        $newPmId = (int) $validated['payment_method_id'];
+
+        $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
+        $locationId = $cashFlow->warehouse_id ? (int) $cashFlow->warehouse_id : (int) $cashFlow->branch_id;
+        $pmBranchId = $locationType === 'branch' ? $locationId : null;
+        $pmWarehouseId = $locationType === 'warehouse' ? $locationId : null;
+
+        $paymentMethodAllowed = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->whereKey($newPmId)
+            ->exists();
+        if (! $paymentMethodAllowed) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Sumber dana tidak sesuai lokasi transaksi.'),
+            ]);
+        }
+
+        // Overdraft protection for OUT:
+        // - If PM doesn't change: newAmount <= saldoCurrent + oldAmount
+        // - If PM changes: newAmount <= saldoCurrentOfNewPM (old cashflow not included there)
+        $saldoCurrentOldPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $oldPmId);
+        if ($newPmId === $oldPmId) {
+            $maxNew = $saldoCurrentOldPm + $oldAmount;
+            if ($newAmount > $maxNew) {
+                return redirect()->back()->withInput()->withErrors([
+                    'amount' => __('Total pengeluaran melebihi saldo tersedia (saldo: :saldo).', [
+                        'saldo' => number_format($maxNew, 0, ',', '.'),
+                    ]),
+                ]);
+            }
+        } else {
+            $saldoCurrentNewPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $newPmId);
+            if ($newAmount > $saldoCurrentNewPm) {
+                return redirect()->back()->withInput()->withErrors([
+                    'amount' => __('Total pengeluaran melebihi saldo tersedia untuk sumber dana baru (saldo: :saldo).', [
+                        'saldo' => number_format($saldoCurrentNewPm, 0, ',', '.'),
+                    ]),
+                ]);
+            }
+        }
+
+        $cashFlow->transaction_date = $validated['transaction_date'];
+        $cashFlow->amount = $newAmount;
+        $cashFlow->description = $validated['description'];
+        $cashFlow->payment_method_id = $newPmId;
+        $cashFlow->save();
+
+        return redirect()->route('cash-flows.out.index')->with('success', __('Pengeluaran berhasil diperbarui.'));
+    }
+
+    public function destroyOut(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if ($externalExpenseCategoryId && (int) $cashFlow->expense_category_id === $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $cashFlow->delete();
+
+        return redirect()->route('cash-flows.out.index')->with('success', __('Pengeluaran berhasil dihapus.'));
+    }
+
+    public function editOutExternal(Request $request, CashFlow $cashFlow): View
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if (! $externalExpenseCategoryId || (int) $cashFlow->expense_category_id !== $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $cashFlow->load(['branch', 'warehouse', 'expenseCategory', 'paymentMethod', 'user']);
+
+        $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
+        $locationId = $cashFlow->warehouse_id ? (int) $cashFlow->warehouse_id : (int) $cashFlow->branch_id;
+        $pmBranchId = $locationType === 'branch' ? $locationId : null;
+        $pmWarehouseId = $locationType === 'warehouse' ? $locationId : null;
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get();
+
+        $locationLabel = $cashFlow->warehouse_id
+            ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
+            : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
+
+        return view('cash-flows.out-external-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+    }
+
+    public function updateOutExternal(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if (! $externalExpenseCategoryId || (int) $cashFlow->expense_category_id !== $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'transaction_date' => ['required', 'date'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'description' => ['required', 'string', 'max:255'],
+            'payment_method_id' => ['required', 'exists:payment_methods,id'],
+        ]);
+
+        if (! $cashFlow->payment_method_id) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Metode pembayaran tidak tersedia untuk transaksi ini.'),
+            ]);
+        }
+
+        $newAmount = (float) $validated['amount'];
+        $oldAmount = (float) $cashFlow->amount;
+        $oldPmId = (int) $cashFlow->payment_method_id;
+        $newPmId = (int) $validated['payment_method_id'];
+
+        $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
+        $locationId = $cashFlow->warehouse_id ? (int) $cashFlow->warehouse_id : (int) $cashFlow->branch_id;
+        $pmBranchId = $locationType === 'branch' ? $locationId : null;
+        $pmWarehouseId = $locationType === 'warehouse' ? $locationId : null;
+
+        $paymentMethodAllowed = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->whereKey($newPmId)
+            ->exists();
+        if (! $paymentMethodAllowed) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Sumber dana tidak sesuai lokasi transaksi.'),
+            ]);
+        }
+
+        $saldoCurrentOldPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $oldPmId);
+        if ($newPmId === $oldPmId) {
+            $maxNew = $saldoCurrentOldPm + $oldAmount;
+            if ($newAmount > $maxNew) {
+                return redirect()->back()->withInput()->withErrors([
+                    'amount' => __('Total pengeluaran melebihi saldo tersedia (saldo: :saldo).', [
+                        'saldo' => number_format($maxNew, 0, ',', '.'),
+                    ]),
+                ]);
+            }
+        } else {
+            $saldoCurrentNewPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $newPmId);
+            if ($newAmount > $saldoCurrentNewPm) {
+                return redirect()->back()->withInput()->withErrors([
+                    'amount' => __('Total pengeluaran melebihi saldo tersedia untuk sumber dana baru (saldo: :saldo).', [
+                        'saldo' => number_format($saldoCurrentNewPm, 0, ',', '.'),
+                    ]),
+                ]);
+            }
+        }
+
+        $cashFlow->transaction_date = $validated['transaction_date'];
+        $cashFlow->amount = $newAmount;
+        $cashFlow->description = $validated['description'];
+        $cashFlow->payment_method_id = $newPmId;
+        $cashFlow->save();
+
+        return redirect()->route('cash-flows.out.external.index')->with('success', __('Pengeluaran dana eksternal berhasil diperbarui.'));
+    }
+
+    public function destroyOutExternal(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_OUT) {
+            abort(404);
+        }
+
+        $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
+        if (! $externalExpenseCategoryId || (int) $cashFlow->expense_category_id !== $externalExpenseCategoryId) {
+            abort(404);
+        }
+
+        $cashFlow->delete();
+
+        return redirect()->route('cash-flows.out.external.index')->with('success', __('Pengeluaran dana eksternal berhasil dihapus.'));
+    }
+
+    public function editIn(Request $request, CashFlow $cashFlow): View
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_IN || $cashFlow->reference_type !== CashFlow::REFERENCE_OTHER) {
+            abort(404);
+        }
+
+        $cashFlow->load(['branch', 'warehouse', 'incomeCategory', 'paymentMethod', 'user']);
+
+        $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
+        $locationId = $cashFlow->warehouse_id ? (int) $cashFlow->warehouse_id : (int) $cashFlow->branch_id;
+        $pmBranchId = $locationType === 'branch' ? $locationId : null;
+        $pmWarehouseId = $locationType === 'warehouse' ? $locationId : null;
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderByRaw("CASE WHEN LOWER(jenis_pembayaran) = 'tunai' THEN 0 ELSE 1 END")
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get();
+
+        $locationLabel = $cashFlow->warehouse_id
+            ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
+            : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
+
+        return view('cash-flows.in-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+    }
+
+    public function updateIn(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_IN || $cashFlow->reference_type !== CashFlow::REFERENCE_OTHER) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'transaction_date' => ['required', 'date'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'payment_method_id' => ['required', 'exists:payment_methods,id'],
+        ]);
+
+        $cashFlow->transaction_date = $validated['transaction_date'];
+        $cashFlow->amount = (float) $validated['amount'];
+        $cashFlow->description = $validated['description'] ?? null;
+        $cashFlow->payment_method_id = (int) $validated['payment_method_id'];
+        $cashFlow->save();
+
+        return redirect()->route('cash-flows.in.index')->with('success', __('Pemasukan lainnya berhasil diperbarui.'));
+    }
+
+    public function destroyIn(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_IN || $cashFlow->reference_type !== CashFlow::REFERENCE_OTHER) {
+            abort(404);
+        }
+
+        $cashFlow->delete();
+
+        return redirect()->route('cash-flows.in.index')->with('success', __('Pemasukan lainnya berhasil dihapus.'));
+    }
+
     public function showOut(Request $request, CashFlow $cashFlow): View|RedirectResponse
     {
         if ($cashFlow->type !== CashFlow::TYPE_OUT) {

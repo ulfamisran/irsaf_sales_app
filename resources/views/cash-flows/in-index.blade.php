@@ -144,6 +144,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                     </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
@@ -163,10 +164,22 @@
                                 +{{ number_format($inc->amount, 0, ',', '.') }}
                             </td>
                             <td class="px-4 py-3">{{ $inc->user?->name }}</td>
+                            <td class="px-4 py-3 text-center">
+                                @if (auth()->user()?->isSuperAdminOrAdminPusat())
+                                    <div class="flex items-center justify-center gap-2">
+                                        <x-icon-btn-edit :href="route('cash-flows.in.edit', $inc)" :label="__('Edit')" />
+                                        <form method="POST" action="{{ route('cash-flows.in.destroy', $inc) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <x-icon-btn-delete :label="__('Hapus')" />
+                                        </form>
+                                    </div>
+                                @endif
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
+                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>
