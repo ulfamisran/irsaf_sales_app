@@ -327,7 +327,7 @@
                                 <div style="font-size:10px;margin-top:4px;">Kerusakan: {{ $service->damage_description }}</div>
                             @endif
                         </td>
-                        <td class="num">{{ number_format($grandTotal, 0, ',', '.') }}</td>
+                        <td class="num">Rp {{ number_format($grandTotal, 0, ',', '.') }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -341,7 +341,7 @@
                     <table>
                         <tr>
                             <td class="lbl"><strong>Total</strong></td>
-                            <td class="val"><strong>{{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
+                            <td class="val"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
                         </tr>
                     </table>
                 </div>
@@ -369,7 +369,7 @@
                                 <td class="center">{{ $idx + 1 }}</td>
                                 <td class="center">{{ $payDate->translatedFormat('d F Y') }}</td>
                                 <td>{{ $method }}</td>
-                                <td class="num">{{ number_format((float) $p->amount, 0, ',', '.') }}</td>
+                                <td class="num">Rp {{ number_format((float) $p->amount, 0, ',', '.') }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -381,8 +381,8 @@
 
                 <div class="inv-pay-summary">
                     <div class="box">
-                        <div class="row"><span>Total Bayar</span><strong>{{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
-                        <div class="row"><span>Kembali</span><strong>{{ number_format($change, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Total Bayar</span><strong>Rp {{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Kembali</span><strong>Rp {{ number_format($change, 0, ',', '.') }}</strong></div>
                     </div>
                 </div>
             </div>

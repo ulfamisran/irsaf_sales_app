@@ -176,8 +176,8 @@
                                 <div style="font-size:10px;color:var(--muted)">Serial: {{ $item->serial_number }}</div>
                             </td>
                             <td class="center">{{ $item->days }}</td>
-                            <td class="num">{{ number_format($item->rental_price, 0, ',', '.') }}</td>
-                            <td class="num">{{ number_format($item->total, 0, ',', '.') }}</td>
+                            <td class="num">Rp {{ number_format($item->rental_price, 0, ',', '.') }}</td>
+                            <td class="num">Rp {{ number_format($item->total, 0, ',', '.') }}</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -192,19 +192,19 @@
                     <table>
                         <tr>
                             <td class="lbl">Subtotal</td>
-                            <td class="val">{{ number_format($rental->subtotal, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($rental->subtotal, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl">Pajak</td>
-                            <td class="val">{{ number_format($rental->tax_amount, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($rental->tax_amount, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl">Denda</td>
-                            <td class="val">{{ number_format($rental->penalty_amount, 0, ',', '.') }}</td>
+                            <td class="val">Rp {{ number_format($rental->penalty_amount, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <td class="lbl"><strong>Total</strong></td>
-                            <td class="val"><strong>{{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
+                            <td class="val"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
                         </tr>
                     </table>
                 </div>
@@ -232,7 +232,7 @@
                                 <td class="center">{{ $idx + 1 }}</td>
                                 <td class="center">{{ $payDate->translatedFormat('d F Y') }}</td>
                                 <td>{{ $method }}</td>
-                                <td class="num">{{ number_format((float) $p->amount, 0, ',', '.') }}</td>
+                                <td class="num">Rp {{ number_format((float) $p->amount, 0, ',', '.') }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -244,8 +244,8 @@
 
                 <div class="inv-pay-summary">
                     <div class="box">
-                        <div class="row"><span>Total Bayar</span><strong>{{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
-                        <div class="row"><span>Kembali</span><strong>{{ number_format($change, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Total Bayar</span><strong>Rp {{ number_format($totalPaid, 0, ',', '.') }}</strong></div>
+                        <div class="row"><span>Kembali</span><strong>Rp {{ number_format($change, 0, ',', '.') }}</strong></div>
                     </div>
                 </div>
             </div>
