@@ -395,29 +395,7 @@ class CashFlowController extends Controller
             ]);
         }
 
-        // Overdraft protection for OUT:
-        // - If PM doesn't change: newAmount <= saldoCurrent + oldAmount
-        // - If PM changes: newAmount <= saldoCurrentOfNewPM (old cashflow not included there)
-        $saldoCurrentOldPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $oldPmId);
-        if ($newPmId === $oldPmId) {
-            $maxNew = $saldoCurrentOldPm + $oldAmount;
-            if ($newAmount > $maxNew) {
-                return redirect()->back()->withInput()->withErrors([
-                    'amount' => __('Total pengeluaran melebihi saldo tersedia (saldo: :saldo).', [
-                        'saldo' => number_format($maxNew, 0, ',', '.'),
-                    ]),
-                ]);
-            }
-        } else {
-            $saldoCurrentNewPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $newPmId);
-            if ($newAmount > $saldoCurrentNewPm) {
-                return redirect()->back()->withInput()->withErrors([
-                    'amount' => __('Total pengeluaran melebihi saldo tersedia untuk sumber dana baru (saldo: :saldo).', [
-                        'saldo' => number_format($saldoCurrentNewPm, 0, ',', '.'),
-                    ]),
-                ]);
-            }
-        }
+        // Catatan: validasi saldo sumber kas (overdraft protection) untuk transaksi OUT dihilangkan.
 
         $cashFlow->transaction_date = $validated['transaction_date'];
         $cashFlow->amount = $newAmount;
@@ -522,26 +500,7 @@ class CashFlowController extends Controller
             ]);
         }
 
-        $saldoCurrentOldPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $oldPmId);
-        if ($newPmId === $oldPmId) {
-            $maxNew = $saldoCurrentOldPm + $oldAmount;
-            if ($newAmount > $maxNew) {
-                return redirect()->back()->withInput()->withErrors([
-                    'amount' => __('Total pengeluaran melebihi saldo tersedia (saldo: :saldo).', [
-                        'saldo' => number_format($maxNew, 0, ',', '.'),
-                    ]),
-                ]);
-            }
-        } else {
-            $saldoCurrentNewPm = (new KasBalanceService)->getSaldoForLocation($locationType, $locationId, $newPmId);
-            if ($newAmount > $saldoCurrentNewPm) {
-                return redirect()->back()->withInput()->withErrors([
-                    'amount' => __('Total pengeluaran melebihi saldo tersedia untuk sumber dana baru (saldo: :saldo).', [
-                        'saldo' => number_format($saldoCurrentNewPm, 0, ',', '.'),
-                    ]),
-                ]);
-            }
-        }
+        // Catatan: validasi saldo sumber kas (overdraft protection) dihilangkan.
 
         $cashFlow->transaction_date = $validated['transaction_date'];
         $cashFlow->amount = $newAmount;
@@ -996,20 +955,7 @@ class CashFlowController extends Controller
         $items = $validated['items'];
         $totalAmount = collect($items)->sum(fn ($item) => (float) $item['amount']);
 
-        $saldo = (new KasBalanceService)->getSaldoForLocation(
-            $warehouseId ? 'warehouse' : 'branch',
-            $warehouseId ?: $branchId,
-            (int) $validated['payment_method_id']
-        );
-
-        if ($totalAmount > $saldo) {
-            return redirect()->back()->withInput()->withErrors([
-                'items' => __('Total pengeluaran (Rp :total) melebihi saldo tersedia (Rp :saldo).', [
-                    'total' => number_format($totalAmount, 0, ',', '.'),
-                    'saldo' => number_format($saldo, 0, ',', '.'),
-                ]),
-            ]);
-        }
+        // Catatan: validasi saldo sumber kas (overdraft protection) dihilangkan.
 
         DB::beginTransaction();
         try {
@@ -1062,20 +1008,7 @@ class CashFlowController extends Controller
         $items = $validated['items'];
         $totalAmount = collect($items)->sum(fn ($item) => (float) $item['amount']);
 
-        $saldo = (new KasBalanceService)->getSaldoForLocation(
-            $warehouseId ? 'warehouse' : 'branch',
-            $warehouseId ?: $branchId,
-            (int) $validated['payment_method_id']
-        );
-
-        if ($totalAmount > $saldo) {
-            return redirect()->back()->withInput()->withErrors([
-                'items' => __('Total pengeluaran (Rp :total) melebihi saldo tersedia (Rp :saldo).', [
-                    'total' => number_format($totalAmount, 0, ',', '.'),
-                    'saldo' => number_format($saldo, 0, ',', '.'),
-                ]),
-            ]);
-        }
+        // Catatan: validasi saldo sumber kas (overdraft protection) dihilangkan.
 
         DB::beginTransaction();
         try {

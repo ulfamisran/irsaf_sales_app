@@ -228,7 +228,11 @@
 
     @push('scripts')
     @php
-        $paymentMethodsJson = $paymentMethods->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values();
+        $paymentMethodsJson = $paymentMethods->map(fn ($m) => [
+            'id' => $m->id,
+            'label' => $m->display_label,
+            'saldo' => (float) ($saldoByPaymentMethod[$m->id] ?? 0),
+        ])->values();
         $productsJson = $products->map(fn ($p) => ['id' => $p->id, 'sku' => $p->sku ?? '', 'brand' => $p->brand ?? '', 'series' => $p->series ?? '', 'purchase_price' => (float) ($p->purchase_price ?? 0)])->values();
     @endphp
     <script>
@@ -304,12 +308,30 @@
         }
         document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
 
+        function paymentMethodOptionLabel(method) {
+            const saldo = Number(method?.saldo || 0);
+            return `${method.label} (Saldo: Rp ${saldo.toLocaleString('id-ID')})`;
+        }
+
+        function paymentMethodOptionsHtml(selectedId = '') {
+            return '<option value="">Pilih Kas</option>' + paymentMethods.map(m => {
+                const selected = String(selectedId) === String(m.id) ? 'selected' : '';
+                return `<option value="${m.id}" ${selected}>${paymentMethodOptionLabel(m)}</option>`;
+            }).join('');
+        }
+
+        function refreshPaymentMethodSelects() {
+            document.querySelectorAll('#payment-rows select[name*="[payment_method_id]"]').forEach(sel => {
+                const oldVal = sel.value;
+                sel.innerHTML = paymentMethodOptionsHtml(oldVal);
+            });
+        }
+
         function addPaymentRow(idx, pref = {}) {
             const html = `<div class="payment-row flex flex-wrap gap-2 items-end">
                 <div class="flex-1 min-w-[200px]">
                     <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                        <option value="">Pilih Kas</option>
-                        ${paymentMethods.map(m => `<option value="${m.id}" ${pref.payment_method_id == m.id ? 'selected' : ''}>${m.label}</option>`).join('')}
+                        ${paymentMethodOptionsHtml(pref.payment_method_id || '')}
                     </select>
                 </div>
                 <div class="w-40">
@@ -472,6 +494,10 @@
                 const sel = document.getElementById('distributor_id');
                 sel.disabled = false;
                 sel.innerHTML = '<option value="">Pilih Distributor</option>' + (data.distributors || []).map(d => '<option value="' + d.id + '">' + (d.name || '') + '</option>').join('');
+                if (Array.isArray(data.payment_methods)) {
+                    paymentMethods = data.payment_methods;
+                    refreshPaymentMethodSelects();
+                }
                 if (data.products) {
                     products = data.products;
                     repopulateProductDropdowns();

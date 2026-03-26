@@ -148,15 +148,17 @@ class PurchaseController extends Controller
         }
 
         $paymentMethods = collect();
+        $saldoByPaymentMethod = [];
         if ($defaultLocationId) {
-            $branchId = $isBranchUser ? $defaultLocationId : null;
-            $warehouseId = $isWarehouseUser ? $defaultLocationId : null;
+            $branchId = $defaultLocationType === 'branch' ? $defaultLocationId : null;
+            $warehouseId = $defaultLocationType === 'warehouse' ? $defaultLocationId : null;
             $paymentMethods = PaymentMethod::query()
                 ->where('is_active', true)
                 ->forLocation($branchId, $warehouseId)
                 ->orderBy('jenis_pembayaran')
                 ->orderBy('nama_bank')
                 ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+            $saldoByPaymentMethod = (new KasBalanceService)->getSaldoPerPaymentMethodForLocation($defaultLocationType, $defaultLocationId);
         }
 
         $categories = Category::orderBy('name')->get(['id', 'name']);
@@ -168,6 +170,7 @@ class PurchaseController extends Controller
             'categories',
             'distributors',
             'paymentMethods',
+            'saldoByPaymentMethod',
             'isBranchUser',
             'isWarehouseUser',
             'defaultLocationType',
@@ -191,23 +194,8 @@ class PurchaseController extends Controller
 
         $payments = array_filter($request->input('payments', []), fn ($p) => (int) ($p['payment_method_id'] ?? 0) > 0 && (float) ($p['amount'] ?? 0) > 0);
 
-        if (! empty($payments)) {
-            $kasService = new KasBalanceService;
-            foreach ($payments as $p) {
-                $pmId = (int) $p['payment_method_id'];
-                $amount = (float) $p['amount'];
-                $saldo = $kasService->getSaldoForLocation(
-                    $locationType === 'warehouse' ? 'warehouse' : 'branch',
-                    $locationId,
-                    $pmId
-                );
-                if ($amount > $saldo) {
-                    return back()->withInput()->with('error', __('Saldo tidak mencukupi untuk pembayaran. Saldo tersedia: Rp :saldo', [
-                        'saldo' => number_format($saldo, 0, ',', '.'),
-                    ]));
-                }
-            }
-        }
+        // Catatan: validasi saldo sumber dana sengaja dihilangkan.
+        // Sistem tetap mencatat transaksi, meski saldo sumber kas bisa menjadi kurang.
 
         try {
             $purchase = $this->purchaseService->createPurchase(
@@ -302,12 +290,6 @@ class PurchaseController extends Controller
             $amount = (float) $p['amount'];
             $totalPayment += $amount;
             $amountPerPm[$pmId] = ($amountPerPm[$pmId] ?? 0) + $amount;
-            $saldo = $kasService->getSaldoForLocation($locationType, $locationId, $pmId);
-            if ($amountPerPm[$pmId] > $saldo) {
-                return back()->withInput()->with('error', __('Saldo tidak mencukupi untuk sumber dana yang dipilih. Saldo tersedia: Rp :saldo', [
-                    'saldo' => number_format($saldo, 0, ',', '.'),
-                ]));
-            }
         }
 
         if ($totalPayment > $remaining + 0.02) {
@@ -402,13 +384,19 @@ class PurchaseController extends Controller
         $branchId = $locationType === 'branch' ? $locationId : null;
         $warehouseId = $locationType === 'warehouse' ? $locationId : null;
 
+        $saldoByPaymentMethod = (new KasBalanceService)->getSaldoPerPaymentMethodForLocation($locationType, $locationId);
+
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($branchId, $warehouseId)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
-            ->map(fn ($pm) => ['id' => $pm->id, 'label' => $pm->display_label])
+            ->map(fn ($pm) => [
+                'id' => $pm->id,
+                'label' => $pm->display_label,
+                'saldo' => (float) ($saldoByPaymentMethod[$pm->id] ?? 0),
+            ])
             ->values();
 
         $query = Distributor::orderBy('name');

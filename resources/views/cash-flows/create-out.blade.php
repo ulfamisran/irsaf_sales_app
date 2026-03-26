@@ -114,11 +114,6 @@
                         </div>
                     </div>
 
-                    {{-- Saldo warning --}}
-                    <div x-show="saldo !== null && grandTotal > saldo" class="rounded-md bg-red-50 border border-red-200 p-3 text-red-800 text-sm">
-                        {{ __('Total pengeluaran melebihi saldo yang tersedia!') }}
-                    </div>
-
                     <div class="flex gap-3 pt-2">
                         <button type="submit" class="inline-flex items-center px-6 py-2.5 bg-indigo-600 border border-transparent rounded-lg font-semibold text-sm text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition" :disabled="!canSubmit">
                             {{ __('Simpan') }}
@@ -166,7 +161,6 @@
                     if (this.items.length === 0) return false;
                     const allFilled = this.items.every(i => i.expense_category_id && i.name.trim() && parseFloat(i.amount) > 0);
                     if (!allFilled) return false;
-                    if (this.saldo !== null && this.grandTotal > this.saldo) return false;
                     return true;
                 },
                 formatRupiah(num) {

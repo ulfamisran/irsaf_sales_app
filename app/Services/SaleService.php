@@ -338,7 +338,7 @@ class SaleService
             $totalPaid = $sum + $tradeInTotal;
             $total = round((float) $sale->total, 2);
 
-            if ($totalPaid < 0.01) {
+            if ($total > 0 && $totalPaid < 0.01) {
                 throw new InvalidArgumentException(__('Total pembayaran minimal Rp 0,01. Isi metode pembayaran tunai dan/atau tukar tambah.'));
             }
             if ($totalPaid > $total + 0.02) {
