@@ -24,7 +24,7 @@
             --print-font: "Courier New", "Liberation Mono", "Lucida Console", monospace;
         }
         /* Continuous paper landscape: 11.5in x 9.5in */
-        @page { size: 11.5in 9.5in; margin: 0.2in; }
+        @page { size: 11.5in 9.5in; margin: 0.12in; }
         body { color: var(--ink); }
         .inv-page{
             width: 100%;
@@ -45,7 +45,7 @@
         }
         @media print{
             .inv-card{ border: none; border-radius: 0; padding: 0; }
-            :root{ --font-scale: 1.1; }
+            :root{ --font-scale: 1.22; }
             body{
                 width: 11.1in;
                 margin: 0 auto !important;
@@ -54,9 +54,15 @@
                 font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important;
             }
             .inv-page, .inv-page *{ font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important; }
+            .inv-card{
+                min-height: 9.1in;
+                display: flex;
+                flex-direction: column;
+            }
             .inv-table th, .inv-table td{ padding: 2px 2px; }
             .inv-totals td{ padding: 2px 2px; }
             .inv-pay-summary .row{ padding: 1px 0; }
+            .inv-sign{ margin-top: auto; }
         }
         .inv-top{
             display:flex;
