@@ -45,7 +45,7 @@
         }
         @media print{
             .inv-card{ border: none; border-radius: 0; padding: 0; }
-            :root{ --font-scale: 1.22; }
+            :root{ --font-scale: 1.34; }
             body{
                 width: 11.1in;
                 margin: 0 auto !important;
@@ -350,7 +350,6 @@
                         <th>Deskripsi</th>
                         <th style="width:55px;">Qty</th>
                         <th style="width:105px;">Harga Satuan</th>
-                        <th style="width:105px;">Harga Total</th>
                         <th style="width:75px;">Diskon</th>
                         <th style="width:105px;">Total</th>
                     </tr>
@@ -378,13 +377,12 @@
                             </td>
                             <td class="num">{{ number_format((float) $d->quantity, 2, ',', '.') }}</td>
                             <td class="num">Rp {{ number_format((float) $d->price, 0, ',', '.') }}</td>
-                            <td class="num">Rp {{ number_format($lineTotal, 0, ',', '.') }}</td>
                             <td class="num">Rp 0</td>
                             <td class="num">Rp {{ number_format($lineTotal, 0, ',', '.') }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="center">-</td>
+                            <td colspan="6" class="center">-</td>
                         </tr>
                     @endforelse
                 </tbody>
