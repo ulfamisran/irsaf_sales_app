@@ -274,6 +274,12 @@ Route::middleware('auth')->group(function () {
     Route::get('sales/available-products', [SaleController::class, 'availableProducts'])
         ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
         ->name('sales.available-products');
+    Route::get('sales/export', [SaleController::class, 'export'])
+        ->middleware('role:admin_cabang,kasir')
+        ->name('sales.export');
+    Route::get('sales/export-pdf', [SaleController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,kasir')
+        ->name('sales.export-pdf');
     Route::get('sales/{sale}/invoice', [SaleController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir')
         ->name('sales.invoice');

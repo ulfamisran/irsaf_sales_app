@@ -16,9 +16,12 @@ use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
 use App\Services\SaleService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
@@ -32,101 +35,62 @@ class SaleController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $ctx = $this->buildSalesListQuery($request);
+        $query = $ctx['query'];
+        $summary = $this->computeSalesSummary($request, $user, $query);
 
-        $query = Sale::with(['branch', 'user', 'customer', 'saleDetails', 'payments.paymentMethod'])
-            ->orderByDesc('sale_date')
-            ->orderByDesc('id');
-
-        $canFilterLocation = false;
-        $filterLocked = false;
-        $locationLabel = null;
-
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-                $filterLocked = true;
-                $branch = Branch::find($user->branch_id);
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->whereRaw('1 = 0');
-                $filterLocked = true;
-                $warehouse = Warehouse::find($user->warehouse_id);
-                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
-                abort(403, __('User branch or warehouse not set.'));
-            }
-        } else {
-            $canFilterLocation = true;
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
-            }
-        }
-        if ($request->filled('date_from')) {
-            $query->whereDate('sale_date', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('sale_date', '<=', $request->date_to);
-        }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
-
-        $totalSales = (float) (clone $query)
-            ->where('status', Sale::STATUS_RELEASED)
-            ->sum('total');
-        $totalSalesCash = (float) DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', Sale::STATUS_RELEASED)
-            ->sum('sale_payments.amount');
-        $totalTradeIn = (float) DB::table('sale_trade_ins')
-            ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', Sale::STATUS_RELEASED)
-            ->sum('sale_trade_ins.trade_in_value');
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
-            ? (int) $user->branch_id
-            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->forLocation($pmBranchId, $pmWarehouseId)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('no_rekening')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
-        $paymentMethodTotals = DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('sales.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('sales.branch_id', $request->branch_id))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->where('sales.status', Sale::STATUS_RELEASED)
-            ->selectRaw('sale_payments.payment_method_id, SUM(sale_payments.amount) as total')
-            ->groupBy('sale_payments.payment_method_id')
-            ->pluck('total', 'sale_payments.payment_method_id');
         $sales = $query->paginate(20)->withQueryString();
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
             : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
 
-        $totalSalesCombined = $totalSalesCash + $totalTradeIn;
+        return view('sales.index', [
+            'sales' => $sales,
+            'branches' => $branches,
+            'canFilterLocation' => $ctx['canFilterLocation'],
+            'filterLocked' => $ctx['filterLocked'],
+            'locationLabel' => $ctx['locationLabel'],
+            ...$summary,
+        ]);
+    }
 
-        return view('sales.index', compact('sales', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalSales', 'totalTradeIn', 'totalSalesCash', 'totalSalesCombined', 'paymentMethods', 'paymentMethodTotals'));
+    /**
+     * Export rekap penjualan ke Excel (HTML table, .xls) — query string sama seperti index.
+     */
+    public function export(Request $request): Response
+    {
+        $user = $request->user();
+        $ctx = $this->buildSalesListQuery($request);
+        $exportQuery = $this->salesExportBaseQuery($ctx['query']);
+        $summary = $this->computeSalesSummary($request, $user, $exportQuery);
+        $sales = (clone $exportQuery)->with(['saleDetails.product'])->get();
+        $filterMeta = $this->salesExportFilterMeta($request, $ctx);
+
+        $filename = 'rekap-penjualan-' . now()->format('Ymd-His') . '.xls';
+        $html = view('sales.export', array_merge($summary, compact('sales', 'filterMeta')))->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    /**
+     * Export rekap penjualan ke PDF — query string sama seperti index.
+     */
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+        $ctx = $this->buildSalesListQuery($request);
+        $exportQuery = $this->salesExportBaseQuery($ctx['query']);
+        $summary = $this->computeSalesSummary($request, $user, $exportQuery);
+        $sales = (clone $exportQuery)->with(['saleDetails.product'])->get();
+        $filterMeta = $this->salesExportFilterMeta($request, $ctx);
+
+        $pdf = Pdf::loadView('sales.export-pdf', array_merge($summary, compact('sales', 'filterMeta')))
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('rekap-penjualan-' . now()->format('Ymd-His') . '.pdf');
     }
 
     public function create(): View
@@ -602,6 +566,148 @@ class SaleController extends Controller
         $sale->load(['branch', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
 
         return view('sales.invoice', compact('sale'));
+    }
+
+    /**
+     * @return array{query: Builder, canFilterLocation: bool, filterLocked: bool, locationLabel: string|null}
+     */
+    private function buildSalesListQuery(Request $request): array
+    {
+        $user = $request->user();
+        $query = Sale::with(['branch', 'user', 'customer', 'saleDetails', 'payments.paymentMethod'])
+            ->orderByDesc('sale_date')
+            ->orderByDesc('id');
+
+        $canFilterLocation = false;
+        $filterLocked = false;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->whereRaw('1 = 0');
+                $filterLocked = true;
+                $warehouse = Warehouse::find($user->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        } else {
+            $canFilterLocation = true;
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('sale_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('sale_date', '<=', $request->date_to);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        return compact('query', 'canFilterLocation', 'filterLocked', 'locationLabel');
+    }
+
+    /**
+     * Query untuk unduhan rekap: sama seperti daftar, tanpa penjualan dibatalkan.
+     */
+    private function salesExportBaseQuery(Builder $filteredSalesQuery): Builder
+    {
+        $q = clone $filteredSalesQuery;
+
+        return $q->where('status', '!=', Sale::STATUS_CANCEL);
+    }
+
+    /**
+     * Ringkasan keuangan untuk penjualan released yang memenuhi filter (termasuk pencarian).
+     *
+     * @return array{
+     *   totalSales: float,
+     *   totalSalesCash: float,
+     *   totalTradeIn: float,
+     *   totalSalesCombined: float,
+     *   paymentMethods: \Illuminate\Support\Collection,
+     *   paymentMethodTotals: \Illuminate\Support\Collection
+     * }
+     */
+    private function computeSalesSummary(Request $request, $user, Builder $query): array
+    {
+        $totalSales = (float) (clone $query)
+            ->where('status', Sale::STATUS_RELEASED)
+            ->sum('total');
+
+        $releasedIds = (clone $query)->where('status', Sale::STATUS_RELEASED)->pluck('id');
+
+        $totalSalesCash = $releasedIds->isEmpty()
+            ? 0.0
+            : (float) DB::table('sale_payments')->whereIn('sale_id', $releasedIds)->sum('amount');
+
+        $totalTradeIn = $releasedIds->isEmpty()
+            ? 0.0
+            : (float) DB::table('sale_trade_ins')->whereIn('sale_id', $releasedIds)->sum('trade_in_value');
+
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+            ? (int) $user->branch_id
+            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($pmBranchId, $pmWarehouseId)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('no_rekening')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+
+        $paymentMethodTotals = $releasedIds->isEmpty()
+            ? collect()
+            : DB::table('sale_payments')
+                ->whereIn('sale_id', $releasedIds)
+                ->selectRaw('payment_method_id, SUM(amount) as total')
+                ->groupBy('payment_method_id')
+                ->pluck('total', 'payment_method_id');
+
+        $totalSalesCombined = $totalSalesCash + $totalTradeIn;
+
+        return compact('totalSales', 'totalSalesCash', 'totalTradeIn', 'totalSalesCombined', 'paymentMethods', 'paymentMethodTotals');
+    }
+
+    /**
+     * @param  array{canFilterLocation: bool, filterLocked: bool, locationLabel: string|null}  $ctx
+     * @return array{branchLine: string, dateFrom: string, dateTo: string, search: string}
+     */
+    private function salesExportFilterMeta(Request $request, array $ctx): array
+    {
+        $user = $request->user();
+        $branchLine = __('Semua');
+        if (! empty($ctx['filterLocked']) && $ctx['locationLabel']) {
+            $branchLine = $ctx['locationLabel'];
+        } elseif ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id')) {
+            $b = Branch::find($request->branch_id);
+            $branchLine = $b ? (string) $b->name : (string) $request->branch_id;
+        }
+
+        $dateFrom = $request->filled('date_from') ? (string) $request->date_from : '-';
+        $dateTo = $request->filled('date_to') ? (string) $request->date_to : '-';
+        $search = $request->filled('search') ? trim((string) $request->search) : '-';
+
+        return [
+            'branchLine' => $branchLine,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'search' => $search,
+        ];
     }
 
     private function resolveCustomerId(Request $request): ?int

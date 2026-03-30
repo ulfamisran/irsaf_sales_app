@@ -1,9 +1,17 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Penjualan') }}</x-slot>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-wrap justify-between items-center gap-3">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Penjualan') }}</h2>
-            <x-icon-btn-add :href="route('sales.create')" :label="__('Penjualan Baru')" />
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('sales.export', request()->query()) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                    {{ __('Download Excel') }}
+                </a>
+                <a href="{{ route('sales.export-pdf', request()->query()) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
+                    {{ __('Download PDF') }}
+                </a>
+                <x-icon-btn-add :href="route('sales.create')" :label="__('Penjualan Baru')" />
+            </div>
         </div>
     </x-slot>
 
