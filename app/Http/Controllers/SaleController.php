@@ -446,9 +446,10 @@ class SaleController extends Controller
         ]);
 
         try {
+            $payments = $validated['payments'] ?? [];
             $sale = $this->saleService->releaseSale(
                 $sale,
-                $validated['payments'],
+                is_array($payments) ? $payments : [],
                 $validated['sale_date'],
                 $user->id
             );
