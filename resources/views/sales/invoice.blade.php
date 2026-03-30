@@ -24,11 +24,11 @@
             --print-font: "Courier New", "Liberation Mono", "Lucida Console", monospace;
         }
         /* Continuous paper landscape: 11.5in x 9.5in */
-        @page { size: 11.5in 9.5in; margin: 0.12in; }
+        @page { size: 11.5in 9.5in; margin: 0.03in; }
         body { color: var(--ink); }
         .inv-page{
             width: 100%;
-            max-width: 11.1in;
+            max-width: 11.5in;
             margin: 0 auto;
             background: #fff;
             padding: 0;
@@ -45,24 +45,99 @@
         }
         @media print{
             .inv-card{ border: none; border-radius: 0; padding: 0; }
-            :root{ --font-scale: 1.34; }
+            :root{ --font-scale: 2.0; }
+            html, body{
+                margin: 0 !important;
+                padding: 0 !important;
+            }
             body{
-                width: 11.1in;
-                margin: 0 auto !important;
+                width: calc(11.5in - 0.06in);
+                margin: 0 !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
                 font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important;
             }
             .inv-page, .inv-page *{ font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important; }
+            .inv-page{ padding: 0 !important; }
+            /* Add top spacing for print (push content down a bit). */
+            .inv-page{ padding-top: 0.08in !important; }
+            .inv-page{ width: calc(11.5in - 0.06in); max-width: calc(11.5in - 0.06in); margin: 0 !important; }
             .inv-card{
-                min-height: 9.1in;
-                display: flex;
-                flex-direction: column;
+                min-height: auto;
+                display: block;
             }
-            .inv-table th, .inv-table td{ padding: 2px 2px; }
+            /* Let browser decide where to break pages (target: max 2 pages). */
+            .inv-section{ page-break-before: auto; }
+            .inv-header-duplicate{
+                display: block;
+                page-break-before: always;
+            }
+            /* Ensure content can flow across multiple printed pages */
+            table{ page-break-inside: auto; break-inside: auto; }
+            tr{ page-break-inside: avoid; break-inside: avoid; }
+            .inv-table th, .inv-table td{
+                padding: 0.25px 0.8px;
+                line-height: 0.88;
+                vertical-align: top;
+                height: auto;
+            }
+            /* Hard-force: some printers/browsers ignore vertical-align unless !important */
+            .inv-table th, .inv-table td,
+            .inv-table td.center, .inv-table td.num{
+                vertical-align: top !important;
+            }
             .inv-totals td{ padding: 2px 2px; }
             .inv-pay-summary .row{ padding: 1px 0; }
-            .inv-sign{ margin-top: auto; }
+            .inv-sign{ margin-top: 10px; }
+
+            /* Make terbilang text more prominent (but keep overall invoice sizing stable). */
+            .inv-terbilang .label{ font-size: calc(12px * var(--font-scale)); }
+            .inv-terbilang .words{ font-size: calc(12px * var(--font-scale)); line-height: 1.1; }
+
+            /* Move "Terbilang" block to the next printed page. */
+            .inv-bottom{
+                display: block;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .inv-totals{
+                order: 1;
+                width: 100%;
+                flex: 0 0 auto;
+            }
+            .inv-terbilang{
+                order: 2;
+                width: 100%;
+                display: block;
+                page-break-before: auto;
+                break-before: auto;
+            }
+
+            /* Make description lines tighter (reduce extra height). */
+            .inv-desc{
+                line-height: 0.88;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                white-space: normal;
+            }
+            .inv-extra-desc{
+                white-space: pre-line;
+            }
+            .inv-desc > div{
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 0.88;
+            }
+            .inv-desc .sku,
+            .inv-desc .muted,
+            .inv-desc .sku div{
+                line-height: 0.88;
+            }
+            .inv-desc .sku,
+            .inv-desc .muted{
+                display: block;
+                min-height: 0;
+            }
         }
         .inv-top{
             display:flex;
@@ -70,6 +145,9 @@
             justify-content:space-between;
             gap: 14px;
             margin-bottom: 6px;
+        }
+        .inv-header-duplicate{
+            display: none;
         }
         .inv-company{
             display:flex;
@@ -372,7 +450,7 @@
                                     <div class="muted">{{ $serialText }}</div>
                                 @endif
                                 @if ($loop->first && $sale->description)
-                                    <div>{{ $sale->description }}</div>
+                                    <div class="inv-extra-desc">{{ $sale->description }}</div>
                                 @endif
                             </td>
                             <td class="num">{{ number_format((float) $d->quantity, 2, ',', '.') }}</td>
@@ -412,6 +490,36 @@
                             <td class="val"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
                         </tr>
                     </table>
+                </div>
+            </div>
+
+            <div class="inv-header-duplicate">
+                <div class="inv-top">
+                    <div class="inv-company">
+                        <div class="inv-logo" aria-label="Logo">
+                            @if ($logoUrl)
+                                <img src="{{ $logoUrl }}" alt="{{ config('app.name', 'IRSAF') }}">
+                            @else
+                                IT
+                            @endif
+                        </div>
+                        <div>
+                            <div class="inv-co-name">{{ $sale->branch?->name ?? config('app.name', 'IRSAF') }}</div>
+                            @if ($sale->branch?->address)
+                                <div class="inv-co-line">{{ $sale->branch->address }}</div>
+                            @endif
+                            <div class="inv-co-line">{{ __('Telepon') }}: {{ $sale->branch?->phone ?? '-' }}</div>
+                        </div>
+                    </div>
+
+                    <div class="inv-meta">
+                        <div class="title">INVOICE</div>
+                        <div class="invno">{{ $sale->invoice_number }}</div>
+                        <div class="row"><span>Status Bayar:</span> <strong>{{ $statusText }}</strong></div>
+                        <div class="row"><span>Termin:</span> -</div>
+                        <div class="row"><span>Jatuh Tempo:</span> -</div>
+                        <div class="status-box {{ $isCancelled ? 'cancelled' : ($isPaid ? '' : 'unpaid') }}">{{ $isCancelled ? 'DIBATALKAN' : ($isPaid ? 'LUNAS' : 'BELUM LUNAS') }}</div>
+                    </div>
                 </div>
             </div>
 
