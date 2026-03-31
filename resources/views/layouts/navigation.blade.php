@@ -100,7 +100,7 @@
 
                 <!-- Stok -->
                 @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang || $isAdminGudang)
-                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'purchases.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*', 'damaged-goods.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('incoming-goods.*', 'purchases.*', 'stock-mutations.*', 'stock-units.*', 'stock-inout.*', 'stock-monitoring.*', 'damaged-goods.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stok</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -127,6 +127,7 @@
 
                         @if ($isSuperAdmin || $isAdminGudang || $isAdminCabang)
                             <li><x-sidebar-nav-link :href="route('stock-units.index')" :active="request()->routeIs('stock-units.*')">Daftar Unit</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('stock-monitoring.index')" :active="request()->routeIs('stock-monitoring.*')">Monitoring Stok</x-sidebar-nav-link></li>
                             <li><x-sidebar-nav-link :href="route('stock-inout.index')" :active="request()->routeIs('stock-inout.*')">Mutasi Stok (IN/OUT)</x-sidebar-nav-link></li>
                         @endif
                         @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang)

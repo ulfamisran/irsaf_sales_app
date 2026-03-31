@@ -22,6 +22,7 @@ use App\Http\Controllers\RentalController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
+use App\Http\Controllers\StockMonitoringController;
 use App\Http\Controllers\StockInOutController;
 use App\Http\Controllers\StockUnitController;
 use App\Http\Controllers\UserManagementController;
@@ -184,6 +185,9 @@ Route::middleware('auth')->group(function () {
     Route::get('stock-units/{unit}', [StockUnitController::class, 'show'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.show');
+    Route::get('stock-monitoring', [StockMonitoringController::class, 'index'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-monitoring.index');
     Route::get('stock-mutations/create', [StockMutationController::class, 'create'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.create');
