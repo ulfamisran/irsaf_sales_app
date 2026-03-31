@@ -57,6 +57,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Nama') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Kode') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Laba Rugi') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                     </tr>
@@ -67,6 +68,13 @@
                             <td class="px-4 py-3">{{ $category->name }}</td>
                             <td class="px-4 py-3">{{ $category->code }}</td>
                             <td class="px-4 py-3">{{ \Illuminate\Support\Str::limit($category->description, 60) }}</td>
+                            <td class="px-4 py-3">
+                                @if ($category->affects_profit_loss)
+                                    <span class="px-2 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-800">{{ __('Ya') }}</span>
+                                @else
+                                    <span class="px-2 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-600">{{ __('Tidak') }}</span>
+                                @endif
+                            </td>
                             <td class="px-4 py-3">
                                 @if ($category->is_active)
                                     <span class="px-2 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-800">{{ __('Aktif') }}</span>
@@ -100,7 +108,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data kategori pemasukan.') }}</td>
+                            <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data kategori pemasukan.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

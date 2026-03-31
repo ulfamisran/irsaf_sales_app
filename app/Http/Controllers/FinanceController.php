@@ -130,6 +130,15 @@ class FinanceController extends Controller
         $incomeDistributionQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->where(function ($q) {
+                $q->whereNull('income_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('income_categories')
+                            ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                            ->where('income_categories.affects_profit_loss', true);
+                    });
+            })
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
@@ -145,6 +154,15 @@ class FinanceController extends Controller
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->where(function ($q) {
+                $q->whereNull('income_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('income_categories')
+                            ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                            ->where('income_categories.affects_profit_loss', true);
+                    });
+            })
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
@@ -166,6 +184,15 @@ class FinanceController extends Controller
 
         $expenseBaseQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_OUT)
+            ->where(function ($q) {
+                $q->whereNull('expense_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('expense_categories')
+                            ->whereColumn('expense_categories.id', 'cash_flows.expense_category_id')
+                            ->where('expense_categories.affects_profit_loss', true);
+                    });
+            })
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
@@ -218,6 +245,15 @@ class FinanceController extends Controller
         $incomeDistributionDetails = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->where(function ($q) {
+                $q->whereNull('income_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('income_categories')
+                            ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                            ->where('income_categories.affects_profit_loss', true);
+                    });
+            })
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
         if ($branchId) {
             $incomeDistributionDetails->where('branch_id', $branchId);
@@ -231,6 +267,15 @@ class FinanceController extends Controller
         $incomeOtherDetails = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->where(function ($q) {
+                $q->whereNull('income_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('income_categories')
+                            ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                            ->where('income_categories.affects_profit_loss', true);
+                    });
+            })
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
         if ($branchId) {
             $incomeOtherDetails->where('branch_id', $branchId);
@@ -270,6 +315,15 @@ class FinanceController extends Controller
             $externalExpenseDetails = CashFlow::with('expenseCategory')
                 ->where('type', CashFlow::TYPE_OUT)
                 ->where('expense_category_id', $externalExpenseCategoryId)
+                ->where(function ($q) {
+                    $q->whereNull('expense_category_id')
+                        ->orWhereExists(function ($sq) {
+                            $sq->select(DB::raw(1))
+                                ->from('expense_categories')
+                                ->whereColumn('expense_categories.id', 'cash_flows.expense_category_id')
+                                ->where('expense_categories.affects_profit_loss', true);
+                        });
+                })
                 ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
                 ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
                 ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
@@ -281,6 +335,15 @@ class FinanceController extends Controller
         $expenseDetails = CashFlow::with('expenseCategory')
             ->where('type', CashFlow::TYPE_OUT)
             ->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->where(function ($q) {
+                $q->whereNull('expense_category_id')
+                    ->orWhereExists(function ($sq) {
+                        $sq->select(DB::raw(1))
+                            ->from('expense_categories')
+                            ->whereColumn('expense_categories.id', 'cash_flows.expense_category_id')
+                            ->where('expense_categories.affects_profit_loss', true);
+                    });
+            })
             ->where(function ($q) use ($excludeExpenseCodes) {
                 $q->whereNull('expense_category_id')
                     ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
@@ -1017,15 +1080,27 @@ class FinanceController extends Controller
             $warehouseId = ! $isBranch ? $loc['id'] : null;
 
             $totalPemasukan = 0.0;
+            $salesProfit = 0.0;
+            $serviceProfit = 0.0;
+            $rentalProfit = 0.0;
 
             if ($isBranch) {
+                $salesForBranch = Sale::query()
+                    ->where('status', Sale::STATUS_RELEASED)
+                    ->where('branch_id', $branchId)
+                    ->whereBetween('sale_date', [$dateFromStr, $dateToStr])
+                    ->with('saleDetails', 'payments')
+                    ->get()
+                    ->filter(fn ($sale) => $sale->isPaidOff());
+
                 $salesPaid = (float) DB::table('sale_payments')
                     ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
                     ->where('sales.status', Sale::STATUS_RELEASED)
                     ->where('sales.branch_id', $branchId)
                     ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
                     ->sum('sale_payments.amount');
-                $totalPemasukan += $salesPaid;
+                $salesHpp = (float) $salesForBranch->sum->total_hpp;
+                $salesProfit = $salesPaid - $salesHpp;
 
                 $servicesForBranch = Service::query()
                     ->with('serviceMaterials')
@@ -1034,7 +1109,8 @@ class FinanceController extends Controller
                     ->whereBetween(DB::raw('COALESCE(exit_date, entry_date)'), [$dateFromStr, $dateToStr])
                     ->get();
                 $serviceTotal = (float) $servicesForBranch->sum->total_service_price;
-                $totalPemasukan += $serviceTotal;
+                $serviceMaterial = (float) $servicesForBranch->sum->materials_total_price;
+                $serviceProfit = $serviceTotal - $serviceMaterial;
             }
 
             $rentalTotal = (float) Rental::query()
@@ -1043,11 +1119,21 @@ class FinanceController extends Controller
                 ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->sum('total');
-            $totalPemasukan += $rentalTotal;
+            $rentalProfit = $rentalTotal;
+            $totalPemasukan += $salesProfit + $serviceProfit + $rentalProfit;
 
             $cfIn = (float) CashFlow::query()
                 ->where('type', CashFlow::TYPE_IN)
                 ->whereIn('reference_type', [CashFlow::REFERENCE_DISTRIBUTION, CashFlow::REFERENCE_OTHER])
+                ->where(function ($q) {
+                    $q->whereNull('income_category_id')
+                        ->orWhereExists(function ($sq) {
+                            $sq->select(DB::raw(1))
+                                ->from('income_categories')
+                                ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
+                                ->where('income_categories.affects_profit_loss', true);
+                        });
+                })
                 ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
                 ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
@@ -1057,6 +1143,15 @@ class FinanceController extends Controller
             $totalPengeluaran = (float) CashFlow::query()
                 ->where('type', CashFlow::TYPE_OUT)
                 ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
+                ->where(function ($q) {
+                    $q->whereNull('expense_category_id')
+                        ->orWhereExists(function ($sq) {
+                            $sq->select(DB::raw(1))
+                                ->from('expense_categories')
+                                ->whereColumn('expense_categories.id', 'cash_flows.expense_category_id')
+                                ->where('expense_categories.affects_profit_loss', true);
+                        });
+                })
                 ->where(function ($q) use ($excludeExpenseCodes) {
                     $q->whereNull('expense_category_id')
                         ->orWhereNotIn('expense_category_id', function ($sub) use ($excludeExpenseCodes) {
@@ -1071,6 +1166,15 @@ class FinanceController extends Controller
                 $externalExpenseAmount = (float) CashFlow::query()
                     ->where('type', CashFlow::TYPE_OUT)
                     ->where('expense_category_id', $externalExpenseCategoryId)
+                    ->where(function ($q) {
+                        $q->whereNull('expense_category_id')
+                            ->orWhereExists(function ($sq) {
+                                $sq->select(DB::raw(1))
+                                    ->from('expense_categories')
+                                    ->whereColumn('expense_categories.id', 'cash_flows.expense_category_id')
+                                    ->where('expense_categories.affects_profit_loss', true);
+                            });
+                    })
                     ->whereBetween('transaction_date', [$dateFromStr, $dateToStr])
                     ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                     ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))

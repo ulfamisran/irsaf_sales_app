@@ -38,9 +38,11 @@ class IncomeCategoryController extends Controller
             'code' => ['nullable', 'string', 'max:50'],
             'description' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['sometimes', 'boolean'],
+            'affects_profit_loss' => ['sometimes', 'boolean'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active', true);
+        $data['affects_profit_loss'] = $request->boolean('affects_profit_loss', true);
 
         IncomeCategory::create($data);
 
@@ -61,9 +63,11 @@ class IncomeCategoryController extends Controller
             'code' => ['nullable', 'string', 'max:50'],
             'description' => ['nullable', 'string', 'max:5000'],
             'is_active' => ['sometimes', 'boolean'],
+            'affects_profit_loss' => ['sometimes', 'boolean'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active', true);
+        $data['affects_profit_loss'] = $request->boolean('affects_profit_loss', true);
 
         $incomeCategory->update($data);
 

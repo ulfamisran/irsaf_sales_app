@@ -15,12 +15,14 @@ class IncomeCategory extends Model
         'code',
         'description',
         'is_active',
+        'affects_profit_loss',
     ];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'affects_profit_loss' => 'boolean',
         ];
     }
 
@@ -40,6 +42,7 @@ class IncomeCategory extends Model
                 'name' => $name,
                 'description' => $description ?? $name,
                 'is_active' => true,
+                'affects_profit_loss' => true,
             ]
         );
     }

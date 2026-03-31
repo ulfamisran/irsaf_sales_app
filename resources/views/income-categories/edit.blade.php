@@ -36,6 +36,11 @@
                             <input id="is_active" type="checkbox" name="is_active" value="1" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500" {{ old('is_active', $incomeCategory->is_active) ? 'checked' : '' }}>
                             <label for="is_active" class="text-sm text-slate-700">{{ __('Aktif') }}</label>
                         </div>
+                        <div class="flex items-center gap-2">
+                            <input type="hidden" name="affects_profit_loss" value="0">
+                            <input id="affects_profit_loss" type="checkbox" name="affects_profit_loss" value="1" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500" {{ old('affects_profit_loss', $incomeCategory->affects_profit_loss ?? true) ? 'checked' : '' }}>
+                            <label for="affects_profit_loss" class="text-sm text-slate-700">{{ __('Mempengaruhi Laba Rugi') }}</label>
+                        </div>
 
                         <div class="flex gap-3">
                             <x-primary-button>{{ __('Update') }}</x-primary-button>

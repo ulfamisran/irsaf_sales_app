@@ -15,12 +15,14 @@ class ExpenseCategory extends Model
         'code',
         'description',
         'is_active',
+        'affects_profit_loss',
     ];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'affects_profit_loss' => 'boolean',
         ];
     }
 
