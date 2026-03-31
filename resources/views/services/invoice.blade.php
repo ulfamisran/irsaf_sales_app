@@ -18,6 +18,9 @@
             --light:#f3f4f6;
             --paid:#16a34a;
             --unpaid:#b91c1c;
+            --font-scale: 1.35;
+            --font-weight-base: 600;
+            --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
 
         @page { size: A4 landscape; margin: 10mm; }
@@ -29,7 +32,11 @@
             margin: 0 auto;
             background: #fff;
             padding: 0;
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            font-family: var(--print-font);
+        }
+        body, .inv-page, .inv-page *{
+            font-family: var(--print-font) !important;
+            font-weight: var(--font-weight-base);
         }
 
         .inv-card{
@@ -40,7 +47,12 @@
         }
 
         @media print{
+            :root{ --font-scale: 2.2; }
             .inv-card{ border: none; border-radius: 0; padding: 0; }
+            .inv-page, .inv-page *{
+                font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
+                font-weight: var(--font-weight-base);
+            }
         }
 
         .inv-top{
@@ -75,18 +87,18 @@
 
         .inv-logo img{ max-width: 100%; max-height: 42px; display:block; }
 
-        .inv-co-name{ font-weight: 800; font-size: 15px; line-height: 1.1; }
-        .inv-co-line{ font-size: 11px; color: var(--ink); line-height: 1.15; }
-        .inv-co-muted{ font-size: 11px; color: var(--muted); line-height: 1.15; }
+        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; }
+        .inv-co-line{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.15; }
+        .inv-co-muted{ font-size: calc(11px * var(--font-scale)); color: var(--muted); line-height: 1.15; }
 
         .inv-meta{
             text-align:right;
             min-width: 40%;
         }
 
-        .inv-meta .title{ font-weight: 900; font-size: 16px; letter-spacing: .5px; }
-        .inv-meta .invno{ font-weight: 800; font-size: 12px; margin-top: 1px; }
-        .inv-meta .row{ font-size: 11px; color: var(--ink); line-height: 1.2; }
+        .inv-meta .title{ font-weight: 900; font-size: calc(16px * var(--font-scale)); letter-spacing: .5px; }
+        .inv-meta .invno{ font-weight: 800; font-size: calc(12px * var(--font-scale)); margin-top: 1px; }
+        .inv-meta .row{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.2; }
         .inv-meta .row span{ color: var(--muted); }
 
         .inv-meta .status-box{
@@ -98,7 +110,7 @@
             font-weight: 800;
             background: #ecfdf5;
             border-radius: 2px;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
         .inv-meta .status-box.unpaid{
             border-color: var(--unpaid);
@@ -112,7 +124,7 @@
         }
 
         .inv-customer{
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
             margin: 6px 0 6px;
         }
         .inv-customer table{
@@ -127,7 +139,7 @@
         .inv-table{
             width: 100%;
             border-collapse: collapse;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
         .inv-table th, .inv-table td{
             border: 1px solid var(--border);
@@ -141,6 +153,19 @@
         }
         .inv-table .num{ text-align: right; white-space: nowrap; }
         .inv-table .center{ text-align: center; }
+        .inv-detail-main{ font-weight: 800; }
+        .inv-detail-note{
+            font-size: calc(11px * var(--font-scale));
+            line-height: 1.2;
+            margin-top: 3px;
+            color: var(--muted);
+        }
+        .inv-detail-note-strong{
+            font-size: calc(11px * var(--font-scale));
+            line-height: 1.2;
+            margin-top: 4px;
+            color: var(--ink);
+        }
 
         .inv-bottom{
             display:flex;
@@ -154,15 +179,24 @@
             padding: 6px;
             min-height: 54px;
         }
-        .inv-terbilang .label{ font-weight: 800; margin-bottom: 6px; }
-        .inv-terbilang .words{ font-style: italic; }
+        .inv-terbilang .label{
+            font-weight: 800;
+            margin-bottom: 6px;
+            font-size: calc(12px * var(--font-scale));
+        }
+        .inv-terbilang .words{
+            font-style: italic;
+            font-size: calc(12px * var(--font-scale));
+            line-height: 1.25;
+            font-weight: 700;
+        }
         .inv-totals{
             flex: 0 0 40%;
         }
         .inv-totals table{
             width: 100%;
             border-collapse: collapse;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
         .inv-totals td{
             border: 1px solid var(--border);
@@ -178,14 +212,14 @@
         .inv-section .label{
             font-weight: 800;
             margin-bottom: 4px;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
 
         .inv-pay-summary{
             display:flex;
             justify-content:flex-end;
             margin-top: 4px;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
         .inv-pay-summary .box{
             width: 280px;
@@ -200,7 +234,7 @@
             display:flex;
             justify-content:space-between;
             margin-top: 10px;
-            font-size: 11px;
+            font-size: calc(11px * var(--font-scale));
         }
         .inv-sign .col{
             width: 46%;
@@ -319,12 +353,12 @@
                     <tr>
                         <td class="center">1</td>
                         <td>
-                            <strong>Service {{ $service->laptop_type }}</strong>
+                            <div class="inv-detail-main">Service {{ $service->laptop_type }}</div>
                             @if ($service->laptop_detail)
-                                <div style="font-size:10px;color:var(--muted)">{{ $service->laptop_detail }}</div>
+                                <div class="inv-detail-note">{{ $service->laptop_detail }}</div>
                             @endif
                             @if ($service->damage_description)
-                                <div style="font-size:10px;margin-top:4px;">Kerusakan: {{ $service->damage_description }}</div>
+                                <div class="inv-detail-note-strong">Kerusakan: {{ $service->damage_description }}</div>
                             @endif
                         </td>
                         <td class="num">Rp {{ number_format($grandTotal, 0, ',', '.') }}</td>

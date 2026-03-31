@@ -16,52 +16,75 @@
             --border:#111827;
             --paid:#16a34a;
             --unpaid:#b91c1c;
+            --font-scale: 1.35;
+            --font-weight-base: 600;
+            --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
         @page { size: A4 landscape; margin: 10mm; }
         body { color: var(--ink); }
-        .inv-page{ max-width: 297mm; margin: 0 auto; background: #fff; padding: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+        .inv-page{ max-width: 297mm; margin: 0 auto; background: #fff; padding: 0; font-family: var(--print-font); }
+        body, .inv-page, .inv-page *{
+            font-family: var(--print-font) !important;
+            font-weight: var(--font-weight-base);
+        }
         .inv-card{ border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; padding: 14px 14px 12px; }
-        @media print{ .inv-card{ border: none; border-radius: 0; padding: 0; } }
+        @media print{
+            :root{ --font-scale: 2.2; }
+            .inv-card{ border: none; border-radius: 0; padding: 0; }
+            .inv-page, .inv-page *{
+                font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
+                font-weight: var(--font-weight-base);
+            }
+        }
         .inv-top{ display:flex; align-items:flex-start; justify-content:space-between; gap: 14px; margin-bottom: 6px; }
         .inv-company{ display:flex; flex-direction: column; gap: 0; align-items:flex-start; min-width: 55%; }
         .inv-logo{ width: auto; height: auto; border: 0; background: transparent; display:flex; align-items:center; justify-content:center; font-weight: 900; letter-spacing: .5px; color:#000; flex: 0 0 auto; }
         .inv-logo img{ max-width: 100%; max-height: 42px; display:block; }
-        .inv-co-name{ font-weight: 800; font-size: 15px; line-height: 1.1; }
-        .inv-co-line{ font-size: 11px; color: var(--ink); line-height: 1.15; }
-        .inv-co-muted{ font-size: 11px; color: var(--muted); line-height: 1.15; }
+        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; }
+        .inv-co-line{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.15; }
+        .inv-co-muted{ font-size: calc(11px * var(--font-scale)); color: var(--muted); line-height: 1.15; }
         .inv-meta{ text-align:right; min-width: 40%; }
-        .inv-meta .title{ font-weight: 900; font-size: 16px; letter-spacing: .5px; }
-        .inv-meta .invno{ font-weight: 800; font-size: 12px; margin-top: 1px; }
-        .inv-meta .row{ font-size: 11px; color: var(--ink); line-height: 1.2; }
+        .inv-meta .title{ font-weight: 900; font-size: calc(16px * var(--font-scale)); letter-spacing: .5px; }
+        .inv-meta .invno{ font-weight: 800; font-size: calc(12px * var(--font-scale)); margin-top: 1px; }
+        .inv-meta .row{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.2; }
         .inv-meta .row span{ color: var(--muted); }
-        .inv-meta .status-box{ margin-top: 4px; display:inline-block; padding: 4px 10px; border: 2px solid #16a34a; color:#166534; font-weight: 800; background: #ecfdf5; border-radius: 2px; font-size: 11px; }
+        .inv-meta .status-box{ margin-top: 4px; display:inline-block; padding: 4px 10px; border: 2px solid #16a34a; color:#166534; font-weight: 800; background: #ecfdf5; border-radius: 2px; font-size: calc(11px * var(--font-scale)); }
         .inv-meta .status-box.unpaid{ border-color: var(--unpaid); color: #7f1d1d; background: #fef2f2; }
-        .inv-customer{ font-size: 11px; margin: 6px 0 6px; }
+        .inv-customer{ font-size: calc(11px * var(--font-scale)); margin: 6px 0 6px; }
         .inv-customer table{ width: 100%; border-collapse: collapse; }
         .inv-customer td{ padding: 0; vertical-align: top; line-height: 1.2; }
         .inv-customer .lbl{ width: 62px; color: var(--ink); }
         .inv-customer .colon{ width: 10px; }
         .inv-customer .val{ color: var(--ink); }
-        .inv-table{ width: 100%; border-collapse: collapse; font-size: 11px; }
+        .inv-table{ width: 100%; border-collapse: collapse; font-size: calc(11px * var(--font-scale)); }
         .inv-table th, .inv-table td{ border: 1px solid var(--border); padding: 4px 5px; line-height: 1.15; }
         .inv-table thead th{ background: #fff; font-weight: 800; text-align: center; }
         .inv-table .num{ text-align: right; white-space: nowrap; }
         .inv-table .center{ text-align: center; }
         .inv-bottom{ display:flex; gap: 12px; margin-top: 6px; align-items: stretch; }
         .inv-terbilang{ flex: 1 1 auto; border: 1px solid var(--border); padding: 6px; min-height: 54px; }
-        .inv-terbilang .label{ font-weight: 800; margin-bottom: 6px; }
-        .inv-terbilang .words{ font-style: italic; }
+        .inv-terbilang .label{
+            font-weight: 800;
+            margin-bottom: 6px;
+            font-size: calc(12px * var(--font-scale));
+        }
+        .inv-terbilang .words{
+            font-style: italic;
+            font-size: calc(12px * var(--font-scale));
+            line-height: 1.25;
+            font-weight: 700;
+        }
         .inv-totals{ flex: 0 0 40%; }
-        .inv-totals table{ width: 100%; border-collapse: collapse; font-size: 11px; }
+        .inv-totals table{ width: 100%; border-collapse: collapse; font-size: calc(11px * var(--font-scale)); }
         .inv-totals td{ border: 1px solid var(--border); padding: 3px 5px; line-height: 1.15; }
         .inv-totals td.lbl{ color: var(--ink); }
         .inv-totals td.val{ text-align: right; white-space: nowrap; }
         .inv-section{ margin-top: 6px; }
-        .inv-section .label{ font-weight: 800; margin-bottom: 4px; font-size: 11px; }
-        .inv-pay-summary{ display:flex; justify-content:flex-end; margin-top: 4px; font-size: 11px; }
+        .inv-section .label{ font-weight: 800; margin-bottom: 4px; font-size: calc(11px * var(--font-scale)); }
+        .inv-pay-summary{ display:flex; justify-content:flex-end; margin-top: 4px; font-size: calc(11px * var(--font-scale)); }
         .inv-pay-summary .box{ width: 280px; }
         .inv-pay-summary .row{ display:flex; justify-content:space-between; padding: 2px 0; }
-        .inv-sign{ display:flex; justify-content:space-between; margin-top: 10px; font-size: 11px; }
+        .inv-sign{ display:flex; justify-content:space-between; margin-top: 10px; font-size: calc(11px * var(--font-scale)); }
         .inv-sign .col{ width: 46%; text-align: left; }
         .inv-sign .col.right{ text-align: right; }
         .inv-sign .name{ margin-top: 26px; font-weight: 800; }
@@ -75,6 +98,24 @@
         $isPaid = $rental->isPaidOff();
         $statusText = $isPaid ? 'LUNAS' : 'BELUM LUNAS';
         $trxAt = $rental->pickup_date ?? $rental->created_at ?? now();
+        $groupedItems = ($rental->items ?? collect())
+            ->groupBy(fn ($item) => (string) ($item->product_id ?? ('item-' . $item->id)))
+            ->map(function ($items) {
+                $first = $items->first();
+                $product = $first?->product;
+                $productName = trim(implode(' ', array_filter([
+                    $product?->sku,
+                    $product?->brand,
+                    $product?->series,
+                ])));
+
+                return (object) [
+                    'product_name' => $productName !== '' ? $productName : '-',
+                    'unit_count' => $items->count(),
+                    'total' => (float) $items->sum(fn ($i) => (float) ($i->total ?? 0)),
+                ];
+            })
+            ->values();
 
         if (!function_exists('irsaf_terbilang_rental')) {
             function irsaf_terbilang_rental(int $nilai): string {
@@ -162,24 +203,23 @@
                     <tr>
                         <th style="width:40px;">No</th>
                         <th>Deskripsi</th>
-                        <th style="width:80px;">Hari</th>
-                        <th style="width:120px;">Harga/Hari</th>
+                        <th style="width:100px;">Jumlah Unit</th>
                         <th style="width:120px;">Total</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($rental->items as $idx => $item)
+                    @forelse ($groupedItems as $idx => $item)
                         <tr>
                             <td class="center">{{ $idx + 1 }}</td>
-                            <td>
-                                <strong>{{ $item->product?->sku }} - {{ $item->product?->brand }} {{ $item->product?->series }}</strong>
-                                <div style="font-size:10px;color:var(--muted)">Serial: {{ $item->serial_number }}</div>
-                            </td>
-                            <td class="center">{{ $item->days }}</td>
-                            <td class="num">Rp {{ number_format($item->rental_price, 0, ',', '.') }}</td>
-                            <td class="num">Rp {{ number_format($item->total, 0, ',', '.') }}</td>
+                            <td><strong>{{ $item->product_name }}</strong></td>
+                            <td class="center">{{ number_format((float) $item->unit_count, 0, ',', '.') }}</td>
+                            <td class="num">Rp {{ number_format((float) $item->total, 0, ',', '.') }}</td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="4" class="center">-</td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
 

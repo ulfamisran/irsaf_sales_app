@@ -20,8 +20,9 @@
             --light:#f3f4f6;
             --paid:#16a34a;
             --unpaid:#b91c1c;
-            --font-scale: 1.2;
-            --print-font: "Courier New", "Liberation Mono", "Lucida Console", monospace;
+            --font-scale: 1.35;
+            --font-weight-base: 600;
+            --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
         /* Continuous paper landscape: 11.5in x 9.5in */
         @page { size: 11.5in 9.5in; margin: 0.03in; }
@@ -36,6 +37,7 @@
         }
         body, .inv-page, .inv-page *{
             font-family: var(--print-font) !important;
+            font-weight: var(--font-weight-base);
         }
         .inv-card{
             border: 1px solid #e5e7eb;
@@ -45,7 +47,7 @@
         }
         @media print{
             .inv-card{ border: none; border-radius: 0; padding: 0; }
-            :root{ --font-scale: 2.0; }
+            :root{ --font-scale: 2.2; }
             html, body{
                 margin: 0 !important;
                 padding: 0 !important;
@@ -55,9 +57,12 @@
                 margin: 0 !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
-                font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important;
+                font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
             }
-            .inv-page, .inv-page *{ font-family: "Courier New", "Liberation Mono", "Lucida Console", monospace !important; }
+            .inv-page, .inv-page *{
+                font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
+                font-weight: var(--font-weight-base);
+            }
             .inv-page{ padding: 0 !important; }
             /* Add top spacing for print (push content down a bit). */
             .inv-page{ padding-top: 0.08in !important; }
