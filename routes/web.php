@@ -305,6 +305,12 @@ Route::middleware('auth')->group(function () {
     Route::get('rentals/available-products', [RentalController::class, 'availableProducts'])
         ->middleware('role:admin_gudang,admin_cabang,kasir,super_admin,admin_pusat')
         ->name('rentals.available-products');
+    Route::get('rentals/export', [RentalController::class, 'export'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.export');
+    Route::get('rentals/export-pdf', [RentalController::class, 'exportPdf'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.export-pdf');
     Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
         ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.invoice');
@@ -327,6 +333,12 @@ Route::middleware('auth')->group(function () {
     Route::get('services/{service}/invoice', [ServiceController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.invoice');
+    Route::get('services/export', [ServiceController::class, 'export'])
+        ->middleware('role:admin_cabang,kasir')
+        ->name('services.export');
+    Route::get('services/export-pdf', [ServiceController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,kasir')
+        ->name('services.export-pdf');
     Route::post('services/{service}/add-payment', [ServiceController::class, 'addPayment'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.add-payment');

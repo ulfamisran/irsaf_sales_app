@@ -13,9 +13,11 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Services\RentalService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
@@ -120,6 +122,150 @@ class RentalController extends Controller
         $branches = Branch::orderBy('name')->get(['id', 'name']);
 
         return view('rentals.index', compact('rentals', 'warehouses', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalRental', 'paymentMethods', 'paymentMethodTotals'));
+    }
+
+    public function export(Request $request): Response
+    {
+        $user = $request->user();
+        $query = Rental::with(['branch', 'customer', 'warehouse', 'user', 'payments'])
+            ->orderByDesc('pickup_date')
+            ->orderByDesc('id');
+        $branchLine = __('Semua');
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('pickup_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('pickup_date', '<=', $request->date_to);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('return_status')) {
+            $query->where('return_status', $request->return_status);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+                $w = Warehouse::find($request->warehouse_id);
+                $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+            }
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+                $b = Branch::find($request->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            }
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            $b = Branch::find($user->branch_id);
+            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            $w = Warehouse::find($user->warehouse_id);
+            $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+        }
+
+        $rentals = $query->where('status', '!=', Rental::STATUS_CANCEL)->get();
+        $autoDateFrom = $rentals->isNotEmpty() ? optional($rentals->min('pickup_date'))->format('Y-m-d') : null;
+        $autoDateTo = $rentals->isNotEmpty() ? optional($rentals->max('pickup_date'))->format('Y-m-d') : null;
+        $filterMeta = [
+            'dateFrom' => $request->filled('date_from') ? (string) $request->date_from : ($autoDateFrom ?: '-'),
+            'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
+            'branchLine' => $branchLine,
+        ];
+        $filename = 'riwayat-penyewaan-' . now()->format('Ymd-His') . '.xls';
+        $html = view('rentals.export', compact('rentals', 'filterMeta'))->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+        $query = Rental::with(['branch', 'customer', 'warehouse', 'user', 'payments'])
+            ->orderByDesc('pickup_date')
+            ->orderByDesc('id');
+        $branchLine = __('Semua');
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('pickup_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('pickup_date', '<=', $request->date_to);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('return_status')) {
+            $query->where('return_status', $request->return_status);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+                $w = Warehouse::find($request->warehouse_id);
+                $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+            }
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+                $b = Branch::find($request->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            }
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            $b = Branch::find($user->branch_id);
+            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            $w = Warehouse::find($user->warehouse_id);
+            $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+        }
+
+        $rentals = $query->where('status', '!=', Rental::STATUS_CANCEL)->get();
+        $autoDateFrom = $rentals->isNotEmpty() ? optional($rentals->min('pickup_date'))->format('Y-m-d') : null;
+        $autoDateTo = $rentals->isNotEmpty() ? optional($rentals->max('pickup_date'))->format('Y-m-d') : null;
+        $filterMeta = [
+            'dateFrom' => $request->filled('date_from') ? (string) $request->date_from : ($autoDateFrom ?: '-'),
+            'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
+            'branchLine' => $branchLine,
+        ];
+        $pdf = Pdf::loadView('rentals.export-pdf', compact('rentals', 'filterMeta'))->setPaper('a4', 'landscape');
+
+        return $pdf->download('riwayat-penyewaan-' . now()->format('Ymd-His') . '.pdf');
     }
 
     public function create(): View

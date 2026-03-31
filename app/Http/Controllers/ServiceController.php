@@ -15,8 +15,10 @@ use App\Models\ServiceMaterial;
 use App\Models\AuditLog;
 use App\Services\ServiceService;
 use App\Services\KasBalanceService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
@@ -113,6 +115,128 @@ class ServiceController extends Controller
             : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
 
         return view('services.index', compact('services', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
+    }
+
+    public function export(Request $request): Response
+    {
+        $user = $request->user();
+        $query = Service::with(['branch', 'user', 'customer', 'payments', 'serviceMaterials'])
+            ->orderByDesc('entry_date')
+            ->orderByDesc('id');
+        $branchLine = __('Semua');
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->whereRaw('1 = 0');
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        } else {
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+                $b = Branch::find($request->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            }
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('entry_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('entry_date', '<=', $request->date_to);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            $b = Branch::find($user->branch_id);
+            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        }
+
+        $services = $query->where('status', '!=', Service::STATUS_CANCEL)->get();
+        $autoDateFrom = $services->isNotEmpty() ? optional($services->min('entry_date'))->format('Y-m-d') : null;
+        $autoDateTo = $services->isNotEmpty() ? optional($services->max('entry_date'))->format('Y-m-d') : null;
+        $filterMeta = [
+            'dateFrom' => $request->filled('date_from') ? (string) $request->date_from : ($autoDateFrom ?: '-'),
+            'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
+            'branchLine' => $branchLine,
+        ];
+        $filename = 'riwayat-service-' . now()->format('Ymd-His') . '.xls';
+        $html = view('services.export', compact('services', 'filterMeta'))->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+        $query = Service::with(['branch', 'user', 'customer', 'payments', 'serviceMaterials'])
+            ->orderByDesc('entry_date')
+            ->orderByDesc('id');
+        $branchLine = __('Semua');
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $query->whereRaw('1 = 0');
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        } else {
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+                $b = Branch::find($request->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            }
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('entry_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('entry_date', '<=', $request->date_to);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            $b = Branch::find($user->branch_id);
+            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        }
+
+        $services = $query->where('status', '!=', Service::STATUS_CANCEL)->get();
+        $autoDateFrom = $services->isNotEmpty() ? optional($services->min('entry_date'))->format('Y-m-d') : null;
+        $autoDateTo = $services->isNotEmpty() ? optional($services->max('entry_date'))->format('Y-m-d') : null;
+        $filterMeta = [
+            'dateFrom' => $request->filled('date_from') ? (string) $request->date_from : ($autoDateFrom ?: '-'),
+            'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
+            'branchLine' => $branchLine,
+        ];
+        $pdf = Pdf::loadView('services.export-pdf', compact('services', 'filterMeta'))->setPaper('a4', 'landscape');
+
+        return $pdf->download('riwayat-service-' . now()->format('Ymd-His') . '.pdf');
     }
 
     public function create(): View

@@ -63,8 +63,8 @@ class SaleController extends Controller
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
         $summary = $this->computeSalesSummary($request, $user, $exportQuery);
-        $sales = (clone $exportQuery)->with(['saleDetails.product'])->get();
-        $filterMeta = $this->salesExportFilterMeta($request, $ctx);
+        $sales = (clone $exportQuery)->with(['payments', 'tradeIns'])->get();
+        $filterMeta = $this->salesExportFilterMeta($request, $ctx, $sales);
 
         $filename = 'rekap-penjualan-' . now()->format('Ymd-His') . '.xls';
         $html = view('sales.export', array_merge($summary, compact('sales', 'filterMeta')))->render();
@@ -84,8 +84,8 @@ class SaleController extends Controller
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
         $summary = $this->computeSalesSummary($request, $user, $exportQuery);
-        $sales = (clone $exportQuery)->with(['saleDetails.product'])->get();
-        $filterMeta = $this->salesExportFilterMeta($request, $ctx);
+        $sales = (clone $exportQuery)->with(['payments', 'tradeIns'])->get();
+        $filterMeta = $this->salesExportFilterMeta($request, $ctx, $sales);
 
         $pdf = Pdf::loadView('sales.export-pdf', array_merge($summary, compact('sales', 'filterMeta')))
             ->setPaper('a4', 'landscape');
@@ -687,7 +687,7 @@ class SaleController extends Controller
      * @param  array{canFilterLocation: bool, filterLocked: bool, locationLabel: string|null}  $ctx
      * @return array{branchLine: string, dateFrom: string, dateTo: string, search: string}
      */
-    private function salesExportFilterMeta(Request $request, array $ctx): array
+    private function salesExportFilterMeta(Request $request, array $ctx, $sales = null): array
     {
         $user = $request->user();
         $branchLine = __('Semua');
@@ -698,8 +698,18 @@ class SaleController extends Controller
             $branchLine = $b ? (string) $b->name : (string) $request->branch_id;
         }
 
-        $dateFrom = $request->filled('date_from') ? (string) $request->date_from : '-';
-        $dateTo = $request->filled('date_to') ? (string) $request->date_to : '-';
+        $dateFrom = $request->filled('date_from') ? (string) $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? (string) $request->date_to : null;
+        if ((! $dateFrom || ! $dateTo) && $sales && method_exists($sales, 'isNotEmpty') && $sales->isNotEmpty()) {
+            $minDate = $sales->min('sale_date');
+            $maxDate = $sales->max('sale_date');
+            $autoFrom = $minDate ? (string) (is_object($minDate) && method_exists($minDate, 'format') ? $minDate->format('Y-m-d') : $minDate) : null;
+            $autoTo = $maxDate ? (string) (is_object($maxDate) && method_exists($maxDate, 'format') ? $maxDate->format('Y-m-d') : $maxDate) : null;
+            $dateFrom = $dateFrom ?: $autoFrom;
+            $dateTo = $dateTo ?: $autoTo;
+        }
+        $dateFrom = $dateFrom ?: '-';
+        $dateTo = $dateTo ?: '-';
         $search = $request->filled('search') ? trim((string) $request->search) : '-';
 
         return [

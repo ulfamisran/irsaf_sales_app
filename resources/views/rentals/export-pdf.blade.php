@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <title>{{ __('Laporan Penjualan') }}</title>
+    <title>{{ __('Riwayat Penyewaan') }}</title>
     <style>
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; }
         table { border-collapse: collapse; width: 100%; }
@@ -12,7 +12,7 @@
     </style>
 </head>
 <body>
-    <p><strong>PENJUALAN DARI {{ $filterMeta['dateFrom'] ?? '-' }} - {{ $filterMeta['dateTo'] ?? '-' }}</strong></p>
+    <p><strong>PENYEWAAN DARI {{ $filterMeta['dateFrom'] ?? '-' }} - {{ $filterMeta['dateTo'] ?? '-' }}</strong></p>
     <p><strong>CABANG: {{ $filterMeta['branchLine'] ?? '-' }}</strong></p>
     <table>
         <thead>
@@ -28,7 +28,7 @@
             </tr>
         </thead>
         <tbody>
-            @include('sales.partials.export-sale-rows', ['sales' => $sales])
+            @include('rentals.partials.export-rows', ['rentals' => $rentals])
         </tbody>
     </table>
 </body>
