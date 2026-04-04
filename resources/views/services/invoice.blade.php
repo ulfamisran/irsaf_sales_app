@@ -12,18 +12,18 @@
         }
 
         :root{
-            --ink:#111827;
-            --muted:#4b5563;
-            --border:#111827;
+            --ink:#000000;
+            --muted:#000000;
+            --border:#000000;
             --light:#f3f4f6;
-            --paid:#16a34a;
-            --unpaid:#b91c1c;
+            --paid:#000000;
+            --unpaid:#000000;
             --font-scale: 1.35;
-            --font-weight-base: 600;
+            --font-weight-base: 700;
             --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
 
-        @page { size: A4 landscape; margin: 10mm; }
+        @page { size: A4 landscape; margin: 14mm 12mm; }
 
         body { color: var(--ink); }
 
@@ -49,9 +49,27 @@
         @media print{
             :root{ --font-scale: 2.2; }
             .inv-card{ border: none; border-radius: 0; padding: 0; }
+            html, body{
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            body{
+                color: #000 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
             .inv-page, .inv-page *{
                 font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
-                font-weight: var(--font-weight-base);
+                font-weight: 700 !important;
+                color: #000 !important;
+            }
+            .inv-page{
+                max-width: 100% !important;
+                width: 100% !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
             }
         }
 
@@ -87,7 +105,7 @@
 
         .inv-logo img{ max-width: 100%; max-height: 42px; display:block; }
 
-        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; }
+        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; color: var(--ink); }
         .inv-co-line{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.15; }
         .inv-co-muted{ font-size: calc(11px * var(--font-scale)); color: var(--muted); line-height: 1.15; }
 
@@ -99,28 +117,28 @@
         .inv-meta .title{ font-weight: 900; font-size: calc(16px * var(--font-scale)); letter-spacing: .5px; }
         .inv-meta .invno{ font-weight: 800; font-size: calc(12px * var(--font-scale)); margin-top: 1px; }
         .inv-meta .row{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.2; }
-        .inv-meta .row span{ color: var(--muted); }
+        .inv-meta .row span{ color: var(--muted); font-weight: 700; }
 
         .inv-meta .status-box{
             margin-top: 4px;
             display:inline-block;
             padding: 4px 10px;
-            border: 2px solid #16a34a;
-            color:#166534;
+            border: 2px solid #000;
+            color: #000;
             font-weight: 800;
-            background: #ecfdf5;
+            background: #fff;
             border-radius: 2px;
             font-size: calc(11px * var(--font-scale));
         }
         .inv-meta .status-box.unpaid{
-            border-color: var(--unpaid);
-            color: #7f1d1d;
-            background: #fef2f2;
+            border-color: #000;
+            color: #000;
+            background: #fff;
         }
         .inv-meta .status-box.cancelled{
-            border-color: #64748b;
-            color: #475569;
-            background: #f1f5f9;
+            border-color: #000;
+            color: #000;
+            background: #fff;
         }
 
         .inv-customer{
@@ -135,6 +153,8 @@
         .inv-customer .lbl{ width: 62px; color: var(--ink); }
         .inv-customer .colon{ width: 10px; }
         .inv-customer .val{ color: var(--ink); }
+        .inv-customer .trx{ margin-top: 3px; font-weight: 700; color: var(--ink); }
+        .inv-customer .trx .muted{ font-weight: 700; color: var(--muted); }
 
         .inv-table{
             width: 100%;
@@ -158,13 +178,15 @@
             font-size: calc(11px * var(--font-scale));
             line-height: 1.2;
             margin-top: 3px;
-            color: var(--muted);
+            color: var(--ink);
+            font-weight: 700;
         }
         .inv-detail-note-strong{
             font-size: calc(11px * var(--font-scale));
             line-height: 1.2;
             margin-top: 4px;
             color: var(--ink);
+            font-weight: 800;
         }
 
         .inv-bottom{
@@ -185,7 +207,7 @@
             font-size: calc(12px * var(--font-scale));
         }
         .inv-terbilang .words{
-            font-style: italic;
+            font-style: normal;
             font-size: calc(12px * var(--font-scale));
             line-height: 1.25;
             font-weight: 700;

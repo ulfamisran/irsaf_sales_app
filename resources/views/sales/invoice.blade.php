@@ -14,18 +14,18 @@
 
         /* Print-friendly invoice layout (match requested format) */
         :root{
-            --ink:#111827;
-            --muted:#4b5563;
-            --border:#111827;
+            --ink:#000000;
+            --muted:#000000;
+            --border:#000000;
             --light:#f3f4f6;
-            --paid:#16a34a;
-            --unpaid:#b91c1c;
+            --paid:#000000;
+            --unpaid:#000000;
             --font-scale: 1.35;
-            --font-weight-base: 600;
+            --font-weight-base: 700;
             --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
-        /* Continuous paper landscape: 11.5in x 9.5in */
-        @page { size: 11.5in 9.5in; margin: 0.03in; }
+        /* Continuous paper landscape: 11.5in x 9.5in — margin cukup besar agar tidak terpotong printer */
+        @page { size: 11.5in 9.5in; margin: 14mm 12mm; }
         body { color: var(--ink); }
         .inv-page{
             width: 100%;
@@ -51,22 +51,29 @@
             html, body{
                 margin: 0 !important;
                 padding: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
             }
             body{
-                width: calc(11.5in - 0.06in);
                 margin: 0 !important;
+                color: #000 !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
                 font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
             }
             .inv-page, .inv-page *{
                 font-family: "Arial", "Helvetica Neue", "Segoe UI", sans-serif !important;
-                font-weight: var(--font-weight-base);
+                font-weight: 700 !important;
+                color: #000 !important;
             }
-            .inv-page{ padding: 0 !important; }
-            /* Add top spacing for print (push content down a bit). */
-            .inv-page{ padding-top: 0.08in !important; }
-            .inv-page{ width: calc(11.5in - 0.06in); max-width: calc(11.5in - 0.06in); margin: 0 !important; }
+            .inv-page{
+                padding: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 auto !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+            }
             .inv-card{
                 min-height: auto;
                 display: block;
@@ -76,6 +83,8 @@
             .inv-header-duplicate{
                 display: block;
                 page-break-before: always;
+                padding-top: 6mm;
+                break-inside: avoid;
             }
             /* Ensure content can flow across multiple printed pages */
             table{ page-break-inside: auto; break-inside: auto; }
@@ -175,7 +184,7 @@
             flex: 0 0 auto;
         }
         .inv-logo img{ max-width: 100%; max-height: 42px; display:block; }
-        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; }
+        .inv-co-name{ font-weight: 800; font-size: calc(15px * var(--font-scale)); line-height: 1.1; color: var(--ink); }
         .inv-co-line{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.15; }
         .inv-co-muted{ font-size: calc(11px * var(--font-scale)); color: var(--muted); line-height: 1.15; }
 
@@ -186,27 +195,27 @@
         .inv-meta .title{ font-weight: 900; font-size: calc(16px * var(--font-scale)); letter-spacing: .5px; }
         .inv-meta .invno{ font-weight: 800; font-size: calc(12px * var(--font-scale)); margin-top: 1px; }
         .inv-meta .row{ font-size: calc(11px * var(--font-scale)); color: var(--ink); line-height: 1.2; }
-        .inv-meta .row span{ color: var(--muted); }
+        .inv-meta .row span{ color: var(--muted); font-weight: 700; }
         .inv-meta .status-box{
             margin-top: 4px;
             display:inline-block;
             padding: 6px 16px;
-            border: 2px solid #16a34a;
-            color:#166534;
+            border: 2px solid #000;
+            color: #000;
             font-weight: 900;
-            background: #ecfdf5;
+            background: #fff;
             border-radius: 2px;
             font-size: calc(12px * var(--font-scale));
         }
         .inv-meta .status-box.unpaid{
-            border-color: var(--unpaid);
-            color: #7f1d1d;
-            background: #fef2f2;
+            border-color: #000;
+            color: #000;
+            background: #fff;
         }
         .inv-meta .status-box.cancelled{
-            border-color: #64748b;
-            color: #475569;
-            background: #f1f5f9;
+            border-color: #000;
+            color: #000;
+            background: #fff;
         }
 
         .inv-customer{
@@ -221,8 +230,8 @@
         .inv-customer .lbl{ width: 62px; color: var(--ink); }
         .inv-customer .colon{ width: 10px; }
         .inv-customer .val{ color: var(--ink); }
-        .inv-customer .trx{ margin-top: 3px; font-weight: 700; }
-        .inv-customer .trx .muted{ font-weight: 500; color: var(--muted); }
+        .inv-customer .trx{ margin-top: 3px; font-weight: 700; color: var(--ink); }
+        .inv-customer .trx .muted{ font-weight: 700; color: var(--muted); }
 
         .inv-table{
             width: 100%;
@@ -243,7 +252,7 @@
         .inv-table .center{ text-align: center; }
         .inv-desc{ white-space: pre-line; }
         .inv-desc .sku{ font-weight: 700; }
-        .inv-desc .muted{ color: var(--muted); }
+        .inv-desc .muted{ color: var(--muted); font-weight: 700; }
 
         .inv-bottom{
             display:flex;
@@ -258,7 +267,7 @@
             min-height: 54px;
         }
         .inv-terbilang .label{ font-weight: 800; margin-bottom: 6px; }
-        .inv-terbilang .words{ font-style: italic; }
+        .inv-terbilang .words{ font-style: normal; font-weight: 700; }
         .inv-totals{
             flex: 0 0 40%;
         }
