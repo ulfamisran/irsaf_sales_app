@@ -67,17 +67,24 @@
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <div class="card-modern p-5">
                 <h3 class="font-semibold text-slate-800 mb-4">{{ __('Diagram Stok per Kategori') }}</h3>
-                @php $maxCategory = max(1, (int) (($categorySummaries ?? collect())->max('total_qty') ?? 1)); @endphp
+                @php
+                    $overallForPct = (int) ($overallQty ?? 0);
+                @endphp
+                <p class="text-xs text-slate-500 mb-3">{{ __('Lebar bar = persentase dari total stok; angka = jumlah unit.') }}</p>
                 <div class="space-y-3">
                     @forelse(($categorySummaries ?? collect())->take(12) as $item)
-                        @php $w = min(100, (int) round(($item['total_qty'] / $maxCategory) * 100)); @endphp
+                        @php
+                            $qtyCat = (int) $item['total_qty'];
+                            $pctCat = $overallForPct > 0 ? ($qtyCat / $overallForPct) * 100 : 0;
+                            $w = $qtyCat > 0 && $overallForPct > 0 ? min(100, max(6, (int) round($pctCat))) : 0;
+                        @endphp
                         <div>
-                            <div class="flex justify-between text-sm mb-1">
-                                <span class="text-slate-700">{{ $item['category_name'] }}</span>
-                                <span class="font-semibold text-slate-900">{{ number_format((int) $item['total_qty'], 0, ',', '.') }}</span>
+                            <div class="flex justify-between items-baseline gap-2 mb-1.5">
+                                <span class="text-sm font-semibold text-slate-800 leading-tight">{{ $item['category_name'] }}</span>
+                                <span class="text-sm font-bold text-slate-900 tabular-nums shrink-0">{{ number_format($qtyCat, 0, ',', '.') }}</span>
                             </div>
-                            <div class="w-full h-2.5 rounded-full bg-slate-100">
-                                <div class="h-2.5 rounded-full bg-indigo-500" style="width: {{ $w }}%"></div>
+                            <div class="w-full h-3 rounded-full bg-slate-100">
+                                <div class="h-3 rounded-full bg-indigo-500" style="width: {{ $w }}%"></div>
                             </div>
                         </div>
                     @empty
@@ -87,28 +94,59 @@
             </div>
 
             <div class="card-modern p-5">
-                <h3 class="font-semibold text-slate-800 mb-4">{{ __('Diagram Stok per Cabang/Gudang (per Kategori)') }}</h3>
+                <h3 class="font-semibold text-slate-800 mb-4">{{ __('Diagram Stok per Cabang/Gudang (per Kategori & Jenis)') }}</h3>
+                <p class="text-xs text-slate-500 mb-3">{{ __('Per lokasi: bar kategori = % dari total stok lokasi; bar jenis = % dari stok kategori tersebut. Angka tetap qty.') }}</p>
                 <div class="space-y-3">
                     @forelse(($locationCategorySummaries ?? collect())->take(8) as $loc)
                         @php
-                            $locMax = max(1, (int) (collect($loc['categories'] ?? [])->max('qty') ?? 1));
+                            $locTotalForPct = (int) ($loc['total_qty'] ?? 0);
                         @endphp
                         <div class="rounded-lg border border-slate-200 p-3">
                             <div class="flex justify-between text-sm mb-2">
                                 <span class="font-semibold text-slate-800">{{ $loc['location_label'] }}</span>
                                 <span class="font-semibold text-slate-900">{{ number_format((int) $loc['total_qty'], 0, ',', '.') }}</span>
                             </div>
-                            <div class="space-y-2">
+                            <div class="space-y-3">
                                 @foreach(collect($loc['categories'] ?? [])->take(6) as $cat)
-                                    @php $w = min(100, (int) round(($cat['qty'] / $locMax) * 100)); @endphp
+                                    @php
+                                        $qtyLocCat = (int) $cat['qty'];
+                                        $pctLocCat = $locTotalForPct > 0 ? ($qtyLocCat / $locTotalForPct) * 100 : 0;
+                                        $w = $qtyLocCat > 0 && $locTotalForPct > 0 ? min(100, max(6, (int) round($pctLocCat))) : 0;
+                                    @endphp
                                     <div>
-                                        <div class="flex justify-between text-xs mb-1">
-                                            <span class="text-slate-600">{{ $cat['category_name'] }}</span>
-                                            <span class="text-slate-700 font-medium">{{ number_format((int) $cat['qty'], 0, ',', '.') }}</span>
+                                        {{-- Kategori: teks & bar lebih besar --}}
+                                        <div class="flex justify-between items-baseline gap-2 mb-1.5">
+                                            <span class="text-sm font-semibold text-slate-800 leading-tight">{{ $cat['category_name'] }}</span>
+                                            <span class="text-sm font-bold text-slate-900 tabular-nums shrink-0">{{ number_format($qtyLocCat, 0, ',', '.') }}</span>
                                         </div>
-                                        <div class="w-full h-2 rounded-full bg-slate-100">
-                                            <div class="h-2 rounded-full bg-emerald-500" style="width: {{ $w }}%"></div>
+                                        <div class="w-full h-3 rounded-full bg-slate-100">
+                                            <div class="h-3 rounded-full bg-emerald-500" style="width: {{ $w }}%"></div>
                                         </div>
+                                        @if(!empty($cat['type_breakdown']))
+                                            @php
+                                                $catTotalForTypes = $qtyLocCat;
+                                            @endphp
+                                            {{-- Jenis (baru/bekas): teks & bar lebih kecil, berurutan di bawah kategori --}}
+                                            <div class="mt-2 ml-2 space-y-1.5 border-l-2 border-slate-200 pl-3">
+                                                @foreach($cat['type_breakdown'] as $tb)
+                                                    @php
+                                                        $qtyType = (int) $tb['qty'];
+                                                        $pctType = $catTotalForTypes > 0 ? ($qtyType / $catTotalForTypes) * 100 : 0;
+                                                        $tw = $qtyType > 0 && $catTotalForTypes > 0 ? min(100, max(10, (int) round($pctType))) : 0;
+                                                        $barClass = $tb['key'] === 'baru' ? 'bg-blue-500' : ($tb['key'] === 'bekas' ? 'bg-amber-500' : 'bg-slate-400');
+                                                    @endphp
+                                                    <div class="w-[9rem] sm:w-[10rem]">
+                                                        <div class="flex justify-between gap-2 mb-0.5">
+                                                            <span class="text-[11px] font-medium text-slate-500 leading-tight shrink-0">{{ $tb['label'] }}</span>
+                                                            <span class="text-[11px] font-semibold text-slate-600 tabular-nums leading-tight">{{ number_format($qtyType, 0, ',', '.') }}</span>
+                                                        </div>
+                                                        <div class="w-full h-1 rounded-full bg-slate-100">
+                                                            <div class="h-1 rounded-full {{ $barClass }}" style="width: {{ $tw }}%"></div>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </div>
                                 @endforeach
                             </div>

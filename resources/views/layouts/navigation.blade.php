@@ -122,7 +122,7 @@
                         @endif
 
                         @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang || $isAdminGudang)
-                            <li><x-sidebar-nav-link :href="route('stock-mutations.index')" :active="request()->routeIs('stock-mutations.*')">Distribusi Stok</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('stock-mutations.index')" :active="request()->routeIs('stock-mutations.*')">Distribusi Barang</x-sidebar-nav-link></li>
                         @endif
 
                         @if ($isSuperAdmin || $isAdminGudang || $isAdminCabang)

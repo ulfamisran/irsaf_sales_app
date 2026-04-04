@@ -286,14 +286,28 @@ class PurchaseService
 
     private function createCashFlowForPayment(Purchase $purchase, PurchasePayment $payment, ?int $userId): void
     {
-        $expenseCategory = ExpenseCategory::firstOrCreate(
-            ['code' => 'PEMBELIAN'],
-            [
-                'name' => 'Pembelian',
-                'description' => 'Pembelian barang dari distributor',
-                'is_active' => true,
-            ]
-        );
+        if ($purchase->isDistribusiUnit()) {
+            $expenseCategory = ExpenseCategory::updateOrCreate(
+                ['code' => ExpenseCategory::CODE_DISTRIBUSI_BARANG],
+                [
+                    'name' => 'Distribusi Barang',
+                    'description' => __('Kas keluar pembayaran hutang biaya distribusi barang antar lokasi (tidak mempengaruhi laba rugi).'),
+                    'is_active' => true,
+                    'affects_profit_loss' => false,
+                ]
+            );
+            $descPrefix = __('Distribusi Barang');
+        } else {
+            $expenseCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'PEMBELIAN'],
+                [
+                    'name' => 'Pembelian',
+                    'description' => 'Pembelian barang dari distributor',
+                    'is_active' => true,
+                ]
+            );
+            $descPrefix = __('Pembelian');
+        }
 
         $branchId = $purchase->branch_id;
         $warehouseId = $purchase->warehouse_id;
@@ -304,7 +318,7 @@ class PurchaseService
             'warehouse_id' => $warehouseId,
             'type' => CashFlow::TYPE_OUT,
             'amount' => $payment->amount,
-            'description' => __('Pembelian') . ' ' . $purchase->invoice_number . ' - ' . $pmLabel,
+            'description' => $descPrefix . ' ' . $purchase->invoice_number . ' - ' . $pmLabel,
             'reference_type' => CashFlow::REFERENCE_PURCHASE,
             'reference_id' => $purchase->id,
             'expense_category_id' => $expenseCategory->id,

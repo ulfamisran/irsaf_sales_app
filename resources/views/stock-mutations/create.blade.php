@@ -2,7 +2,7 @@
     <x-slot name="title">{{ __('Buat Mutasi Stok') }}</x-slot>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ __('Buat Distribusi Stok') }}
+            {{ __('Buat Distribusi Barang') }}
         </h2>
     </x-slot>
 

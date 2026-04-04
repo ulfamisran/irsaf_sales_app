@@ -2,7 +2,7 @@
     <x-slot name="title">{{ __('Mutasi Stok') }}</x-slot>
     <x-slot name="header">
         <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Distribusi Stok') }}</h2>
+            <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Distribusi Barang') }}</h2>
             <x-icon-btn-add :href="route('stock-mutations.create')" :label="__('Distribusi Baru')" />
         </div>
     </x-slot>
@@ -22,6 +22,14 @@
                     <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
                 </svg>
                 {{ session('error') }}
+            </div>
+        @endif
+        @if (session('info'))
+            <div class="mb-6 rounded-xl bg-sky-50 border border-sky-200 p-4 text-sky-900 flex items-center gap-3">
+                <svg class="w-5 h-5 text-sky-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zm-1 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                </svg>
+                {{ session('info') }}
             </div>
         @endif
 
@@ -96,6 +104,8 @@
             </div>
         </div>
 
+        <p class="text-xs text-slate-500 mb-2 px-1">{{ __('Baris dengan latar abu-abu dan label "Dibatalkan" adalah distribusi yang sudah dibatalkan (arsip).') }}</p>
+
         {{-- Tab Navigation --}}
         <div class="flex border-b border-gray-200 mb-0">
             <button type="button" data-tab-target="invoices" class="tab-btn px-5 py-3 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'invoices' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300' }}">
@@ -132,6 +142,7 @@
                                     $invNo = $inv->invoice_number;
                                     $items = $invMutations[$invNo] ?? collect();
                                     $firstMut = $items->first();
+                                    $invoiceCancelled = $firstMut && $firstMut->isCancelled();
                                     $totalBiaya = (float) ($invBiaya[$invNo] ?? 0);
                                     $totalPaid = (float) ($invPaid[$invNo] ?? 0);
                                     $sisa = max(0, $totalBiaya - $totalPaid);
@@ -150,40 +161,59 @@
                                     $toName = $toIsWh ? ($warehousesById[$toId] ?? '#'.$toId) : ($branchesById[$toId] ?? '#'.$toId);
                                     $toLabel = $toIsWh ? __('Gudang') : __('Cabang');
                                 @endphp
-                                <tr class="hover:bg-slate-50/50">
+                                <tr @class([
+                                    'hover:bg-slate-50/50' => ! $invoiceCancelled,
+                                    'bg-slate-100/90 border-l-4 border-l-slate-500' => $invoiceCancelled,
+                                ])>
                                     <td class="px-4 py-3">
-                                        <span class="font-mono text-sm text-indigo-700">{{ $invNo }}</span>
+                                        <div class="flex flex-col gap-1">
+                                            <span @class(['font-mono text-sm', 'text-indigo-700' => ! $invoiceCancelled, 'text-slate-600 line-through decoration-slate-400' => $invoiceCancelled])>{{ $invNo }}</span>
+                                            @if ($invoiceCancelled)
+                                                <span class="inline-flex items-center w-fit px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
+                                            @endif
+                                        </div>
                                     </td>
-                                    <td class="px-4 py-3 text-sm">{{ $firstMut ? \Carbon\Carbon::parse($firstMut->mutation_date)->format('d/m/Y') : '-' }}</td>
-                                    <td class="px-4 py-3 text-sm">{{ $firstMut ? ($fromLabel . ': ' . $fromName) : '-' }}</td>
-                                    <td class="px-4 py-3 text-sm">{{ $firstMut ? ($toLabel . ': ' . $toName) : '-' }}</td>
+                                    <td class="px-4 py-3 text-sm @if($invoiceCancelled) text-slate-500 @endif">{{ $firstMut ? \Carbon\Carbon::parse($firstMut->mutation_date)->format('d/m/Y') : '-' }}</td>
+                                    <td class="px-4 py-3 text-sm @if($invoiceCancelled) text-slate-500 @endif">{{ $firstMut ? ($fromLabel . ': ' . $fromName) : '-' }}</td>
+                                    <td class="px-4 py-3 text-sm @if($invoiceCancelled) text-slate-500 @endif">{{ $firstMut ? ($toLabel . ': ' . $toName) : '-' }}</td>
                                     <td class="px-4 py-3">
-                                        <div class="space-y-0.5">
+                                        <div class="space-y-0.5 @if($invoiceCancelled) opacity-80 @endif">
                                             @foreach ($items as $item)
                                                 <div class="text-sm">
-                                                    <span class="text-slate-800">{{ $item->product?->sku }}</span>
+                                                    <span @class(['text-slate-800' => ! $invoiceCancelled, 'text-slate-600' => $invoiceCancelled])>{{ $item->product?->sku }}</span>
                                                     <span class="text-slate-500">- {{ $item->product?->brand }}</span>
-                                                    <span class="text-indigo-600 font-medium">({{ $item->quantity }} unit)</span>
+                                                    <span @class(['font-medium', 'text-indigo-600' => ! $invoiceCancelled, 'text-slate-500' => $invoiceCancelled])>({{ $item->quantity }} unit)</span>
                                                 </div>
                                             @endforeach
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm font-medium">
+                                    <td class="px-4 py-3 text-right text-sm font-medium @if($invoiceCancelled) text-slate-500 @endif">
                                         @if ($totalBiaya > 0)
                                             Rp {{ number_format($totalBiaya, 0, ',', '.') }}
                                         @else
                                             <span class="text-slate-400">-</span>
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm font-medium">
+                                    <td class="px-4 py-3 text-right text-sm font-medium @if($invoiceCancelled) text-slate-500 @endif">
                                         @if ($totalBiaya > 0)
                                             Rp {{ number_format($totalPaid, 0, ',', '.') }}
+                                            @if ($invoiceCancelled)
+                                                <span class="block text-[10px] font-normal text-slate-400 normal-case">{{ __('nilai saat aktif') }}</span>
+                                            @endif
                                         @else
                                             <span class="text-slate-400">-</span>
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 text-center">
-                                        @if ($noBiaya)
+                                        @if ($invoiceCancelled)
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
+                                            @if ($firstMut?->cancel_date)
+                                                <div class="text-xs text-slate-500 mt-1">{{ $firstMut->cancel_date->format('d/m/Y') }}</div>
+                                            @endif
+                                            @if ($firstMut?->cancelUser)
+                                                <div class="text-xs text-slate-500">{{ __('Oleh') }}: {{ $firstMut->cancelUser->name }}</div>
+                                            @endif
+                                        @elseif ($noBiaya)
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">{{ __('Gratis') }}</span>
                                         @elseif ($isLunas)
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
@@ -197,7 +227,7 @@
                                     <td class="px-4 py-3 text-center">
                                         <div class="flex flex-wrap items-center justify-center gap-1">
                                             @if ($firstMut)
-                                            @if (! $noBiaya && ! $isLunas)
+                                            @if (! $invoiceCancelled && ! $noBiaya && ! $isLunas)
                                             <a href="{{ route('stock-mutations.add-payment', $firstMut) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors" title="{{ __('Tambah Pembayaran') }}">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                                 {{ __('Bayar') }}
@@ -207,6 +237,12 @@
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                                 {{ __('Invoice') }}
                                             </a>
+                                            @if (($canCancelDistribution ?? false) && ! $invoiceCancelled)
+                                            <a href="{{ route('stock-mutations.cancel.show', $firstMut) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors" title="{{ __('Batalkan distribusi') }}">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                {{ __('Batal') }}
+                                            </a>
+                                            @endif
                                             @endif
                                         </div>
                                     </td>
@@ -245,10 +281,19 @@
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             @forelse ($mutations as $mutation)
-                                <tr class="hover:bg-slate-50/50">
-                                    <td class="px-4 py-3">{{ $mutation->mutation_date->format('d/m/Y') }}</td>
+                                @php $rowCancelled = $mutation->isCancelled(); @endphp
+                                <tr @class([
+                                    'hover:bg-slate-50/50' => ! $rowCancelled,
+                                    'bg-slate-100/90 border-l-4 border-l-slate-500' => $rowCancelled,
+                                ])>
+                                    <td class="px-4 py-3 @if($rowCancelled) text-slate-500 @endif">{{ $mutation->mutation_date->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3">
-                                        <span class="font-mono text-xs text-indigo-600">{{ $mutation->invoice_number }}</span>
+                                        <div class="flex flex-col gap-1">
+                                            <span @class(['font-mono text-xs', 'text-indigo-600' => ! $rowCancelled, 'text-slate-600 line-through decoration-slate-400' => $rowCancelled])>{{ $mutation->invoice_number }}</span>
+                                            @if ($rowCancelled)
+                                                <span class="inline-flex items-center w-fit px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-300 text-slate-800">{{ __('Batal') }}</span>
+                                            @endif
+                                        </div>
                                     </td>
                                     <td class="px-4 py-3">{{ $mutation->product?->sku }} - {{ $mutation->product?->brand }}</td>
                                     <td class="px-4 py-3">
@@ -290,12 +335,25 @@
                                             $statusBayar = $totalBiaya <= 0 ? '-' : ($totalPaid + 0.02 >= $totalBiaya ? 'Lunas' : 'Belum Lunas');
                                             $statusClass = $totalBiaya <= 0 ? 'text-slate-500' : ($totalPaid + 0.02 >= $totalBiaya ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium');
                                         @endphp
-                                        <span class="{{ $statusClass }}">{{ $statusBayar }}</span>
+                                        @if ($rowCancelled)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
+                                            @if ($mutation->cancel_date)
+                                                <div class="text-[11px] text-slate-500 mt-1">{{ __('Tgl batal') }}: {{ $mutation->cancel_date->format('d/m/Y') }}</div>
+                                            @endif
+                                            @if ($mutation->cancelUser)
+                                                <div class="text-[11px] text-slate-500">{{ __('Oleh') }}: {{ $mutation->cancelUser->name }}</div>
+                                            @endif
+                                            @if ($totalBiaya > 0)
+                                                <div class="text-[10px] text-slate-400 mt-1">{{ __('Pembayaran (arsip)') }}: Rp {{ number_format($totalPaid, 0, ',', '.') }}</div>
+                                            @endif
+                                        @else
+                                            <span class="{{ $statusClass }}">{{ $statusBayar }}</span>
+                                        @endif
                                     </td>
-                                    <td class="px-4 py-3">{{ $mutation->user?->name }}</td>
+                                    <td class="px-4 py-3 @if($rowCancelled) text-slate-500 @endif">{{ $mutation->user?->name }}</td>
                                     <td class="px-4 py-3 text-center">
                                         <div class="flex flex-wrap items-center justify-center gap-1">
-                                            @if ($totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
+                                            @if (! $rowCancelled && $totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
                                             <a href="{{ route('stock-mutations.add-payment', $mutation) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors" title="{{ __('Tambah Pembayaran') }}">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                                 {{ __('Bayar') }}
@@ -305,6 +363,12 @@
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                                 {{ __('Invoice') }}
                                             </a>
+                                            @if (($canCancelDistribution ?? false) && ! $rowCancelled)
+                                            <a href="{{ route('stock-mutations.cancel.show', $mutation) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors" title="{{ __('Batalkan distribusi (seluruh invoice)') }}">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                {{ __('Batal') }}
+                                            </a>
+                                            @endif
                                             @php
                                             $fromIsWh = $mutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE;
                                             $fromName = $fromIsWh ? ($warehousesById[$mutation->from_location_id] ?? '#'.$mutation->from_location_id) : ($branchesById[$mutation->from_location_id] ?? '#'.$mutation->from_location_id);
@@ -328,7 +392,11 @@
                                             data-biaya="{{ ($mutation->biaya_distribusi_per_unit ?? 0) > 0 ? number_format($mutation->biaya_distribusi_per_unit, 0, ',', '.') : '-' }}"
                                             data-purchase-url="{{ $mutation->purchase ? route('purchases.show', $mutation->purchase) : '' }}"
                                             data-purchase-invoice="{{ $mutation->purchase?->invoice_number ?? '' }}"
-                                            data-add-payment-url="{{ ($totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya) ? route('stock-mutations.add-payment', $mutation) : '' }}"
+                                            data-add-payment-url="{{ (! $rowCancelled && $totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya) ? route('stock-mutations.add-payment', $mutation) : '' }}"
+                                            data-cancelled="{{ $rowCancelled ? '1' : '0' }}"
+                                            data-cancel-date="{{ $rowCancelled && $mutation->cancel_date ? $mutation->cancel_date->format('d/m/Y') : '' }}"
+                                            data-cancel-user="{{ $rowCancelled ? e($mutation->cancelUser?->name ?? '-') : '' }}"
+                                            data-cancel-reason="{{ $rowCancelled ? e(\Illuminate\Support\Str::limit((string) ($mutation->cancel_reason ?? ''), 500)) : '' }}"
                                             title="{{ __('Lihat Detail') }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -400,9 +468,15 @@
                         (this.dataset.addPaymentUrl ? '<div class="col-span-2 mt-3 pt-3 border-t border-slate-200"><a href="' + escape(this.dataset.addPaymentUrl) + '" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">' +
                         '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>' +
                         'Tambah Pembayaran</a></div>' : '') +
+                        (this.dataset.cancelled === '1' ? '<div class="col-span-2 mt-3 pt-3 border-t border-slate-300 rounded-lg bg-slate-100 p-3 text-left">' +
+                        '<p class="text-xs font-bold text-slate-700 uppercase tracking-wide">{{ __('Distribusi dibatalkan') }}</p>' +
+                        '<p class="text-xs text-slate-600 mt-1.5"><span class="text-slate-500">{{ __('Tanggal batal') }}:</span> ' + escape(this.dataset.cancelDate || '-') + '</p>' +
+                        '<p class="text-xs text-slate-600"><span class="text-slate-500">{{ __('Oleh') }}:</span> ' + escape(this.dataset.cancelUser || '-') + '</p>' +
+                        '<p class="text-xs text-slate-600 mt-2"><span class="text-slate-500">{{ __('Alasan') }}:</span><br><span class="font-medium text-slate-800 whitespace-pre-wrap">' + escape(this.dataset.cancelReason || '-') + '</span></p>' +
+                        '</div>' : '') +
                         '</div>';
                     Swal.fire({
-                        title: 'Detail Distribusi Barang',
+                        title: this.dataset.cancelled === '1' ? '{{ __('Detail Distribusi (dibatalkan)') }}' : 'Detail Distribusi Barang',
                         html: infoHtml,
                         confirmButtonText: 'Tutup',
                         confirmButtonColor: '#4f46e5',

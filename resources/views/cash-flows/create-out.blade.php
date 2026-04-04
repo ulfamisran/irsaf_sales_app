@@ -14,28 +14,79 @@
                 <form method="POST" action="{{ route('cash-flows.out.store') }}" class="space-y-5">
                     @csrf
 
-                    {{-- Shared: Cabang / Sumber Dana / Tanggal --}}
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        @if (auth()->user()->isSuperAdmin() || !auth()->user()->branch_id)
-                        <div>
-                            <x-input-label for="branch_id" :value="__('Cabang')" />
-                            <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" x-model="branchId" x-on:change="loadFormDataForBranch()" required>
-                                <option value="">{{ __('Pilih Cabang') }}</option>
-                                @foreach ($branches as $b)
-                                    <option value="{{ $b->id }}" {{ old('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
-                        </div>
-                        @else
-                            <input type="hidden" id="branch_id" name="branch_id" value="{{ auth()->user()->branch_id }}">
-                        @endif
+                    @php
+                        $canChooseLocation = auth()->user()->isSuperAdminOrAdminPusat();
+                        $lockedToBranch = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && auth()->user()->branch_id;
+                        $lockedToWarehouse = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()->warehouse_id;
+                        $defaultLocationType = old('location_type', $lockedToWarehouse ? 'warehouse' : 'branch');
+                    @endphp
 
+                    @if ($canChooseLocation)
+                        <div class="space-y-4">
+                            <div>
+                                <x-input-label :value="__('Tipe Lokasi')" />
+                                <div class="mt-2 flex flex-wrap gap-4">
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="location_type" value="branch" x-model="locationType" x-on:change="onLocationTypeChange()"
+                                            {{ $defaultLocationType === 'branch' ? 'checked' : '' }}>
+                                        <span class="ml-2">{{ __('Cabang') }}</span>
+                                    </label>
+                                    <label class="inline-flex items-center">
+                                        <input type="radio" name="location_type" value="warehouse" x-model="locationType" x-on:change="onLocationTypeChange()"
+                                            {{ $defaultLocationType === 'warehouse' ? 'checked' : '' }}>
+                                        <span class="ml-2">{{ __('Gudang') }}</span>
+                                    </label>
+                                </div>
+                                <x-input-error :messages="$errors->get('location_type')" class="mt-2" />
+                            </div>
+                            <div x-show="locationType === 'branch'" x-transition>
+                                <x-input-label for="branch_id" :value="__('Cabang')" />
+                                <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    x-model="branchId" x-on:change="loadFormData()"
+                                    :disabled="locationType !== 'branch'">
+                                    <option value="">{{ __('Pilih Cabang') }}</option>
+                                    @foreach ($branches as $b)
+                                        <option value="{{ $b->id }}" {{ old('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                            </div>
+                            <div x-show="locationType === 'warehouse'" x-transition>
+                                <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                                <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    x-model="warehouseId" x-on:change="loadFormData()"
+                                    :disabled="locationType !== 'warehouse'">
+                                    <option value="">{{ __('Pilih Gudang') }}</option>
+                                    @foreach ($warehouses as $w)
+                                        <option value="{{ $w->id }}" {{ old('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                            </div>
+                        </div>
+                    @elseif ($lockedToBranch)
+                        <input type="hidden" name="location_type" value="branch">
+                        <input type="hidden" id="branch_id" name="branch_id" value="{{ auth()->user()->branch_id }}">
+                        <input type="hidden" name="warehouse_id" value="">
+                        <div class="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                            {{ __('Lokasi') }}: {{ __('Cabang') }} — {{ \App\Models\Branch::find(auth()->user()->branch_id)?->name ?? '-' }}
+                        </div>
+                    @elseif ($lockedToWarehouse)
+                        <input type="hidden" name="location_type" value="warehouse">
+                        <input type="hidden" name="branch_id" value="">
+                        <input type="hidden" id="warehouse_id" name="warehouse_id" value="{{ auth()->user()->warehouse_id }}">
+                        <div class="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                            {{ __('Lokasi') }}: {{ __('Gudang') }} — {{ \App\Models\Warehouse::find(auth()->user()->warehouse_id)?->name ?? '-' }}
+                        </div>
+                    @endif
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <x-input-label for="payment_method_id" :value="__('Sumber Dana')" />
                             <select id="payment_method_id" name="payment_method_id" x-model="paymentMethodId" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                 <option value="">{{ __('Pilih Sumber Dana') }}</option>
                             </select>
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Metode pembayaran/kas mengikuti lokasi cabang atau gudang yang dipilih.') }}</p>
                             <div x-show="saldo !== null" class="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
                                 <span class="text-sm font-medium text-emerald-800">{{ __('Saldo:') }}</span>
                                 <span class="text-sm font-bold text-emerald-900" x-text="'Rp ' + new Intl.NumberFormat('id-ID').format(saldo ?? 0)"></span>
@@ -134,9 +185,13 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('cashOutForm', () => ({
-                branchId: '{{ old('branch_id', auth()->user()->isSuperAdmin() ? '' : auth()->user()->branch_id) }}',
+                canChooseLocation: @json($canChooseLocation ?? false),
+                locationType: '{{ old('location_type', $defaultLocationType ?? 'branch') }}',
+                branchId: '{{ old('branch_id', ($lockedToBranch ?? false) ? auth()->user()->branch_id : '') }}',
+                warehouseId: '{{ old('warehouse_id', ($lockedToWarehouse ?? false) ? auth()->user()->warehouse_id : '') }}',
                 paymentMethodId: '{{ old('payment_method_id', '') }}',
                 saldoMapBranch: @js($saldoMapBranch ?? []),
+                saldoMapWarehouse: @js($saldoMapWarehouse ?? []),
                 formDataUrl: @json($formDataUrl),
                 appBase: @json($appBase),
                 nextItemId: 2,
@@ -148,15 +203,35 @@
                     amountDisplay: ''
                 }],
                 get saldo() {
-                    if (!this.branchId || !this.paymentMethodId) return null;
-                    const branch = this.saldoMapBranch[this.branchId];
-                    if (!branch) return null;
-                    return branch[this.paymentMethodId] ?? 0;
+                    if (!this.paymentMethodId) return null;
+                    if (this.canChooseLocation) {
+                        if (this.locationType === 'branch') {
+                            if (!this.branchId) return null;
+                            const b = this.saldoMapBranch[this.branchId];
+                            return b ? (b[this.paymentMethodId] ?? 0) : null;
+                        }
+                        if (!this.warehouseId) return null;
+                        const w = this.saldoMapWarehouse[this.warehouseId];
+                        return w ? (w[this.paymentMethodId] ?? 0) : null;
+                    }
+                    if (this.branchId) {
+                        const b = this.saldoMapBranch[this.branchId];
+                        return b ? (b[this.paymentMethodId] ?? 0) : null;
+                    }
+                    if (this.warehouseId) {
+                        const w = this.saldoMapWarehouse[this.warehouseId];
+                        return w ? (w[this.paymentMethodId] ?? 0) : null;
+                    }
+                    return null;
                 },
                 get grandTotal() {
                     return this.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
                 },
                 get canSubmit() {
+                    if (this.canChooseLocation) {
+                        const locOk = this.locationType === 'branch' ? this.branchId : this.warehouseId;
+                        if (!locOk) return false;
+                    }
                     if (!this.paymentMethodId) return false;
                     if (this.items.length === 0) return false;
                     const allFilled = this.items.every(i => i.expense_category_id && i.name.trim() && parseFloat(i.amount) > 0);
@@ -188,21 +263,39 @@
                     this.items[index].amountDisplay = raw > 0 ? this.formatRupiah(raw) : '';
                     this.items[index].amount = raw > 0 ? raw : '';
                 },
-                async loadFormDataForBranch() {
-                    const branchId = this.branchId || document.getElementById('branch_id')?.value;
-                    if (!branchId) return;
+                onLocationTypeChange() {
+                    if (this.locationType === 'branch') this.warehouseId = '';
+                    else this.branchId = '';
+                    this.loadFormData();
+                },
+                async loadFormData() {
+                    let locType = this.locationType;
+                    let locId = locType === 'branch' ? this.branchId : this.warehouseId;
+                    if (!this.canChooseLocation) {
+                        locId = this.branchId || document.getElementById('branch_id')?.value || this.warehouseId || document.getElementById('warehouse_id')?.value;
+                        locType = this.branchId || document.getElementById('branch_id')?.value ? 'branch' : 'warehouse';
+                    }
                     const pmSelect = document.getElementById('payment_method_id');
                     if (!pmSelect) return;
+                    if (!locId) {
+                        pmSelect.innerHTML = '<option value="">' + @json(__('Pilih Sumber Dana')) + '</option>';
+                        this.paymentMethodId = '';
+                        return;
+                    }
                     try {
                         const url = new URL(this.appBase + this.formDataUrl, window.location.origin);
-                        url.searchParams.set('location_type', 'branch');
-                        url.searchParams.set('location_id', branchId);
+                        url.searchParams.set('location_type', locType);
+                        url.searchParams.set('location_id', locId);
                         const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
                         if (!res.ok) throw new Error('Fetch failed');
                         const data = await res.json();
                         const methods = data.payment_methods || [];
                         const saldoPerPm = data.saldo_per_pm || {};
-                        this.saldoMapBranch = { ...this.saldoMapBranch, [branchId]: saldoPerPm };
+                        if (locType === 'branch') {
+                            this.saldoMapBranch = { ...this.saldoMapBranch, [locId]: saldoPerPm };
+                        } else {
+                            this.saldoMapWarehouse = { ...this.saldoMapWarehouse, [locId]: saldoPerPm };
+                        }
                         const oldVal = pmSelect.value;
                         pmSelect.innerHTML = '<option value="">' + @json(__('Pilih Sumber Dana')) + '</option>' +
                             methods.map(m => {
@@ -211,7 +304,7 @@
                             }).join('');
                         if (oldVal && methods.some(m => m.id == oldVal)) pmSelect.value = oldVal;
                         this.paymentMethodId = pmSelect.value || '';
-                    } catch (e) { console.error('loadFormDataForBranch failed', e); }
+                    } catch (e) { console.error('loadFormData failed', e); }
                 },
                 init() {
                     @if(old('items'))
@@ -227,7 +320,10 @@
                         this.nextItemId = this.items.length + 1;
                     }
                     @endif
-                    if (this.branchId) this.$nextTick(() => this.loadFormDataForBranch());
+                    const hasLoc = this.canChooseLocation
+                        ? (this.locationType === 'branch' ? this.branchId : this.warehouseId)
+                        : (this.branchId || this.warehouseId);
+                    if (hasLoc) this.$nextTick(() => this.loadFormData());
                 }
             }));
         });

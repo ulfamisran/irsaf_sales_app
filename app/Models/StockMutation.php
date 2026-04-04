@@ -10,6 +10,10 @@ class StockMutation extends Model
 {
     use HasFactory;
 
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $table = 'stock_mutations';
 
     protected $fillable = [
@@ -26,6 +30,10 @@ class StockMutation extends Model
         'notes',
         'serial_numbers',
         'user_id',
+        'status',
+        'cancel_date',
+        'cancel_user_id',
+        'cancel_reason',
     ];
 
     protected function casts(): array
@@ -34,7 +42,18 @@ class StockMutation extends Model
             'quantity' => 'integer',
             'biaya_distribusi_per_unit' => 'decimal:2',
             'mutation_date' => 'date',
+            'cancel_date' => 'date',
         ];
+    }
+
+    public function isCancelled(): bool
+    {
+        return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_CANCELLED;
+    }
+
+    public function cancelUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancel_user_id');
     }
 
     /**

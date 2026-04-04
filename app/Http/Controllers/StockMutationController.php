@@ -14,6 +14,7 @@ use App\Models\Role;
 use App\Models\Stock;
 use App\Models\StockMutation;
 use App\Models\Warehouse;
+use App\Models\AuditLog;
 use App\Services\PurchaseService;
 use App\Services\StockMutationService;
 use Illuminate\Http\JsonResponse;
@@ -118,7 +119,7 @@ class StockMutationController extends Controller
         };
 
         // === RIWAYAT TAB (per-product mutations) ===
-        $riwayatQuery = StockMutation::with(['product', 'user', 'purchase'])
+        $riwayatQuery = StockMutation::with(['product', 'user', 'purchase', 'cancelUser'])
             ->orderByDesc('mutation_date')
             ->orderByDesc('id');
         $applyFilters($riwayatQuery);
@@ -146,7 +147,7 @@ class StockMutationController extends Controller
         $invPaid = collect();
 
         if (! empty($invNumbers)) {
-            $invMutations = StockMutation::with(['product'])
+            $invMutations = StockMutation::with(['product', 'cancelUser'])
                 ->whereIn('invoice_number', $invNumbers)
                 ->orderBy('id')
                 ->get()
@@ -160,6 +161,7 @@ class StockMutationController extends Controller
             $invRefToInvoice = $invMutations->flatten()->pluck('invoice_number', 'id');
             $cfByRef = ! empty($allInvIds)
                 ? CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+                    ->where('type', CashFlow::TYPE_IN)
                     ->whereIn('reference_id', $allInvIds)
                     ->selectRaw('reference_id, SUM(amount) as total_paid')
                     ->groupBy('reference_id')
@@ -192,6 +194,7 @@ class StockMutationController extends Controller
             $refToInvoice = $groupMutations->pluck('invoice_number', 'id');
             $cfByRef2 = ! empty($allGroupIds)
                 ? CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+                    ->where('type', CashFlow::TYPE_IN)
                     ->whereIn('reference_id', $allGroupIds)
                     ->selectRaw('reference_id, SUM(amount) as total_paid')
                     ->groupBy('reference_id')
@@ -246,6 +249,7 @@ class StockMutationController extends Controller
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $canFilterLocation = $user->isSuperAdminOrAdminPusat();
+        $canCancelDistribution = $user->isSuperAdminOrAdminPusat();
 
         return view('stock-mutations.index', compact(
             'activeTab',
@@ -265,7 +269,8 @@ class StockMutationController extends Controller
             'locationId',
             'locationLabel',
             'invoiceBiaya',
-            'invoicePaid'
+            'invoicePaid',
+            'canCancelDistribution'
         ));
     }
 
@@ -289,17 +294,88 @@ class StockMutationController extends Controller
             }
         }
 
+        return view('stock-mutations.invoice', $this->distributionInvoiceViewData($stockMutation));
+    }
+
+    public function showCancel(StockMutation $stockMutation): View|RedirectResponse
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        if (trim((string) ($stockMutation->invoice_number ?? '')) === '') {
+            return redirect()->route('stock-mutations.index')
+                ->with('error', __('Distribusi tanpa nomor invoice tidak dapat dibatalkan lewat halaman ini.'));
+        }
+
+        $data = $this->distributionInvoiceViewData($stockMutation);
+        if ($data['invoiceCancelled']) {
+            return redirect()->route('stock-mutations.index')
+                ->with('info', __('Distribusi ini sudah dibatalkan.'));
+        }
+
+        return view('stock-mutations.cancel', $data);
+    }
+
+    public function cancel(Request $request, StockMutation $stockMutation): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $validated = $request->validate([
+            'cancel_reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        try {
+            $this->stockMutationService->cancelDistributionInvoice(
+                $stockMutation,
+                (int) $user->id,
+                $validated['cancel_reason']
+            );
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'stock_mutation.cancel',
+                'reference_type' => 'stock_mutation',
+                'reference_id' => $stockMutation->id,
+                'description' => 'Cancel distribusi ' . ($stockMutation->invoice_number ?? '#' . $stockMutation->id) . '. Alasan: ' . $validated['cancel_reason'],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('stock-mutations.index')->with('success', __('Distribusi berhasil dibatalkan.'));
+    }
+
+    /**
+     * @return array{
+     *     stockMutation: StockMutation,
+     *     allMutations: \Illuminate\Support\Collection,
+     *     cashFlows: \Illuminate\Support\Collection,
+     *     fromLocation: Branch|Warehouse|null,
+     *     toLocation: Branch|Warehouse|null,
+     *     invoiceCancelled: bool,
+     *     totalBiaya: float,
+     *     totalPaid: float,
+     *     isLunas: bool
+     * }
+     */
+    private function distributionInvoiceViewData(StockMutation $stockMutation): array
+    {
         $allMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)
-            ->with(['product', 'user'])
+            ->with(['product', 'user', 'purchase', 'cancelUser'])
             ->orderBy('id')
             ->get();
 
         $mutationIds = $allMutations->pluck('id')->all();
-        $cashFlows = CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+        $cashFlowsRaw = CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
             ->whereIn('reference_id', $mutationIds)
             ->with('paymentMethod')
             ->orderBy('id')
             ->get();
+        $cashFlows = $cashFlowsRaw->where('type', CashFlow::TYPE_IN)->values();
 
         $fromLocation = $stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE
             ? Warehouse::find($stockMutation->from_location_id)
@@ -308,13 +384,22 @@ class StockMutationController extends Controller
             ? Warehouse::find($stockMutation->to_location_id)
             : Branch::find($stockMutation->to_location_id);
 
-        return view('stock-mutations.invoice', compact(
-            'stockMutation',
-            'allMutations',
-            'cashFlows',
-            'fromLocation',
-            'toLocation'
-        ));
+        $invoiceCancelled = $allMutations->contains(fn ($m) => $m->isCancelled());
+        $totalBiaya = (float) $allMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
+        $totalPaid = (float) $cashFlows->sum('amount');
+        $isLunas = $totalBiaya <= 0 || ($totalPaid + 0.02 >= $totalBiaya);
+
+        return [
+            'stockMutation' => $stockMutation,
+            'allMutations' => $allMutations,
+            'cashFlows' => $cashFlows,
+            'fromLocation' => $fromLocation,
+            'toLocation' => $toLocation,
+            'invoiceCancelled' => $invoiceCancelled,
+            'totalBiaya' => $totalBiaya,
+            'totalPaid' => $totalPaid,
+            'isLunas' => $isLunas,
+        ];
     }
 
     public function addPayment(StockMutation $stockMutation): View|RedirectResponse
@@ -323,6 +408,9 @@ class StockMutationController extends Controller
         $this->authorizeDistributionAccess($stockMutation, $user);
 
         $groupMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)->get();
+        if ($groupMutations->contains(fn ($m) => $m->isCancelled())) {
+            return redirect()->route('stock-mutations.index')->with('error', __('Distribusi ini sudah dibatalkan.'));
+        }
         $totalBiaya = $groupMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
         if ($totalBiaya <= 0) {
             return redirect()->route('stock-mutations.index')->with('info', __('Distribusi ini tidak memiliki biaya.'));
@@ -330,6 +418,7 @@ class StockMutationController extends Controller
 
         $groupIds = $groupMutations->pluck('id')->all();
         $totalPaid = (float) CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->where('type', CashFlow::TYPE_IN)
             ->whereIn('reference_id', $groupIds)
             ->sum('amount');
         $sisa = max(0, $totalBiaya - $totalPaid);
@@ -374,9 +463,13 @@ class StockMutationController extends Controller
         $this->authorizeDistributionAccess($stockMutation, $user);
 
         $groupMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)->get();
+        if ($groupMutations->contains(fn ($m) => $m->isCancelled())) {
+            return redirect()->route('stock-mutations.index')->with('error', __('Distribusi ini sudah dibatalkan.'));
+        }
         $totalBiaya = $groupMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
         $groupIds = $groupMutations->pluck('id')->all();
         $totalPaid = (float) CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+            ->where('type', CashFlow::TYPE_IN)
             ->whereIn('reference_id', $groupIds)
             ->sum('amount');
         $sisa = max(0, $totalBiaya - $totalPaid);
@@ -450,7 +543,40 @@ class StockMutationController extends Controller
     }
 
     /**
-     * Auto-fill PurchasePayments on destination Purchases by matching payment methods.
+     * Normalisasi nomor rekening untuk perbandingan (spasi dihapus).
+     */
+    private function normalizeNoRekening(?string $no): string
+    {
+        return preg_replace('/\s+/', '', trim((string) $no));
+    }
+
+    /**
+     * Pilih metode pembayaran di lokasi tujuan yang sama sumber dananya dengan lokasi asal:
+     * utamakan nomor rekening yang sama; jika asal tanpa rekening (mis. tunai), cocokkan jenis pembayaran.
+     */
+    private function matchDestinationPaymentMethod(PaymentMethod $originPm, $destPaymentMethods): ?PaymentMethod
+    {
+        $originRek = $this->normalizeNoRekening($originPm->no_rekening ?? '');
+
+        if ($originRek !== '') {
+            return $destPaymentMethods->first(
+                fn ($pm) => $this->normalizeNoRekening($pm->no_rekening ?? '') === $originRek
+            );
+        }
+
+        $originJenis = strtolower(trim($originPm->jenis_pembayaran ?? ''));
+
+        return $destPaymentMethods->first(function ($pm) use ($originJenis) {
+            if ($this->normalizeNoRekening($pm->no_rekening ?? '') !== '') {
+                return false;
+            }
+
+            return strtolower(trim($pm->jenis_pembayaran ?? '')) === $originJenis;
+        });
+    }
+
+    /**
+     * Auto-fill PurchasePayments on destination Purchases by matching payment methods (via nomor rekening yang sama).
      */
     private function autoFillDestinationPurchasePayments(
         array $mutations,
@@ -481,12 +607,7 @@ class StockMutationController extends Controller
                 continue;
             }
 
-            $destPm = $destPaymentMethods->first(fn ($pm) => strtolower(trim($pm->jenis_pembayaran ?? '')) === strtolower(trim($originPm->jenis_pembayaran ?? ''))
-                && strtolower(trim($pm->nama_bank ?? '')) === strtolower(trim($originPm->nama_bank ?? '')));
-
-            if (! $destPm) {
-                $destPm = $destPaymentMethods->first(fn ($pm) => strtolower(trim($pm->jenis_pembayaran ?? '')) === strtolower(trim($originPm->jenis_pembayaran ?? '')));
-            }
+            $destPm = $this->matchDestinationPaymentMethod($originPm, $destPaymentMethods);
 
             if ($destPm) {
                 $matchedPayments[] = [
@@ -810,7 +931,7 @@ class StockMutationController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('stock-mutations.index')->with('success', __('Distribusi stok berhasil dibuat.'));
+        return redirect()->route('stock-mutations.index')->with('success', __('Distribusi barang berhasil dibuat.'));
     }
 
     /**

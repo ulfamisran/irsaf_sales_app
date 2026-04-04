@@ -209,6 +209,12 @@ Route::middleware('auth')->group(function () {
     Route::post('stock-mutations/{stockMutation}/add-payment', [StockMutationController::class, 'storePayment'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.store-payment');
+    Route::get('stock-mutations/{stockMutation}/cancel', [StockMutationController::class, 'showCancel'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('stock-mutations.cancel.show');
+    Route::post('stock-mutations/{stockMutation}/cancel', [StockMutationController::class, 'cancel'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('stock-mutations.cancel');
 
     Route::get('stock-inout', [StockInOutController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang')

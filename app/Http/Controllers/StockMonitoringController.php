@@ -114,9 +114,26 @@ class StockMonitoringController extends Controller
                         $first = $catItems->first();
                         $catName = $first?->product?->category?->name ?? __('Tanpa Kategori');
 
+                        $byType = $catItems->groupBy(function ($row) {
+                            $t = strtolower(trim((string) ($row->product?->laptop_type ?? '')));
+
+                            return match ($t) {
+                                'baru' => 'baru',
+                                'bekas' => 'bekas',
+                                default => 'other',
+                            };
+                        });
+
+                        $typeBreakdown = collect([
+                            ['key' => 'baru', 'label' => __('Baru'), 'qty' => (int) ($byType->get('baru')?->sum('quantity') ?? 0)],
+                            ['key' => 'bekas', 'label' => __('Bekas'), 'qty' => (int) ($byType->get('bekas')?->sum('quantity') ?? 0)],
+                            ['key' => 'other', 'label' => __('Lainnya'), 'qty' => (int) ($byType->get('other')?->sum('quantity') ?? 0)],
+                        ])->filter(fn ($row) => $row['qty'] > 0)->values()->all();
+
                         return [
                             'category_name' => $catName,
                             'qty' => (int) $catItems->sum('quantity'),
+                            'type_breakdown' => $typeBreakdown,
                         ];
                     })
                     ->sortByDesc('qty')

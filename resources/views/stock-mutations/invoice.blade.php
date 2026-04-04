@@ -98,6 +98,39 @@
             color: #475569;
             background: #f1f5f9;
         }
+        .inv-meta .status-box.cancelled{
+            border-color: #64748b;
+            color: #1e293b;
+            background: #e2e8f0;
+        }
+        .inv-card.inv-cancelled{
+            position: relative;
+            border: 2px dashed #94a3b8;
+        }
+        @media print {
+            .inv-card.inv-cancelled .inv-top,
+            .inv-card.inv-cancelled .inv-customer,
+            .inv-card.inv-cancelled .inv-table,
+            .inv-card.inv-cancelled .inv-bottom,
+            .inv-card.inv-cancelled .inv-section,
+            .inv-card.inv-cancelled .inv-sign {
+                position: relative;
+                z-index: 1;
+            }
+            .inv-card.inv-cancelled::after{
+                content: 'DIBATALKAN';
+                position: absolute;
+                top: 40%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-18deg);
+                font-size: 42px;
+                font-weight: 900;
+                color: rgba(148, 163, 184, 0.35);
+                letter-spacing: 0.15em;
+                pointer-events: none;
+                z-index: 0;
+            }
+        }
 
         .inv-customer{
             font-size: 11px;
@@ -208,12 +241,18 @@
 </head>
 <body class="bg-slate-100">
     @php
+        $invoiceCancelled = $invoiceCancelled ?? false;
         $invNo = $stockMutation->invoice_number ?? ('DIST-#' . $stockMutation->id);
         $totalBiaya = $allMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
         $totalPaid = (float) $cashFlows->sum('amount');
         $isPaid = $totalBiaya <= 0 || ($totalPaid + 0.02 >= $totalBiaya);
-        $statusText = $totalBiaya <= 0 ? 'N/A' : ($isPaid ? 'LUNAS' : 'BELUM LUNAS');
-        $statusClass = $totalBiaya <= 0 ? 'na' : ($isPaid ? '' : 'unpaid');
+        if ($invoiceCancelled) {
+            $statusText = 'DIBATALKAN';
+            $statusClass = 'cancelled';
+        } else {
+            $statusText = $totalBiaya <= 0 ? 'N/A' : ($isPaid ? 'LUNAS' : 'BELUM LUNAS');
+            $statusClass = $totalBiaya <= 0 ? 'na' : ($isPaid ? '' : 'unpaid');
+        }
 
         if (!function_exists('irsaf_terbilang_dist')) {
             function irsaf_terbilang_dist(int $nilai): string {
@@ -261,15 +300,31 @@
         }
 
         $trxAt = $stockMutation->mutation_date ?? $stockMutation->created_at ?? now();
+        $firstMutInv = $allMutations->first();
     @endphp
-
+    @if ($invoiceCancelled)
+        <div class="no-print max-w-4xl mx-auto px-4 pt-4">
+            <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm text-center space-y-1">
+                <p class="font-semibold">{{ __('Invoice distribusi ini telah dibatalkan.') }}</p>
+                @if ($firstMutInv?->cancel_date)
+                    <p class="text-xs">{{ __('Tanggal pembatalan') }}: {{ $firstMutInv->cancel_date->translatedFormat('d F Y') }}</p>
+                @endif
+                @if ($firstMutInv?->cancelUser)
+                    <p class="text-xs">{{ __('Oleh') }}: {{ $firstMutInv->cancelUser->name }}</p>
+                @endif
+                @if ($firstMutInv?->cancel_reason)
+                    <p class="text-xs text-left mt-2 pt-2 border-t border-amber-200/80"><span class="font-medium">{{ __('Alasan') }}:</span> {{ $firstMutInv->cancel_reason }}</p>
+                @endif
+            </div>
+        </div>
+    @endif
     <div class="no-print max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
         <a href="{{ route('stock-mutations.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300">{{ __('Kembali') }}</a>
         <button onclick="window.print()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">{{ __('Print') }}</button>
     </div>
 
     <div class="inv-page px-4 pb-8">
-        <div class="inv-card">
+        <div class="inv-card {{ $invoiceCancelled ? 'inv-cancelled' : '' }}">
             <div class="inv-top">
                 <div class="inv-company">
                     <div class="inv-logo" aria-label="Logo">

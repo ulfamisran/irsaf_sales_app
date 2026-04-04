@@ -10,6 +10,9 @@ class ExpenseCategory extends Model
 {
     use HasFactory;
 
+    /** Kas keluar hutang biaya distribusi barang (bukan beban laba rugi operasional). */
+    public const CODE_DISTRIBUSI_BARANG = 'DIST-BRG';
+
     protected $fillable = [
         'name',
         'code',

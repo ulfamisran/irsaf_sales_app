@@ -274,11 +274,12 @@ class CashFlowController extends Controller
             abort(404, __('Kategori Pengeluaran Eksternal belum tersedia di database. Silakan buat dulu di Pengaturan Kategori Pengeluaran.'));
         }
 
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
-
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+            : ($user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $warehouses = $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get(['id', 'name'])
+            : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? (int) $user->branch_id : null;
         $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
@@ -881,10 +882,12 @@ class CashFlowController extends Controller
     public function createOut(Request $request): View
     {
         $user = $request->user();
-        $branches = $user->isSuperAdmin()
+        $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : Branch::whereKey($user->branch_id)->get(['id', 'name']);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+            : ($user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $warehouses = $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get(['id', 'name'])
+            : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
@@ -899,10 +902,6 @@ class CashFlowController extends Controller
             ->orderBy('nama_bank')
             ->orderBy('no_rekening')
             ->get();
-
-        if (! $user->isSuperAdmin() && ! $user->branch_id) {
-            // allow staff gudang without branch
-        }
 
         $branchIds = $branches->pluck('id')->toArray();
         $warehouseIds = $warehouses->pluck('id')->toArray();
@@ -943,13 +942,38 @@ class CashFlowController extends Controller
         $user = $request->user();
         $validated = $request->validated();
 
-        $branchId = $user->isSuperAdmin()
-            ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
-            : (int) $user->branch_id;
+        $branchId = null;
         $warehouseId = null;
 
-        if (! $branchId) {
-            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if (($validated['location_type'] ?? '') === 'warehouse' && ! empty($validated['warehouse_id'])) {
+                $warehouseId = (int) $validated['warehouse_id'];
+            } elseif (($validated['location_type'] ?? '') === 'branch' && ! empty($validated['branch_id'])) {
+                $branchId = (int) $validated['branch_id'];
+            }
+        } else {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+            }
+        }
+
+        if (! $branchId && ! $warehouseId) {
+            return redirect()->back()->withInput()->withErrors([
+                'location_type' => __('Lokasi (Cabang atau Gudang) wajib dipilih.'),
+            ]);
+        }
+
+        $pmAllowed = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchId, $warehouseId)
+            ->whereKey((int) $validated['payment_method_id'])
+            ->exists();
+        if (! $pmAllowed) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Sumber dana tidak sesuai lokasi yang dipilih.'),
+            ]);
         }
 
         $items = $validated['items'];
@@ -996,13 +1020,38 @@ class CashFlowController extends Controller
             ]);
         }
 
-        $branchId = $user->isSuperAdmin()
-            ? (isset($validated['branch_id']) ? (int) $validated['branch_id'] : null)
-            : (int) $user->branch_id;
+        $branchId = null;
         $warehouseId = null;
 
-        if (! $branchId) {
-            return redirect()->back()->withInput()->withErrors(['branch_id' => __('Cabang wajib dipilih.')]);
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if (($validated['location_type'] ?? '') === 'warehouse' && ! empty($validated['warehouse_id'])) {
+                $warehouseId = (int) $validated['warehouse_id'];
+            } elseif (($validated['location_type'] ?? '') === 'branch' && ! empty($validated['branch_id'])) {
+                $branchId = (int) $validated['branch_id'];
+            }
+        } else {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+            }
+        }
+
+        if (! $branchId && ! $warehouseId) {
+            return redirect()->back()->withInput()->withErrors([
+                'location_type' => __('Lokasi (Cabang atau Gudang) wajib dipilih.'),
+            ]);
+        }
+
+        $pmAllowed = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchId, $warehouseId)
+            ->whereKey((int) $validated['payment_method_id'])
+            ->exists();
+        if (! $pmAllowed) {
+            return redirect()->back()->withInput()->withErrors([
+                'payment_method_id' => __('Sumber dana tidak sesuai lokasi yang dipilih.'),
+            ]);
         }
 
         $items = $validated['items'];
