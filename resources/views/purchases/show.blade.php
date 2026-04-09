@@ -48,6 +48,13 @@
                             <p class="text-sm text-gray-500">{{ __('Jenis Pembelian') }}</p>
                             <p class="font-medium">{{ $purchase->jenis_pembelian ?? __('Pembelian Unit') }}</p>
                         </div>
+                        @if ($purchase->service_id && $purchase->service)
+                            <div class="md:col-span-2">
+                                <p class="text-sm text-gray-500">{{ __('Referensi invoice service') }}</p>
+                                <a href="{{ route('services.show', $purchase->service) }}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ $purchase->service->invoice_number }}</a>
+                                <span class="text-slate-500 text-sm">— {{ $purchase->service->laptop_type }}</span>
+                            </div>
+                        @endif
                         <div>
                             <p class="text-sm text-gray-500">{{ __('Distributor') }}</p>
                             <p class="font-medium">{{ $purchase->distributor?->name ?? '-' }}</p>

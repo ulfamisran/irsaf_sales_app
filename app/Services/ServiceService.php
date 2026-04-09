@@ -6,14 +6,22 @@ use App\Models\CashFlow;
 use App\Models\Branch;
 use App\Models\ExpenseCategory;
 use App\Models\IncomeCategory;
+use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\Service;
 use App\Models\ServiceMaterial;
 use App\Models\ServicePayment;
+use App\Models\Stock;
+use App\Models\StockMutation;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class ServiceService
 {
+    public function __construct(
+        protected StockMutationService $stockMutationService
+    ) {}
+
     /**
      * Create a new service.
      * Status open: hanya pelanggan & info laptop, tanpa material dan pembayaran.
@@ -123,7 +131,7 @@ class ServiceService
                     'branch_id' => $branch->id,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $sp->amount,
-                    'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
+                    'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
                     'income_category_id' => $serviceCategory->id,
@@ -131,6 +139,10 @@ class ServiceService
                     'transaction_date' => $entryDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
+            }
+
+            if ($targetStatus === Service::STATUS_COMPLETED) {
+                $this->consumeLinkedSparepartOnRelease($service, $userId, $entryDate);
             }
 
             return $service->fresh()->load(['payments.paymentMethod', 'branch', 'user', 'customer']);
@@ -193,6 +205,7 @@ class ServiceService
             $entryDate,
             $payments,
             $paymentSum,
+            $totalPrice,
             $isPaidOff,
             $description,
             $markAsReleased
@@ -245,7 +258,7 @@ class ServiceService
                     'branch_id' => $branch->id,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $sp->amount,
-                    'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
+                    'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
                     'income_category_id' => $serviceCategory->id,
@@ -253,6 +266,10 @@ class ServiceService
                     'transaction_date' => $entryDate,
                     'user_id' => auth()->id(),
                 ]);
+            }
+
+            if ($markAsReleased) {
+                $this->consumeLinkedSparepartOnRelease($service, auth()->id(), $entryDate);
             }
 
             return $service->fresh()->load(['payments.paymentMethod', 'branch', 'user', 'customer']);
@@ -333,7 +350,7 @@ class ServiceService
                     'branch_id' => $branch->id,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $amt,
-                    'description' => __('Service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
+                    'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
                     'income_category_id' => $serviceCategory->id,
@@ -358,6 +375,10 @@ class ServiceService
             }
 
             $service->update($updates);
+
+            if ($markCompleted) {
+                $this->consumeLinkedSparepartOnRelease($service, $userId, $txDate);
+            }
 
             return $service->fresh()->load(['payments.paymentMethod', 'branch', 'user', 'customer']);
         });
@@ -384,6 +405,7 @@ class ServiceService
         }
 
         $service->update($updates);
+        $this->consumeLinkedSparepartOnRelease($service, auth()->id(), $updates['exit_date']);
 
         return $service->fresh()->load(['payments.paymentMethod', 'branch', 'user', 'customer']);
     }
@@ -524,6 +546,99 @@ class ServiceService
             }
         }
         return round($sum, 2);
+    }
+
+    /**
+     * Deskripsi kas masuk service: menyertakan total transaksi (tagihan) dan metode pembayaran.
+     * Nominal baris kas = jumlah per metode (amount pada CashFlow).
+     */
+    private function serviceCashInDescription(string $invoiceNumber, float $totalTransaksi, string $paymentMethodLabel): string
+    {
+        return __('Service') . ' ' . $invoiceNumber
+            . ' — ' . __('Total transaksi') . ' Rp ' . number_format($totalTransaksi, 0, ',', '.')
+            . ' — ' . $paymentMethodLabel;
+    }
+
+    /**
+     * Saat service release/completed: konsumsi sparepart dari pembelian terhubung.
+     * Efek: stok berkurang + tercatat mutasi stok OUT.
+     */
+    private function consumeLinkedSparepartOnRelease(Service $service, ?int $userId = null, ?string $mutationDate = null): void
+    {
+        $alreadyConsumed = StockMutation::where('invoice_number', $service->invoice_number)
+            ->where('notes', 'like', 'OUT Service Sparepart (SERVICE)%')
+            ->exists();
+        if ($alreadyConsumed) {
+            return;
+        }
+
+        $purchases = Purchase::with(['details.product'])
+            ->where('service_id', $service->id)
+            ->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE)
+            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->get();
+
+        if ($purchases->isEmpty()) {
+            return;
+        }
+
+        $date = $mutationDate ?: now()->toDateString();
+        $branchId = (int) $service->branch_id;
+        $consumedByProduct = [];
+
+        foreach ($purchases as $purchase) {
+            foreach ($purchase->details as $detail) {
+                $productId = (int) $detail->product_id;
+                $qty = (int) $detail->quantity;
+                if ($productId <= 0 || $qty <= 0) {
+                    continue;
+                }
+                if (! isset($consumedByProduct[$productId])) {
+                    $consumedByProduct[$productId] = [
+                        'qty' => 0,
+                        'purchase_invoice_numbers' => [],
+                    ];
+                }
+                $consumedByProduct[$productId]['qty'] += $qty;
+                $consumedByProduct[$productId]['purchase_invoice_numbers'][$purchase->invoice_number] = true;
+            }
+        }
+
+        foreach ($consumedByProduct as $productId => $payload) {
+            $qty = (int) ($payload['qty'] ?? 0);
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $product = Product::find($productId);
+            if (! $product) {
+                continue;
+            }
+
+            $this->stockMutationService->reduceStock(
+                $product,
+                Stock::LOCATION_BRANCH,
+                $branchId,
+                $qty
+            );
+
+            $refInvoices = implode(', ', array_keys($payload['purchase_invoice_numbers'] ?? []));
+            StockMutation::create([
+                'invoice_number' => $service->invoice_number,
+                'product_id' => $product->id,
+                'from_location_type' => Stock::LOCATION_BRANCH,
+                'from_location_id' => $branchId,
+                'to_location_type' => Stock::LOCATION_BRANCH,
+                'to_location_id' => $branchId,
+                'quantity' => $qty,
+                'biaya_distribusi_per_unit' => 0,
+                'distribution_payment_method_id' => null,
+                'mutation_date' => $date,
+                'notes' => 'OUT Service Sparepart (SERVICE) - Ref: ' . $refInvoices,
+                'serial_numbers' => null,
+                'user_id' => $userId ?? auth()->id(),
+            ]);
+        }
     }
 
     private function generateInvoiceNumber(): string

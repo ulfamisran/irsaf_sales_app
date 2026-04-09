@@ -32,6 +32,7 @@ class ServiceRequest extends FormRequest
             'laptop_type' => ['required', 'string', 'max:100'],
             'laptop_detail' => ['nullable', 'string'],
             'damage_description' => ['nullable', 'string'],
+            'service_cost' => ['nullable', 'numeric', 'min:0'],
             'service_fee' => [$isRelease ? 'required' : 'nullable', 'numeric', 'min:0'],
             'entry_date' => ['required', 'date'],
             'description' => ['nullable', 'string'],
@@ -42,10 +43,10 @@ class ServiceRequest extends FormRequest
             'payments.*.notes' => ['nullable', 'string'],
 
             'materials' => ['nullable', 'array'],
+            'materials.*.product_id' => ['nullable', 'exists:products,id'],
             'materials.*.name' => ['nullable', 'string', 'max:150'],
-            'materials.*.quantity' => ['nullable', 'numeric', 'min:0.01', 'required_with:materials.*.name'],
-            'materials.*.payment_method_id' => ['nullable', 'exists:payment_methods,id', 'required_with:materials.*.name'],
-            'materials.*.price' => ['nullable', 'numeric', 'min:0', 'required_with:materials.*.name'],
+            'materials.*.quantity' => ['nullable', 'integer', 'min:1', 'required_with:materials.*.product_id'],
+            'materials.*.price' => ['nullable', 'numeric', 'min:0', 'required_with:materials.*.product_id'],
             'materials.*.notes' => ['nullable', 'string'],
         ];
     }

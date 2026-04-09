@@ -368,7 +368,7 @@
                     <tr>
                         <th style="width:40px;">No</th>
                         <th>Deskripsi</th>
-                        <th style="width:120px;">Total Service</th>
+                        <th style="width:160px;">Total Service</th>
                     </tr>
                 </thead>
                 <tbody>

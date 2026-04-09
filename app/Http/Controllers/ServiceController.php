@@ -10,11 +10,15 @@ use App\Models\Warehouse;
 use App\Models\ExpenseCategory;
 use App\Models\CashFlow;
 use App\Models\PaymentMethod;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceMaterial;
+use App\Models\Stock;
+use App\Models\StockMutation;
 use App\Models\AuditLog;
 use App\Services\ServiceService;
 use App\Services\KasBalanceService;
+use App\Services\StockMutationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -257,11 +261,14 @@ class ServiceController extends Controller
         $paymentMethods = $branchIdForData
             ? PaymentMethod::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
             : collect();
+        $materialProducts = $branchIdForData
+            ? $this->getInStockProductsForBranch($branchIdForData)
+            : collect();
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
 
-        return view('services.create', compact('branches', 'customers', 'paymentMethods', 'saldoMapBranch'));
+        return view('services.create', compact('branches', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
     }
 
     public function store(ServiceRequest $request): RedirectResponse
@@ -281,9 +288,6 @@ class ServiceController extends Controller
             $isRelease = $status === 'release';
 
             $materialsInput = $isRelease ? ($request->input('materials', []) ?? []) : [];
-            if (is_array($materialsInput) && ! empty($materialsInput)) {
-                $this->ensureMaterialSaldo($branchId, $materialsInput);
-            }
             $materialsTotal = $isRelease ? $this->sumMaterialsTotalPrice($materialsInput) : 0.0;
 
             $service = $this->serviceService->create(
@@ -292,7 +296,7 @@ class ServiceController extends Controller
                 $request->laptop_type,
                 $request->laptop_detail,
                 $request->damage_description,
-                0.0,
+                (float) $request->input('service_cost', 0),
                 (float) ($request->service_fee ?? 0),
                 $request->entry_date,
                 $request->input('payments', []),
@@ -320,7 +324,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials']);
+        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -329,6 +333,7 @@ class ServiceController extends Controller
             ->orderBy('nama_bank')
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        $materialProducts = $this->getInStockProductsForBranch((int) $service->branch_id);
 
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm([$service->branch_id]);
 
@@ -368,12 +373,12 @@ class ServiceController extends Controller
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials']);
+        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
 
-        return view('services.edit', compact('service', 'branches', 'customers', 'paymentMethods', 'saldoMapBranch'));
+        return view('services.edit', compact('service', 'branches', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
     }
 
     public function update(ServiceRequest $request, Service $service): RedirectResponse
@@ -393,9 +398,6 @@ class ServiceController extends Controller
 
             $materialsInput = $request->input('materials', null);
             $materialsTotal = is_array($materialsInput) ? $this->sumMaterialsTotalPrice($materialsInput) : null;
-            if (is_array($materialsInput) && ! empty($materialsInput)) {
-                $this->ensureMaterialSaldo((int) $service->branch_id, $materialsInput);
-            }
 
             $markAsReleased = (bool) $request->input('mark_release');
 
@@ -405,7 +407,7 @@ class ServiceController extends Controller
                 $request->laptop_type,
                 $request->laptop_detail,
                 $request->damage_description,
-                0.0,
+                (float) $request->input('service_cost', $service->service_cost),
                 (float) $request->service_fee,
                 $request->entry_date,
                 $request->input('payments', []),
@@ -481,32 +483,14 @@ class ServiceController extends Controller
 
         $validated = $request->validate([
             'materials' => ['required', 'array', 'min:1'],
-            'materials.*.name' => ['required', 'string', 'max:150'],
-            'materials.*.quantity' => ['required', 'numeric', 'min:0.01'],
-            'materials.*.payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'materials.*.product_id' => ['required', 'exists:products,id'],
+            'materials.*.quantity' => ['required', 'integer', 'min:1'],
             'materials.*.price' => ['required', 'numeric', 'min:0'],
             'materials.*.notes' => ['nullable', 'string'],
         ]);
 
         try {
-            $this->ensureMaterialSaldo((int) $service->branch_id, $validated['materials']);
-
-            foreach ($validated['materials'] as $mat) {
-                $qty = round((float) ($mat['quantity'] ?? 0), 2);
-                if ($qty <= 0) {
-                    continue;
-                }
-                $material = ServiceMaterial::create([
-                    'service_id' => $service->id,
-                    'payment_method_id' => (int) ($mat['payment_method_id'] ?? 0),
-                    'name' => trim((string) ($mat['name'] ?? '')),
-                    'quantity' => $qty,
-                    'hpp' => 0,
-                    'price' => round((float) ($mat['price'] ?? 0), 2),
-                    'notes' => $mat['notes'] ?? null,
-                ]);
-                $this->createMaterialCashOut($service, $material, (int) ($mat['payment_method_id'] ?? 0), $user->id);
-            }
+            $this->storeMaterials($service, $validated['materials'], replace: false, userId: $user->id);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -627,7 +611,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials']);
+        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         return view('services.invoice', compact('service'));
     }
@@ -661,12 +645,55 @@ class ServiceController extends Controller
     }
 
     /**
-     * @param  array<int, array{name?: string, quantity?: float, hpp?: float, price?: float, notes?: string|null}>  $materials
+     * @param  array<int, array{product_id?: int, name?: string, quantity?: int, price?: float, notes?: string|null}>  $materials
      */
     private function storeMaterials(Service $service, array $materials, bool $replace = false, ?int $userId = null): void
     {
+        $stockService = app(StockMutationService::class);
+        $branchId = (int) $service->branch_id;
+        $txDate = now()->toDateString();
+
         if ($replace) {
-            $oldMaterialIds = ServiceMaterial::where('service_id', $service->id)->pluck('id')->toArray();
+            $oldMaterials = ServiceMaterial::where('service_id', $service->id)->get();
+            $oldMaterialIds = $oldMaterials->pluck('id')->toArray();
+
+            // Kembalikan stok material lama ke cabang sebelum ditimpa ulang.
+            foreach ($oldMaterials as $old) {
+                $oldProductId = (int) ($old->product_id ?? 0);
+                $oldQty = (int) round((float) ($old->quantity ?? 0));
+                if ($oldProductId <= 0 || $oldQty <= 0) {
+                    continue;
+                }
+                $product = Product::find($oldProductId);
+                if (! $product) {
+                    continue;
+                }
+                $stockService->addStock(
+                    $product,
+                    Stock::LOCATION_BRANCH,
+                    $branchId,
+                    $oldQty,
+                    $userId ?? auth()->id(),
+                    null,
+                    $txDate
+                );
+                StockMutation::create([
+                    'invoice_number' => $service->invoice_number,
+                    'product_id' => $product->id,
+                    'from_location_type' => Stock::LOCATION_BRANCH,
+                    'from_location_id' => $branchId,
+                    'to_location_type' => Stock::LOCATION_BRANCH,
+                    'to_location_id' => $branchId,
+                    'quantity' => $oldQty,
+                    'biaya_distribusi_per_unit' => 0,
+                    'distribution_payment_method_id' => null,
+                    'mutation_date' => $txDate,
+                    'notes' => 'IN Koreksi Material Service - ' . $service->invoice_number,
+                    'serial_numbers' => null,
+                    'user_id' => $userId ?? auth()->id(),
+                ]);
+            }
+
             if (! empty($oldMaterialIds)) {
                 CashFlow::where('reference_type', CashFlow::REFERENCE_EXPENSE)
                     ->whereIn('reference_id', $oldMaterialIds)
@@ -677,36 +704,67 @@ class ServiceController extends Controller
         }
 
         foreach ($materials as $mat) {
-            $name = trim((string) ($mat['name'] ?? ''));
-            $qty = round((float) ($mat['quantity'] ?? 0), 2);
-            if ($name === '' || $qty <= 0) {
+            $productId = (int) ($mat['product_id'] ?? 0);
+            $qty = (int) ($mat['quantity'] ?? 0);
+            if ($productId <= 0 || $qty <= 0) {
                 continue;
             }
-            $paymentMethodId = (int) ($mat['payment_method_id'] ?? 0);
+            $product = Product::find($productId);
+            if (! $product) {
+                continue;
+            }
+
+            // Material service dari stok cabang: stok berkurang saat dipakai.
+            $stockService->reduceStock(
+                $product,
+                Stock::LOCATION_BRANCH,
+                $branchId,
+                $qty
+            );
+
+            $name = trim(($product->sku ?? '').' '.($product->brand ?? '').' '.($product->series ?? ''));
+            if ($name === '') {
+                $name = 'Produk #' . $product->id;
+            }
             $material = ServiceMaterial::create([
                 'service_id' => $service->id,
-                'payment_method_id' => $paymentMethodId,
+                'product_id' => $product->id,
+                'payment_method_id' => null,
                 'name' => $name,
                 'quantity' => $qty,
-                'hpp' => 0,
+                'hpp' => round((float) ($product->purchase_price ?? 0), 2),
                 'price' => round((float) ($mat['price'] ?? 0), 2),
                 'notes' => $mat['notes'] ?? null,
             ]);
-            $this->createMaterialCashOut($service, $material, $paymentMethodId, $userId ?? auth()->id());
+            StockMutation::create([
+                'invoice_number' => $service->invoice_number,
+                'product_id' => $product->id,
+                'from_location_type' => Stock::LOCATION_BRANCH,
+                'from_location_id' => $branchId,
+                'to_location_type' => Stock::LOCATION_BRANCH,
+                'to_location_id' => $branchId,
+                'quantity' => $qty,
+                'biaya_distribusi_per_unit' => 0,
+                'distribution_payment_method_id' => null,
+                'mutation_date' => $txDate,
+                'notes' => 'OUT Material Service - ' . $service->invoice_number . ' - ' . $material->name,
+                'serial_numbers' => null,
+                'user_id' => $userId ?? auth()->id(),
+            ]);
         }
     }
 
     /**
-     * @param  array<int, array{name?: string, quantity?: float, price?: float}>  $materials
+     * @param  array<int, array{product_id?: int, quantity?: int, price?: float}>  $materials
      */
     private function sumMaterialsTotalPrice(array $materials): float
     {
         $sum = 0.0;
         foreach ($materials as $mat) {
-            $name = trim((string) ($mat['name'] ?? ''));
-            $qty = (float) ($mat['quantity'] ?? 0);
+            $productId = (int) ($mat['product_id'] ?? 0);
+            $qty = (int) ($mat['quantity'] ?? 0);
             $price = (float) ($mat['price'] ?? 0);
-            if ($name !== '' && $qty > 0 && $price >= 0) {
+            if ($productId > 0 && $qty > 0 && $price >= 0) {
                 $sum += $qty * $price;
             }
         }
@@ -783,6 +841,31 @@ class ServiceController extends Controller
             'transaction_date' => now()->toDateString(),
             'user_id' => $userId,
         ]);
+    }
+
+    private function getInStockProductsForBranch(int $branchId)
+    {
+        return Product::query()
+            ->join('stocks', function ($join) use ($branchId) {
+                $join->on('stocks.product_id', '=', 'products.id')
+                    ->where('stocks.location_type', Stock::LOCATION_BRANCH)
+                    ->where('stocks.location_id', $branchId)
+                    ->where('stocks.quantity', '>', 0);
+            })
+            ->leftJoin('categories', 'categories.id', '=', 'products.category_id')
+            ->orderBy('categories.name')
+            ->orderBy('products.sku')
+            ->get([
+                'products.id',
+                'products.category_id',
+                'categories.name as category_name',
+                'products.sku',
+                'products.brand',
+                'products.series',
+                'products.purchase_price',
+                'products.selling_price',
+                'stocks.quantity as stock_qty',
+            ]);
     }
 
     private function refreshPaymentStatus(Service $service): void

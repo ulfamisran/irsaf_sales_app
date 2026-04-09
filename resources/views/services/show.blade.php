@@ -66,7 +66,12 @@
                         <div class="md:col-span-2"><p class="text-sm text-gray-500">{{ __('Jenis Laptop') }}</p><p class="font-medium">{{ $service->laptop_type }}</p></div>
                         <div class="md:col-span-2"><p class="text-sm text-gray-500">{{ __('Detail Laptop') }}</p><p class="font-medium">{{ $service->laptop_detail ?? '-' }}</p></div>
                         <div class="md:col-span-2"><p class="text-sm text-gray-500">{{ __('Kerusakan') }}</p><p class="font-medium whitespace-pre-line">{{ $service->damage_description ?? '-' }}</p></div>
+                        @php
+                            $sparepartInvoiceTotalShow = ($service->sparePartServicePurchases ?? collect())->sum(fn ($p) => (float) ($p->total ?? 0));
+                            $totalBiayaServiceShow = (float) $service->service_price + $sparepartInvoiceTotalShow;
+                        @endphp
                         <div><p class="text-sm text-gray-500">{{ __('Biaya Jasa Service') }}</p><p class="font-medium">{{ number_format($service->service_price, 0, ',', '.') }}</p></div>
+                        <div><p class="text-sm text-gray-500">{{ __('Total Biaya Service') }}</p><p class="font-medium">{{ number_format($totalBiayaServiceShow, 0, ',', '.') }}</p></div>
                         <div><p class="text-sm text-gray-500">{{ __('Status Pengambilan') }}</p>
                             <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $service->pickup_status === 'sudah_diambil' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">
                                 {{ $service->pickup_status === 'sudah_diambil' ? __('Sudah Diambil') : __('Belum Diambil') }}
@@ -80,8 +85,44 @@
                         $totalServicePrice = (float) $service->total_service_price;
                     @endphp
 
+                    @if (($service->sparePartServicePurchases ?? collect())->isNotEmpty())
+                        <div class="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/30 p-4">
+                            <p class="text-sm font-semibold text-indigo-900">{{ __('Sparepart dari Pembelian (Pembelian Sparepart Service)') }}</p>
+                            <div class="mt-3 overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice beli') }}</th>
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Produk') }}</th>
+                                            <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Qty') }}</th>
+                                            <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga') }}</th>
+                                            <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Subtotal') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        @foreach ($service->sparePartServicePurchases as $pur)
+                                            @foreach ($pur->details as $d)
+                                                @php
+                                                    $pr = $d->product;
+                                                    $qty = (int) $d->quantity;
+                                                @endphp
+                                                <tr>
+                                                    <td class="px-3 py-2"><a href="{{ route('purchases.show', $pur) }}" class="text-indigo-600 hover:underline">{{ $pur->invoice_number }}</a></td>
+                                                    <td class="px-3 py-2 font-medium">{{ $pr ? ($pr->sku.' — '.$pr->brand.' '.$pr->series) : '#' . $d->product_id }}</td>
+                                                    <td class="px-3 py-2 text-right">{{ $qty }}</td>
+                                                    <td class="px-3 py-2 text-right">{{ number_format((float) $d->unit_price, 0, ',', '.') }}</td>
+                                                    <td class="px-3 py-2 text-right">{{ number_format((float) $d->subtotal, 0, ',', '.') }}</td>
+                                                </tr>
+                                            @endforeach
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="mt-6">
-                        <p class="text-sm font-semibold text-gray-800">{{ __('Bahan/Material Service') }}</p>
+                        <p class="text-sm font-semibold text-gray-800">{{ __('Material manual (kas / catatan)') }}</p>
                         <div class="mt-2 overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
                                 <thead class="bg-slate-50">
@@ -115,11 +156,15 @@
                         </div>
                         <div class="mt-3 text-sm text-slate-700 space-y-1">
                             <div class="flex justify-between">
-                                <span>{{ __('Total Material') }}</span>
+                                <span>{{ __('Total material & sparepart (tagihan pelanggan)') }}</span>
                                 <span class="font-medium">{{ number_format($materialsTotalPrice, 0, ',', '.') }}</span>
                             </div>
-                            <div class="flex justify-between font-semibold">
-                                <span>{{ __('Total Service Keseluruhan') }}</span>
+                            <div class="flex justify-between text-xs text-slate-500">
+                                <span>{{ __('Perkiraan total biaya (HPP jasa + HPP material/sparepart)') }}</span>
+                                <span>{{ number_format($service->total_service_cost, 0, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between font-semibold pt-1 border-t border-slate-100">
+                                <span>{{ __('Total tagihan service') }}</span>
                                 <span>{{ number_format($totalServicePrice, 0, ',', '.') }}</span>
                             </div>
                         </div>
@@ -148,7 +193,7 @@
 
                     @if ($service->status === 'open')
                         <div class="mt-6 p-4 rounded-lg bg-amber-50 border border-amber-200">
-                            <p class="text-sm text-amber-800">{{ __('Untuk menambah material dan pembayaran, gunakan tombol Edit di atas.') }}</p>
+                            <p class="text-sm text-amber-800">{{ __('Sparepart: catat lewat menu Pembelian (jenis Pembelian Sparepart Service) dengan memilih invoice ini. Untuk release, tarif jasa, material manual, dan pembayaran — gunakan tombol Edit.') }}</p>
                         </div>
                     @endif
                 </div>

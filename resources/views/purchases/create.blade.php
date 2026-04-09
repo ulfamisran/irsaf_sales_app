@@ -62,6 +62,38 @@
                                 </div>
                             </div>
 
+                            {{-- Jenis pembelian & referensi service --}}
+                            <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                                <div>
+                                    <x-input-label for="jenis_pembelian" :value="__('Jenis Pembelian')" />
+                                    <select id="jenis_pembelian" name="jenis_pembelian" required
+                                        class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="{{ \App\Models\Purchase::JENIS_PEMBELIAN_UNIT }}" {{ old('jenis_pembelian', \App\Models\Purchase::JENIS_PEMBELIAN_UNIT) === \App\Models\Purchase::JENIS_PEMBELIAN_UNIT ? 'selected' : '' }}>
+                                            {{ \App\Models\Purchase::JENIS_PEMBELIAN_UNIT }}
+                                        </option>
+                                        <option value="{{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE }}" {{ old('jenis_pembelian') === \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE ? 'selected' : '' }}>
+                                            {{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE }}
+                                        </option>
+                                    </select>
+                                    <p class="mt-1 text-xs text-slate-600">{{ __('Untuk servis: buat invoice service (Open), lalu catat sparepart di sini dengan jenis ini dan pilih nomor invoice service sebagai referensi. Stok masuk ke cabang yang sama.') }}</p>
+                                    <x-input-error :messages="$errors->get('jenis_pembelian')" class="mt-2" />
+                                </div>
+                                <div id="service-invoice-row" class="{{ old('jenis_pembelian') === \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE ? '' : 'hidden' }}">
+                                    <x-input-label for="service_id" :value="__('Referensi invoice service (Open)')" />
+                                    <select id="service_id" name="service_id"
+                                        data-initial-value="{{ old('service_id') }}"
+                                        class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="">{{ __('Pilih invoice service') }}</option>
+                                        @foreach ($openServicesInitial ?? [] as $svc)
+                                            <option value="{{ $svc->id }}" @selected(old('service_id') == $svc->id)>
+                                                {{ $svc->invoice_number }} — {{ $svc->laptop_type }}{{ $svc->customer ? ' ('.$svc->customer->name.')' : '' }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <x-input-error :messages="$errors->get('service_id')" class="mt-2" />
+                                </div>
+                            </div>
+
                             {{-- No. Invoice --}}
                             <div>
                                 <x-input-label for="invoice_number" :value="__('No. Invoice Pembelian')" />
@@ -235,12 +267,13 @@
 
     @push('scripts')
     @php
+        $serviceInvoicePlaceholder = __('Pilih invoice service');
         $paymentMethodsJson = $paymentMethods->map(fn ($m) => [
             'id' => $m->id,
             'label' => $m->display_label,
             'saldo' => (float) ($saldoByPaymentMethod[$m->id] ?? 0),
         ])->values();
-        $productsJson = $products->map(fn ($p) => ['id' => $p->id, 'sku' => $p->sku ?? '', 'brand' => $p->brand ?? '', 'series' => $p->series ?? '', 'purchase_price' => (float) ($p->purchase_price ?? 0)])->values();
+        $productsJson = $products->map(fn ($p) => ['id' => $p->id, 'sku' => $p->sku ?? '', 'brand' => $p->brand ?? '', 'series' => $p->series ?? '', 'purchase_price' => (float) ($p->purchase_price ?? 0), 'selling_price' => (float) ($p->selling_price ?? 0)])->values();
     @endphp
     <script>
         let paymentMethods = @json($paymentMethodsJson);
@@ -250,13 +283,55 @@
         const purchaseSerialSearchPath = @json(route('purchases.search-unit-by-serial', [], false));
         const baseUrl = '{{ url("") }}';
         const purchaseSerialSearchUrl = baseUrl + purchaseSerialSearchPath;
+        const JENIS_SPAREPART_SERVICE = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE);
+        const serviceInvoicePlaceholder = @json($serviceInvoicePlaceholder);
 
         function productOptionHtml(p) {
             const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
             const sku = esc(p.sku); const brand = esc(p.brand); const series = esc(p.series);
             const price = Number(p.purchase_price || 0).toLocaleString('id-ID');
+            const sell = Number(p.selling_price || 0).toLocaleString('id-ID');
             return '<div class="product-option px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm" data-id="' + p.id + '" data-brand="' + esc(p.brand) + '" data-series="' + esc(p.series) + '" data-sku="' + esc(p.sku) + '" data-price="' + (p.purchase_price || 0) + '">' +
-                '<span class="text-xs text-slate-500">' + sku + '</span> <span class="text-slate-400">-</span> <span class="text-slate-800">' + brand + ' ' + series + '</span> <span class="text-emerald-600 font-medium ml-1">' + price + '</span></div>';
+                '<span class="text-xs text-slate-500">' + sku + '</span> <span class="text-slate-400">-</span> <span class="text-slate-800">' + brand + ' ' + series + '</span> <span class="text-emerald-600 font-medium ml-1">Beli ' + price + '</span> <span class="text-indigo-600 text-xs ml-1">Jual ' + sell + '</span></div>';
+        }
+
+        function syncPurchaseJenisServiceUi() {
+            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
+            const jenisSel = document.getElementById('jenis_pembelian');
+            const serviceRow = document.getElementById('service-invoice-row');
+            const serviceSel = document.getElementById('service_id');
+            if (!jenisSel || !serviceRow || !serviceSel) return;
+            if (locType === 'warehouse') {
+                if (jenisSel.value === JENIS_SPAREPART_SERVICE) {
+                    jenisSel.value = @json(\App\Models\Purchase::JENIS_PEMBELIAN_UNIT);
+                }
+                serviceRow.classList.add('hidden');
+                serviceSel.value = '';
+                serviceSel.removeAttribute('required');
+                return;
+            }
+            const isSparepartSvc = jenisSel.value === JENIS_SPAREPART_SERVICE;
+            serviceRow.classList.toggle('hidden', !isSparepartSvc);
+            if (isSparepartSvc) {
+                serviceSel.setAttribute('required', 'required');
+            } else {
+                serviceSel.removeAttribute('required');
+                serviceSel.value = '';
+            }
+        }
+
+        function fillServiceInvoiceOptions(openServices) {
+            const serviceSel = document.getElementById('service_id');
+            if (!serviceSel) return;
+            const initial = serviceSel.getAttribute('data-initial-value') || '';
+            const prev = serviceSel.value || initial;
+            const list = Array.isArray(openServices) ? openServices : [];
+            const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            serviceSel.innerHTML = '<option value="">' + esc(serviceInvoicePlaceholder) + '</option>' +
+                list.map(s => '<option value="' + s.id + '">' + esc(s.label || s.invoice_number || '') + '</option>').join('');
+            if (prev && list.some(s => String(s.id) === String(prev))) {
+                serviceSel.value = String(prev);
+            }
         }
         function getBrands() { const s = new Set(); products.forEach(p => { if (p.brand) s.add(p.brand); }); return Array.from(s).sort(); }
         function getSeries(brandVal) { const s = new Set(); products.forEach(p => { if ((!brandVal || p.brand === brandVal) && p.series) s.add(p.series); }); return Array.from(s).sort(); }
@@ -634,6 +709,8 @@
                 document.getElementById('distributor_id').innerHTML = '<option value="">Pilih lokasi terlebih dahulu</option>';
                 document.getElementById('distributor_id').disabled = true;
                 window.loadPurchaseProducts?.();
+                fillServiceInvoiceOptions([]);
+                syncPurchaseJenisServiceUi();
                 return;
             }
             try {
@@ -652,6 +729,10 @@
                     products = data.products;
                     repopulateProductDropdowns();
                 }
+                if (data.open_services) {
+                    fillServiceInvoiceOptions(data.open_services);
+                }
+                syncPurchaseJenisServiceUi();
             } catch (e) {
                 document.getElementById('distributor_id').innerHTML = '<option value="">Gagal memuat distributor</option>';
             }
@@ -702,11 +783,18 @@
                 this.querySelector('svg')?.classList?.remove('animate-spin');
             });
         });
-        document.querySelectorAll('input[name="location_type"]').forEach(el => el.addEventListener('change', () => window.loadPurchaseDistributors?.()));
+        document.querySelectorAll('input[name="location_type"]').forEach(el => el.addEventListener('change', () => {
+            window.loadPurchaseDistributors?.();
+            syncPurchaseJenisServiceUi();
+        }));
+        document.getElementById('jenis_pembelian')?.addEventListener('change', () => syncPurchaseJenisServiceUi());
         document.querySelector('form')?.addEventListener('change', function(e) {
             if (e.target.matches('#warehouse_id, #branch_id')) window.loadPurchaseDistributors?.();
         });
-        document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.loadPurchaseDistributors?.(), 200));
+        document.addEventListener('DOMContentLoaded', () => {
+            syncPurchaseJenisServiceUi();
+            setTimeout(() => window.loadPurchaseDistributors?.(), 200);
+        });
 
         const purchaseForm = document.getElementById('purchase-form');
         const confirmReuseInput = document.getElementById('confirm_reuse_sold_serials');

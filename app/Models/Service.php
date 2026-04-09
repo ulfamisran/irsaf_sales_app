@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Service extends Model
 {
@@ -85,26 +86,83 @@ class Service extends Model
         return $this->hasMany(ServiceMaterial::class);
     }
 
-    public function getMaterialsTotalPriceAttribute(): float
+    /**
+     * Pembelian sparepart yang dirujuk ke invoice service ini (menu Pembelian).
+     */
+    public function sparePartServicePurchases(): HasMany
     {
-        if ($this->relationLoaded('serviceMaterials')) {
-            return (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->price * (float) $m->quantity);
+        return $this->hasMany(Purchase::class, 'service_id')
+            ->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE)
+            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->orderByDesc('purchase_date')
+            ->orderByDesc('id');
+    }
+
+    /**
+     * Total sparepart yang ditagihkan ke pelanggan.
+     * Basis: total invoice pembelian sparepart (HPP pembelian), bukan harga jual produk.
+     */
+    protected function linkedSparepartPurchasesSaleTotal(): float
+    {
+        if (! $this->id) {
+            return 0.0;
         }
 
-        return (float) $this->serviceMaterials()
-            ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
-            ->value('total');
+        $total = DB::table('purchases as pu')
+            ->where('pu.service_id', $this->id)
+            ->where('pu.jenis_pembelian', Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE)
+            ->where('pu.status', '!=', Purchase::STATUS_CANCELLED)
+            ->selectRaw('COALESCE(SUM(pu.total), 0) as t')
+            ->value('t');
+
+        return round((float) $total, 2);
+    }
+
+    /**
+     * Total HPP sparepart dari pembelian terhubung.
+     */
+    protected function linkedSparepartPurchasesCostTotal(): float
+    {
+        if (! $this->id) {
+            return 0.0;
+        }
+
+        $total = DB::table('purchases as pu')
+            ->where('pu.service_id', $this->id)
+            ->where('pu.jenis_pembelian', Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE)
+            ->where('pu.status', '!=', Purchase::STATUS_CANCELLED)
+            ->selectRaw('COALESCE(SUM(pu.total), 0) as t')
+            ->value('t');
+
+        return round((float) $total, 2);
+    }
+
+    public function getMaterialsTotalPriceAttribute(): float
+    {
+        $manual = 0.0;
+        if ($this->relationLoaded('serviceMaterials')) {
+            $manual = (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->price * (float) $m->quantity);
+        } else {
+            $manual = (float) $this->serviceMaterials()
+                ->selectRaw('COALESCE(SUM(quantity * price), 0) as total')
+                ->value('total');
+        }
+
+        return round($manual + $this->linkedSparepartPurchasesSaleTotal(), 2);
     }
 
     public function getMaterialsTotalCostAttribute(): float
     {
+        $manual = 0.0;
         if ($this->relationLoaded('serviceMaterials')) {
-            return (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->hpp * (float) $m->quantity);
+            $manual = (float) $this->serviceMaterials->sum(fn ($m) => (float) $m->hpp * (float) $m->quantity);
+        } else {
+            $manual = (float) $this->serviceMaterials()
+                ->selectRaw('COALESCE(SUM(quantity * hpp), 0) as total')
+                ->value('total');
         }
 
-        return (float) $this->serviceMaterials()
-            ->selectRaw('COALESCE(SUM(quantity * hpp), 0) as total')
-            ->value('total');
+        return round($manual + $this->linkedSparepartPurchasesCostTotal(), 2);
     }
 
     public function getTotalServicePriceAttribute(): float

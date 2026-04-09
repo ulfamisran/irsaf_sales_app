@@ -16,7 +16,8 @@
                         <div class="space-y-4">
                             <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
                                 <x-input-label :value="__('Status Transaksi')" class="font-semibold" />
-                                <p class="text-xs text-slate-600 mt-1 mb-3">{{ __('Pilih Open: hanya input pelanggan & info laptop. Pilih Release: input lengkap termasuk material dan pembayaran.') }}</p>
+                                <p class="text-xs text-slate-600 mt-1 mb-3">{{ __('Alur disarankan: Open = invoice kosong (data pelanggan & laptop). Sparepart dibeli lewat menu Pembelian dengan jenis “Pembelian Sparepart Service” dan pilih nomor invoice ini. Setelah itu Edit/Release untuk tarif jasa, pembayaran, dan cetak invoice lengkap.') }}</p>
+                                <p class="text-xs text-slate-600 mb-3">{{ __('Release: input lengkap termasuk material manual (opsional), tarif jasa, dan pembayaran.') }}</p>
                                 <div class="flex gap-6">
                                     <label class="inline-flex items-center cursor-pointer">
                                         <input type="radio" name="status" value="open" {{ old('status', 'open') === 'open' ? 'checked' : '' }} id="status_open" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -147,10 +148,18 @@
 
     @php
         $createPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
+        $createMaterialProducts = ($materialProducts ?? collect())->map(fn ($p) => [
+            'id' => $p->id,
+            'category_id' => (int) ($p->category_id ?? 0),
+            'category_name' => (string) ($p->category_name ?? '-'),
+            'label' => trim(($p->sku ?? '').' - '.($p->brand ?? '').' '.($p->series ?? '')),
+            'stock_qty' => (int) ($p->stock_qty ?? 0),
+        ])->values()->toArray();
         $saldoMapBranch = $saldoMapBranch ?? [];
     @endphp
     <script>
         let paymentMethods = @json($createPaymentMethods);
+        let materialProducts = @json($createMaterialProducts);
         let saldoMapBranch = Object.assign({}, @json($saldoMapBranch));
         const paymentRows = document.getElementById('payment-rows');
         let paymentIndex = 0;
@@ -165,7 +174,7 @@
                 const custSel = document.getElementById('customer_id');
                 if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih cabang dulu')) + '</option>';
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
-                document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(sel => { sel.innerHTML = '<option value="">Sumber dana</option>'; });
+                document.querySelectorAll('#material-rows select[name*="[product_id]"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih produk in-stock</option>'; });
                 return;
             }
             try {
@@ -176,6 +185,13 @@
                 if (!res.ok) throw new Error('Fetch failed');
                 const data = await res.json();
                 paymentMethods = (data.payment_methods || []).map(m => ({ id: m.id, label: m.label }));
+                materialProducts = (data.in_stock_products || []).map(p => ({
+                    id: p.id,
+                    category_id: Number(p.category_id || 0),
+                    category_name: String(p.category_name || '-'),
+                    label: p.label || '',
+                    stock_qty: Number(p.stock_qty || 0),
+                }));
                 saldoMapBranch[branchId] = data.saldo_per_pm || {};
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
@@ -188,7 +204,7 @@
                     sel.innerHTML = '<option value="">Pilih metode</option>' + paymentMethods.map(m => '<option value="' + m.id + '">' + (m.label || '') + '</option>').join('');
                     if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
                 });
-                if (typeof refreshMaterialPaymentOptions === 'function') refreshMaterialPaymentOptions();
+                if (typeof refreshMaterialProductOptions === 'function') refreshMaterialProductOptions();
             } catch (e) { console.error('loadFormDataForBranch failed', e); }
         }
 
@@ -224,12 +240,25 @@
             if (branchSelect && branchSelect.options.length === 1) return String(branchSelect.options[0].value);
             return '';
         }
-        function materialPaymentOptionsHtml() {
-            const branchId = currentBranchId();
-            return '<option value="">Sumber dana</option>' + paymentMethods.map(m => {
-                const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
-                const disabled = branchId === '' || saldo <= 0;
-                return `<option value="${m.id}" ${disabled ? 'disabled' : ''}>${m.label} (Saldo: ${Number(saldo).toLocaleString('id-ID')})</option>`;
+        function materialCategoryOptionsHtml(selectedCategoryId = '') {
+            const categoryMap = {};
+            materialProducts.forEach(p => {
+                const cid = String(p.category_id || 0);
+                if (cid === '0') return;
+                if (!categoryMap[cid]) categoryMap[cid] = p.category_name || '-';
+            });
+            const keys = Object.keys(categoryMap).sort((a, b) => categoryMap[a].localeCompare(categoryMap[b], 'id'));
+            return '<option value="">Pilih kategori</option>' + keys.map(cid => {
+                const selected = String(selectedCategoryId) === String(cid) ? 'selected' : '';
+                return `<option value="${cid}" ${selected}>${categoryMap[cid]}</option>`;
+            }).join('');
+        }
+        function materialProductOptionsHtml(selectedId = '', categoryId = '') {
+            return '<option value="">Pilih produk in-stock</option>' + materialProducts
+            .filter(p => !categoryId || String(p.category_id || 0) === String(categoryId))
+            .map(p => {
+                const selected = String(selectedId) === String(p.id) ? 'selected' : '';
+                return `<option value="${p.id}" ${selected}>${p.label} (Stok: ${Number(p.stock_qty || 0).toLocaleString('id-ID')})</option>`;
             }).join('');
         }
 
@@ -277,13 +306,10 @@
             let total = 0;
             document.querySelectorAll('#material-rows input[name*="[quantity]"]').forEach((qtyInput) => {
                 const row = qtyInput.closest('.grid');
-                const nameInput = row?.querySelector('input[name*="[name]"]');
+                const productSelect = row?.querySelector('select[name*="[product_id]"]');
                 const priceInput = row?.querySelector('input[name*="[price]"]');
-                const pmSelect = row?.querySelector('select[name*="[payment_method_id]"]');
-                const nameVal = String(nameInput?.value || '').trim();
-                const pmVal = String(pmSelect?.value || '').trim();
-                if (!nameVal) return;
-                if (!pmVal) return;
+                const productVal = String(productSelect?.value || '').trim();
+                if (!productVal) return;
                 const qty = toQty(qtyInput.value || '0');
                 const price = toNumber(priceInput?.value || '0');
                 if (qty > 0 && price > 0) total += qty * price;
@@ -314,18 +340,20 @@
             if (!materialRows) return;
             const idx = materialIndex++;
             const div = document.createElement('div');
-            div.className = 'grid grid-cols-1 md:grid-cols-6 gap-2 items-end';
+            div.className = 'grid grid-cols-1 md:grid-cols-5 gap-2 items-end';
             div.innerHTML = `
                 <div class="md:col-span-2">
-                    <input type="text" name="materials[${idx}][name]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nama material" required>
-                </div>
-                <div>
-                    <input type="number" name="materials[${idx}][quantity]" step="0.01" min="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required>
-                </div>
-                <div>
-                    <select name="materials[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                        ${materialPaymentOptionsHtml()}
+                    <select class="material-category-select block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        ${materialCategoryOptionsHtml(pref.category_id || '')}
                     </select>
+                </div>
+                <div class="md:col-span-1">
+                    <select name="materials[${idx}][product_id]" class="material-product-select block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                        ${materialProductOptionsHtml(pref.product_id || '', pref.category_id || '')}
+                    </select>
+                </div>
+                <div>
+                    <input type="number" name="materials[${idx}][quantity]" step="1" min="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Qty" required>
                 </div>
                 <div>
                     <input type="text" name="materials[${idx}][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Harga" required>
@@ -336,21 +364,39 @@
                 </div>
             `;
             materialRows.appendChild(div);
-            if (pref.name) div.querySelector('input[name*="[name]"]').value = String(pref.name);
+            const catSel = div.querySelector('.material-category-select');
+            const prodSel = div.querySelector('.material-product-select');
+            catSel?.addEventListener('change', () => {
+                const currentProd = prodSel?.value || '';
+                if (prodSel) {
+                    prodSel.innerHTML = materialProductOptionsHtml(currentProd, catSel.value || '');
+                    if (currentProd && !Array.from(prodSel.options).some(o => o.value === currentProd)) {
+                        prodSel.value = '';
+                    }
+                }
+                refreshPaymentSum();
+            });
+            if (pref.product_id) div.querySelector('select[name*="[product_id]"]').value = String(pref.product_id);
             if (pref.quantity) div.querySelector('input[name*="[quantity]"]').value = String(pref.quantity);
-            if (pref.payment_method_id) div.querySelector('select[name*="[payment_method_id]"]').value = String(pref.payment_method_id);
             if (pref.price) div.querySelector('input[name*="[price]"]').value = String(pref.price);
             if (pref.notes) div.querySelector('input[name*="[notes]"]').value = String(pref.notes || '');
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
-            div.querySelectorAll('input').forEach(el => el.addEventListener('input', refreshPaymentSum));
+            div.querySelectorAll('input,select').forEach(el => el.addEventListener('input', refreshPaymentSum));
             div.querySelector('.remove-material')?.addEventListener('click', () => { div.remove(); refreshPaymentSum(); });
         }
 
-        function refreshMaterialPaymentOptions() {
-            document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(select => {
-                const current = select.value;
-                select.innerHTML = materialPaymentOptionsHtml();
-                if (current) select.value = current;
+        function refreshMaterialProductOptions() {
+            document.querySelectorAll('#material-rows .grid').forEach(row => {
+                const catSel = row.querySelector('.material-category-select');
+                const prodSel = row.querySelector('select[name*="[product_id]"]');
+                if (!catSel || !prodSel) return;
+                const currentCat = catSel.value || '';
+                const currentProd = prodSel.value || '';
+                catSel.innerHTML = materialCategoryOptionsHtml(currentCat);
+                prodSel.innerHTML = materialProductOptionsHtml(currentProd, currentCat);
+                if (currentProd && !Array.from(prodSel.options).some(o => o.value === currentProd)) {
+                    prodSel.value = '';
+                }
             });
         }
 
@@ -371,8 +417,8 @@
         }
         document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());
         refreshPaymentSum();
-        document.getElementById('branch_id')?.addEventListener('change', refreshMaterialPaymentOptions);
-        refreshMaterialPaymentOptions();
+        document.getElementById('branch_id')?.addEventListener('change', refreshMaterialProductOptions);
+        refreshMaterialProductOptions();
 
         const customerSelect = document.getElementById('customer_id');
         const newCustomerFields = document.getElementById('new-customer-fields');

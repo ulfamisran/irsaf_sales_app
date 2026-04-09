@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\Distributor;
 use App\Models\PaymentMethod;
+use App\Models\Product;
+use App\Models\Stock;
 use App\Services\KasBalanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,6 +74,7 @@ class DataByLocationController extends Controller
 
         $paymentMethods = $this->getPaymentMethodsByLocation($branchId, $warehouseId);
         $customers = $this->getCustomersByLocation($branchId, $warehouseId);
+        $inStockProducts = $this->getInStockProductsByLocation($branchId, $warehouseId);
 
         $saldoPerPm = [];
         if ($branchId) {
@@ -84,6 +87,7 @@ class DataByLocationController extends Controller
             'payment_methods' => $paymentMethods,
             'customers' => $customers,
             'saldo_per_pm' => $saldoPerPm,
+            'in_stock_products' => $inStockProducts,
         ]);
     }
 
@@ -132,6 +136,47 @@ class DataByLocationController extends Controller
                 'id' => $c->id,
                 'name' => $c->name,
                 'phone' => $c->phone,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function getInStockProductsByLocation(?int $branchId, ?int $warehouseId): array
+    {
+        if (! $branchId && ! $warehouseId) {
+            return [];
+        }
+
+        $locationType = $branchId ? Stock::LOCATION_BRANCH : Stock::LOCATION_WAREHOUSE;
+        $locationId = $branchId ?: $warehouseId;
+
+        return Product::query()
+            ->join('stocks', function ($join) use ($locationType, $locationId) {
+                $join->on('stocks.product_id', '=', 'products.id')
+                    ->where('stocks.location_type', $locationType)
+                    ->where('stocks.location_id', $locationId)
+                    ->where('stocks.quantity', '>', 0);
+            })
+            ->leftJoin('categories', 'categories.id', '=', 'products.category_id')
+            ->orderBy('categories.name')
+            ->orderBy('products.sku')
+            ->get([
+                'products.id',
+                'products.category_id',
+                'categories.name as category_name',
+                'products.sku',
+                'products.brand',
+                'products.series',
+                'products.purchase_price',
+                'products.selling_price',
+                'stocks.quantity as stock_qty',
+            ])
+            ->map(fn ($p) => [
+                'id' => (int) $p->id,
+                'category_id' => (int) ($p->category_id ?? 0),
+                'category_name' => (string) ($p->category_name ?? '-'),
+                'label' => trim(($p->sku ?? '').' - '.($p->brand ?? '').' '.($p->series ?? '')),
+                'stock_qty' => (int) ($p->stock_qty ?? 0),
             ])
             ->values()
             ->all();

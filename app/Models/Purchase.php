@@ -16,6 +16,7 @@ class Purchase extends Model
 
     public const JENIS_PEMBELIAN_UNIT = 'Pembelian Unit';
     public const JENIS_DISTRIBUSI_UNIT = 'Distribusi Unit';
+    public const JENIS_PEMBELIAN_SPAREPART_SERVICE = 'Pembelian Sparepart Service';
 
     protected $fillable = [
         'invoice_number',
@@ -33,6 +34,7 @@ class Purchase extends Model
         'user_id',
         'status',
         'stock_mutation_id',
+        'service_id',
     ];
 
     protected function casts(): array
@@ -48,6 +50,11 @@ class Purchase extends Model
     public function isDistribusiUnit(): bool
     {
         return $this->jenis_pembelian === self::JENIS_DISTRIBUSI_UNIT;
+    }
+
+    public function isSparepartService(): bool
+    {
+        return $this->jenis_pembelian === self::JENIS_PEMBELIAN_SPAREPART_SERVICE;
     }
 
     public function isCancelled(): bool
@@ -102,5 +109,10 @@ class Purchase extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(PurchasePayment::class)->orderBy('payment_date')->orderBy('id');
+    }
+
+    public function service(): BelongsTo
+    {
+        return $this->belongsTo(Service::class);
     }
 }

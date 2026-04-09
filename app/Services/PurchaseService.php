@@ -11,7 +11,9 @@ use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\PurchasePayment;
+use App\Models\Service;
 use App\Models\Stock;
+use App\Models\StockMutation;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -41,10 +43,39 @@ class PurchaseService
         ?int $userId = null,
         array $payments = [],
         ?string $invoiceNumber = null,
-        bool $allowSoldSerialReuse = false
+        bool $allowSoldSerialReuse = false,
+        string $jenisPembelian = Purchase::JENIS_PEMBELIAN_UNIT,
+        ?int $serviceId = null
     ): Purchase {
         $userId = $userId ?? auth()->id();
         $this->validateLocation($locationType, $locationId);
+
+        $allowedJenis = [
+            Purchase::JENIS_PEMBELIAN_UNIT,
+            Purchase::JENIS_DISTRIBUSI_UNIT,
+            Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
+        ];
+        if (! in_array($jenisPembelian, $allowedJenis, true)) {
+            $jenisPembelian = Purchase::JENIS_PEMBELIAN_UNIT;
+        }
+
+        if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
+            if ($locationType !== Stock::LOCATION_BRANCH) {
+                throw new InvalidArgumentException(__('Pembelian Sparepart Service hanya dapat dilakukan ke lokasi Cabang.'));
+            }
+            if (! $serviceId) {
+                throw new InvalidArgumentException(__('Pilih nomor invoice service sebagai referensi.'));
+            }
+            $service = Service::find($serviceId);
+            if (! $service || $service->status !== Service::STATUS_OPEN) {
+                throw new InvalidArgumentException(__('Invoice service tidak valid atau sudah tidak berstatus open.'));
+            }
+            if ((int) $service->branch_id !== $locationId) {
+                throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
+            }
+        } else {
+            $serviceId = null;
+        }
 
         if (empty($items)) {
             throw new InvalidArgumentException(__('Pembelian harus memiliki minimal satu barang.'));
@@ -78,18 +109,21 @@ class PurchaseService
             $userId,
             $payments,
             $invoiceNumber,
-            $allowSoldSerialReuse
+            $allowSoldSerialReuse,
+            $jenisPembelian,
+            $serviceId
         ) {
             $invoiceNumber = ! empty(trim((string) $invoiceNumber))
                 ? trim($invoiceNumber)
                 : $this->generateInvoiceNumber();
             $purchase = Purchase::create([
                 'invoice_number' => $invoiceNumber,
-                'jenis_pembelian' => Purchase::JENIS_PEMBELIAN_UNIT,
+                'jenis_pembelian' => $jenisPembelian,
                 'distributor_id' => $distributorId,
                 'location_type' => $locationType,
                 'warehouse_id' => $warehouseId,
                 'branch_id' => $branchId,
+                'service_id' => $serviceId,
                 'purchase_date' => $purchaseDate,
                 'total' => $total,
                 'total_paid' => $totalPaid,
@@ -112,6 +146,7 @@ class PurchaseService
                 $product = Product::findOrFail($detail['product_id']);
                 $product->update(['is_active' => true]);
                 $serialNumbers = $detail['serial_numbers'] ?? [];
+                // Pembelian selalu menambah stok (IN).
                 $this->stockMutationService->addStock(
                     $product,
                     $locationType,
@@ -124,6 +159,25 @@ class PurchaseService
                     null,
                     $allowSoldSerialReuse
                 );
+
+                // Khusus pembelian sparepart service: catat juga di riwayat mutasi stok sebagai IN.
+                if ($purchase->isSparepartService()) {
+                    StockMutation::create([
+                        'invoice_number' => $purchase->invoice_number,
+                        'product_id' => $product->id,
+                        'from_location_type' => $locationType,
+                        'from_location_id' => $locationId,
+                        'to_location_type' => $locationType,
+                        'to_location_id' => $locationId,
+                        'quantity' => (int) $detail['quantity'],
+                        'biaya_distribusi_per_unit' => 0,
+                        'distribution_payment_method_id' => null,
+                        'mutation_date' => $purchaseDate,
+                        'notes' => 'IN Pembelian Sparepart User (SERVICE) - ' . $purchase->invoice_number,
+                        'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
+                        'user_id' => $userId,
+                    ]);
+                }
             }
 
             foreach ($payments as $p) {
@@ -134,7 +188,7 @@ class PurchaseService
                 $this->recordPurchasePayment($purchase, (int) $p['payment_method_id'], $amt, $purchaseDate, $userId, $p['notes'] ?? null);
             }
 
-            return $purchase->fresh()->load(['details.product', 'payments.paymentMethod', 'distributor']);
+            return $purchase->fresh()->load(['details.product', 'payments.paymentMethod', 'distributor', 'service']);
         });
     }
 
@@ -303,6 +357,16 @@ class PurchaseService
                 ]
             );
             $descPrefix = __('Distribusi Barang');
+        } elseif ($purchase->isSparepartService()) {
+            $expenseCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'SP-SVC'],
+                [
+                    'name' => 'Pembelian Sparepart User (SERVICE)',
+                    'description' => 'Pengeluaran pembelian sparepart untuk service pelanggan',
+                    'is_active' => true,
+                ]
+            );
+            $descPrefix = 'Pembelian Sparepart User (SERVICE)';
         } else {
             $expenseCategory = ExpenseCategory::firstOrCreate(
                 ['code' => 'PEMBELIAN'],

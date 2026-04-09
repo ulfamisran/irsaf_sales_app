@@ -12,6 +12,7 @@ class ServiceMaterial extends Model
 
     protected $fillable = [
         'service_id',
+        'product_id',
         'payment_method_id',
         'name',
         'quantity',
@@ -37,5 +38,10 @@ class ServiceMaterial extends Model
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 }

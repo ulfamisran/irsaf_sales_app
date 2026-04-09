@@ -79,15 +79,42 @@
                                 <textarea id="damage_description" name="damage_description" class="block mt-1 w-full rounded-md border-gray-300" rows="3">{{ old('damage_description', $service->damage_description) }}</textarea>
                             </div>
 
+                            @if (($service->sparePartServicePurchases ?? collect())->isNotEmpty())
+                                <div class="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4 text-sm text-slate-800">
+                                    <p class="font-semibold text-indigo-900">{{ __('Sparepart dari Pembelian (terhubung)') }}</p>
+                                    <p class="mt-1 text-xs text-slate-600">{{ __('Baris berikut dihitung otomatis dari menu Pembelian — jenis Pembelian Sparepart Service.') }}</p>
+                                    <ul class="mt-2 space-y-1 list-disc list-inside">
+                                        @foreach ($service->sparePartServicePurchases as $pur)
+                                            <li>
+                                                <a href="{{ route('purchases.show', $pur) }}" class="text-indigo-700 hover:underline font-medium">{{ $pur->invoice_number }}</a>
+                                                <span class="text-slate-600">— {{ $pur->purchase_date?->format('d/m/Y') }} — Rp {{ number_format((float) $pur->total, 0, ',', '.') }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+
                             <div id="materials-section" class="border rounded-lg p-4 bg-slate-50">
-                                <p class="font-semibold text-slate-800">{{ __('Bahan/Material Service') }}</p>
+                                <p class="font-semibold text-slate-800">{{ __('Bahan/Material Service (input manual, opsional)') }}</p>
                                 <div id="material-rows" class="mt-3 space-y-2"></div>
                                 <button type="button" id="add-material" class="mt-2 inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
                             </div>
 
+                            @php
+                                $sparepartInvoiceTotal = ($service->sparePartServicePurchases ?? collect())->sum(fn ($p) => (float) ($p->total ?? 0));
+                                $jasa = (float) old('service_fee', $service->service_price);
+                                $totalBiayaService = $jasa + $sparepartInvoiceTotal;
+                            @endphp
+
                             <div>
                                 <x-input-label for="service_fee" :value="__('Biaya Jasa Service')" />
                                 <x-text-input id="service_fee" class="block mt-1 w-full" type="text" name="service_fee" data-rupiah="true" :value="old('service_fee', $service->service_price)" required />
+                            </div>
+
+                            <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4 text-sm text-slate-800">
+                                <p class="font-semibold">{{ __('Total Biaya Service') }}</p>
+                                <p class="mt-1 text-xs text-slate-600">{{ __('Rumus: total invoice pembelian sparepart (terhubung) + biaya jasa service') }}</p>
+                                <p id="total-biaya-service-amount" class="mt-2 text-xl font-bold text-indigo-700">Rp {{ number_format($totalBiayaService, 0, ',', '.') }}</p>
                             </div>
 
                             <div>
@@ -127,27 +154,55 @@
     @php
         $editPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
         $editOldPayments = old('payments', ($service->payments ?? collect())->map(fn ($p) => ['payment_method_id' => $p->payment_method_id, 'amount' => (float)$p->amount, 'notes' => $p->notes])->toArray());
-        $editOldMaterials = old('materials', ($service->serviceMaterials ?? collect())->map(fn ($m) => ['name' => $m->name, 'quantity' => (float)$m->quantity, 'payment_method_id' => $m->payment_method_id, 'price' => (float)$m->price, 'notes' => $m->notes])->toArray());
+        $editOldMaterials = old('materials', ($service->serviceMaterials ?? collect())->map(fn ($m) => ['product_id' => $m->product_id, 'quantity' => (int)$m->quantity, 'price' => (float)$m->price, 'notes' => $m->notes])->toArray());
+        $editMaterialProducts = ($materialProducts ?? collect())->map(fn ($p) => [
+            'id' => $p->id,
+            'category_id' => (int) ($p->category_id ?? 0),
+            'category_name' => (string) ($p->category_name ?? '-'),
+            'label' => trim(($p->sku ?? '').' - '.($p->brand ?? '').' '.($p->series ?? '')),
+            'stock_qty' => (int) ($p->stock_qty ?? 0),
+        ])->values()->toArray();
         $saldoMapBranch = $saldoMapBranch ?? [];
     @endphp
     <script>
         const editPaymentMethods = @json($editPaymentMethods);
         const editOldPayments = @json($editOldPayments);
         const editOldMaterials = @json($editOldMaterials);
+        const editMaterialProducts = @json($editMaterialProducts);
         const saldoMapBranch = @json($saldoMapBranch);
         const fixedBranchId = @json($service->branch_id);
+        const sparepartPurchasesTotal = @json(round((float) (($service->sparePartServicePurchases ?? collect())->sum('total')), 2));
         const paymentRows = document.getElementById('payment-rows');
         let paymentIdx = 0;
         function paymentOpts() {
             return '<option value="">Pilih</option>' + editPaymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
         }
-        function materialPaymentOpts(selectedPmId = null) {
-            const branchId = String(fixedBranchId || '');
-            return '<option value="">Sumber dana</option>' + editPaymentMethods.map(m => {
-                const saldo = branchId && saldoMapBranch?.[branchId]?.[m.id] !== undefined ? Number(saldoMapBranch[branchId][m.id]) : 0;
-                const canSelect = saldo > 0 || (selectedPmId && m.id == selectedPmId);
-                return `<option value="${m.id}" ${!canSelect ? 'disabled' : ''}>${m.label} (Saldo: ${Number(saldo).toLocaleString('id-ID')})</option>`;
+        function materialProductOpts(selectedId = null) {
+            return '<option value="">Pilih produk in-stock</option>' + editMaterialProducts.map(p => {
+                const selected = selectedId && p.id == selectedId ? 'selected' : '';
+                return `<option value="${p.id}" ${selected}>${p.label} (Stok: ${Number(p.stock_qty || 0).toLocaleString('id-ID')})</option>`;
             }).join('');
+        }
+        function materialCategoryOpts(selectedCategoryId = null) {
+            const categoryMap = {};
+            editMaterialProducts.forEach(p => {
+                const cid = String(p.category_id || 0);
+                if (cid === '0') return;
+                if (!categoryMap[cid]) categoryMap[cid] = p.category_name || '-';
+            });
+            const keys = Object.keys(categoryMap).sort((a, b) => categoryMap[a].localeCompare(categoryMap[b], 'id'));
+            return '<option value="">Pilih kategori</option>' + keys.map(cid => {
+                const selected = selectedCategoryId && String(selectedCategoryId) === String(cid) ? 'selected' : '';
+                return `<option value="${cid}" ${selected}>${categoryMap[cid]}</option>`;
+            }).join('');
+        }
+        function materialProductOptsByCategory(selectedId = null, categoryId = null) {
+            return '<option value="">Pilih produk in-stock</option>' + editMaterialProducts
+                .filter(p => !categoryId || String(p.category_id || 0) === String(categoryId))
+                .map(p => {
+                    const selected = selectedId && p.id == selectedId ? 'selected' : '';
+                    return `<option value="${p.id}" ${selected}>${p.label} (Stok: ${Number(p.stock_qty || 0).toLocaleString('id-ID')})</option>`;
+                }).join('');
         }
         function addPayRow(p = {}) {
             const i = paymentIdx++;
@@ -183,13 +238,10 @@
             let total = 0;
             document.querySelectorAll('#material-rows input[name*="[quantity]"]').forEach((qtyInput) => {
                 const row = qtyInput.closest('.grid');
-                const nameInput = row?.querySelector('input[name*="[name]"]');
+                const productSelect = row?.querySelector('select[name*="[product_id]"]');
                 const priceInput = row?.querySelector('input[name*="[price]"]');
-                const pmSelect = row?.querySelector('select[name*="[payment_method_id]"]');
-                const nameVal = String(nameInput?.value || '').trim();
-                const pmVal = String(pmSelect?.value || '').trim();
-                if (!nameVal) return;
-                if (!pmVal) return;
+                const productVal = String(productSelect?.value || '').trim();
+                if (!productVal) return;
                 const qty = toQty(qtyInput.value || 0);
                 const price = toNumber(priceInput?.value || 0);
                 if (qty > 0 && price > 0) total += qty * price;
@@ -199,14 +251,20 @@
 
         function refresh() {
             const fee = toNumber(document.getElementById('service_fee')?.value || 0) || 0;
-            const totalPrice = fee + totalMaterialsPrice();
+            const spare = Number(sparepartPurchasesTotal) || 0;
+            const totalBiayaService = spare + fee;
+            const totalBiayaEl = document.getElementById('total-biaya-service-amount');
+            if (totalBiayaEl) {
+                totalBiayaEl.textContent = 'Rp ' + Math.round(totalBiayaService).toLocaleString('id-ID');
+            }
             let sum = 0;
             document.querySelectorAll('#payment-rows input[name*="[amount]"]').forEach(inp => sum += toNumber(inp.value || 0));
             document.getElementById('paymentSumText').textContent = sum.toLocaleString('id-ID');
-            document.getElementById('paymentDiffText').textContent = (totalPrice - sum).toLocaleString('id-ID');
+            document.getElementById('paymentDiffText').textContent = (totalBiayaService - sum).toLocaleString('id-ID');
         }
         document.getElementById('add-payment')?.addEventListener('click', () => addPayRow());
         document.getElementById('service_fee')?.addEventListener('input', refresh);
+        document.getElementById('service_fee')?.addEventListener('blur', refresh);
         if (Array.isArray(editOldPayments) && editOldPayments.length > 0) {
             editOldPayments.forEach(p => addPayRow(p));
         } else {
@@ -220,18 +278,20 @@
             if (!materialRows) return;
             const i = materialIdx++;
             const div = document.createElement('div');
-            div.className = 'grid grid-cols-1 md:grid-cols-6 gap-2 items-end';
+            div.className = 'grid grid-cols-1 md:grid-cols-5 gap-2 items-end';
             div.innerHTML = `
                 <div class="md:col-span-2">
-                    <input type="text" name="materials[${i}][name]" class="block w-full rounded-md border-gray-300" placeholder="Nama material" required>
-                </div>
-                <div>
-                    <input type="number" name="materials[${i}][quantity]" step="0.01" min="0.01" class="block w-full rounded-md border-gray-300" placeholder="Qty" required>
-                </div>
-                <div>
-                    <select name="materials[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>
-                        ${materialPaymentOpts(pref.payment_method_id)}
+                    <select class="material-category-select block w-full rounded-md border-gray-300">
+                        ${materialCategoryOpts(pref.category_id)}
                     </select>
+                </div>
+                <div class="md:col-span-1">
+                    <select name="materials[${i}][product_id]" class="material-product-select block w-full rounded-md border-gray-300" required>
+                        ${materialProductOptsByCategory(pref.product_id, pref.category_id)}
+                    </select>
+                </div>
+                <div>
+                    <input type="number" name="materials[${i}][quantity]" step="1" min="1" class="block w-full rounded-md border-gray-300" placeholder="Qty" required>
                 </div>
                 <div>
                     <input type="text" name="materials[${i}][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300" placeholder="Harga" required>
@@ -242,13 +302,23 @@
                 </div>
             `;
             materialRows.appendChild(div);
-            if (pref.name) div.querySelector('input[name*="[name]"]').value = pref.name;
+            const catSel = div.querySelector('.material-category-select');
+            const prodSel = div.querySelector('.material-product-select');
+            catSel?.addEventListener('change', () => {
+                const currentProd = prodSel?.value || '';
+                if (prodSel) {
+                    prodSel.innerHTML = materialProductOptsByCategory(currentProd, catSel.value || '');
+                    if (currentProd && !Array.from(prodSel.options).some(o => o.value === currentProd)) {
+                        prodSel.value = '';
+                    }
+                }
+                refresh();
+            });
             if (pref.quantity) div.querySelector('input[name*="[quantity]"]').value = pref.quantity;
-            if (pref.payment_method_id) div.querySelector('select[name*="[payment_method_id]"]').value = pref.payment_method_id;
             if (pref.price) div.querySelector('input[name*="[price]"]').value = pref.price;
             if (pref.notes) div.querySelector('input[name*="[notes]"]').value = pref.notes || '';
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
-            div.querySelectorAll('input').forEach(el => el.addEventListener('input', refresh));
+            div.querySelectorAll('input,select').forEach(el => el.addEventListener('input', refresh));
             div.querySelector('.remove-material')?.addEventListener('click', () => { div.remove(); refresh(); });
         }
         if (Array.isArray(editOldMaterials) && editOldMaterials.length > 0) {
@@ -256,12 +326,14 @@
         }
         document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());
         refresh();
-        document.querySelectorAll('#material-rows select[name*="[payment_method_id]"]').forEach(select => {
-            const current = select.value;
+        document.querySelectorAll('#material-rows select[name*="[product_id]"]').forEach(select => {
             const row = select.closest('.grid');
-            const pref = row ? { payment_method_id: current } : {};
-            select.innerHTML = materialPaymentOpts(pref.payment_method_id);
-            if (current) select.value = current;
+            const catSel = row?.querySelector('.material-category-select');
+            const currentCat = catSel?.value || '';
+            const current = select.value;
+            if (catSel) catSel.innerHTML = materialCategoryOpts(currentCat);
+            select.innerHTML = materialProductOptsByCategory(current, currentCat);
+            if (current && Array.from(select.options).some(o => o.value === current)) select.value = current;
         });
 
         document.getElementById('customer_id')?.addEventListener('change', function() {
@@ -282,5 +354,7 @@
             });
             document.getElementById('service_fee')?.setAttribute('required', 'required');
         }
+
+        setTimeout(() => refresh(), 0);
     </script>
 </x-app-layout>

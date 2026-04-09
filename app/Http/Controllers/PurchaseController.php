@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\Role;
+use App\Models\Service;
 use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
@@ -164,6 +165,18 @@ class PurchaseController extends Controller
 
         $categories = Category::orderBy('name')->get(['id', 'name']);
 
+        $openServicesInitial = collect();
+        if ($defaultLocationType === 'branch' && $defaultLocationId) {
+            $openServicesInitial = Service::query()
+                ->with(['customer:id,name'])
+                ->where('branch_id', $defaultLocationId)
+                ->where('status', Service::STATUS_OPEN)
+                ->orderByDesc('entry_date')
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id']);
+        }
+
         return view('purchases.create', compact(
             'warehouses',
             'branches',
@@ -175,7 +188,8 @@ class PurchaseController extends Controller
             'isBranchUser',
             'isWarehouseUser',
             'defaultLocationType',
-            'defaultLocationId'
+            'defaultLocationId',
+            'openServicesInitial'
         ));
     }
 
@@ -199,6 +213,9 @@ class PurchaseController extends Controller
         // Sistem tetap mencatat transaksi, meski saldo sumber kas bisa menjadi kurang.
 
         try {
+            $jenisPembelian = (string) $request->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
+            $serviceId = $request->filled('service_id') ? (int) $request->service_id : null;
+
             $purchase = $this->purchaseService->createPurchase(
                 (int) $request->distributor_id,
                 $locationType,
@@ -211,7 +228,9 @@ class PurchaseController extends Controller
                 $user->id,
                 $payments,
                 $request->invoice_number,
-                $request->boolean('confirm_reuse_sold_serials')
+                $request->boolean('confirm_reuse_sold_serials'),
+                $jenisPembelian,
+                $serviceId
             );
 
             AuditLog::create([
@@ -240,7 +259,7 @@ class PurchaseController extends Controller
             }
         }
 
-        $purchase->load(['distributor', 'warehouse', 'branch', 'user', 'details.product', 'payments.paymentMethod', 'payments.user']);
+        $purchase->load(['distributor', 'warehouse', 'branch', 'user', 'details.product', 'payments.paymentMethod', 'payments.user', 'service']);
 
         return view('purchases.show', compact('purchase'));
     }
@@ -422,6 +441,26 @@ class PurchaseController extends Controller
         $categoryId = $request->filled('category_id') ? (int) $request->category_id : null;
         $products = $this->getProductsForPurchase($locationType, $locationId, $categoryId);
 
+        $openServices = collect();
+        if ($locationType === 'branch') {
+            $openServices = Service::query()
+                ->with(['customer:id,name'])
+                ->where('branch_id', $locationId)
+                ->where('status', Service::STATUS_OPEN)
+                ->orderByDesc('entry_date')
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id'])
+                ->map(fn (Service $s) => [
+                    'id' => $s->id,
+                    'invoice_number' => $s->invoice_number,
+                    'label' => $s->invoice_number
+                        .' — '.($s->laptop_type ?? '')
+                        .($s->customer ? ' ('.$s->customer->name.')' : ''),
+                ])
+                ->values();
+        }
+
         return response()->json([
             'payment_methods' => $paymentMethods,
             'distributors' => $distributors,
@@ -431,7 +470,9 @@ class PurchaseController extends Controller
                 'brand' => $p->brand ?? '',
                 'series' => $p->series ?? '',
                 'purchase_price' => (float) ($p->purchase_price ?? 0),
+                'selling_price' => (float) ($p->selling_price ?? 0),
             ])->values(),
+            'open_services' => $openServices,
         ]);
     }
 
@@ -544,7 +585,6 @@ class PurchaseController extends Controller
         $locType = $locationType === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
 
         $query = Product::with('category', 'distributor')
-            ->where('is_active', true)
             ->where('location_type', $locType)
             ->orderBy('sku');
 
@@ -556,7 +596,7 @@ class PurchaseController extends Controller
             $query->where('category_id', $categoryId);
         }
 
-        return $query->get(['id', 'sku', 'brand', 'series', 'category_id', 'distributor_id', 'purchase_price']);
+        return $query->get(['id', 'sku', 'brand', 'series', 'category_id', 'distributor_id', 'purchase_price', 'selling_price']);
     }
 
     /**
