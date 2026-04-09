@@ -42,7 +42,8 @@ class SaleService
         ?string $description = null,
         ?int $userId = null,
         array $payments = [],
-        array $tradeIns = []
+        array $tradeIns = [],
+        bool $allowSoldSerialReuse = false
     ): Sale {
         if (empty($items)) {
             throw new InvalidArgumentException(__('Sale must have at least one item.'));
@@ -50,7 +51,7 @@ class SaleService
 
         $branch = Branch::findOrFail($branchId);
 
-        return DB::transaction(function () use ($branch, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns) {
+        return DB::transaction(function () use ($branch, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse) {
             [$details, $subTotal] = $this->buildDetails($items, (int) $branch->id);
 
             $discountAmount = max(0, round($discountAmount, 2));
@@ -93,7 +94,7 @@ class SaleService
                 'released_at' => null,
             ]);
 
-            foreach ($this->buildTradeIns($tradeIns) as $ti) {
+            foreach ($this->buildTradeIns($tradeIns, $allowSoldSerialReuse) as $ti) {
                 SaleTradeIn::create([
                     'sale_id' => $sale->id,
                     'sku' => $ti['sku'],
@@ -177,11 +178,12 @@ class SaleService
         float $taxAmount = 0,
         ?string $description = null,
         ?int $userId = null,
-        array $tradeIns = []
+        array $tradeIns = [],
+        bool $allowSoldSerialReuse = false
     ): Sale {
-        $sale = $this->createDraftSale($branchId, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns);
+        $sale = $this->createDraftSale($branchId, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse);
 
-        return $this->releaseSale($sale, $payments, $saleDate, $userId);
+        return $this->releaseSale($sale, $payments, $saleDate, $userId, $allowSoldSerialReuse);
     }
 
     /**
@@ -199,13 +201,14 @@ class SaleService
         float $taxAmount = 0,
         ?string $description = null,
         array $payments = [],
-        array $tradeIns = []
+        array $tradeIns = [],
+        bool $allowSoldSerialReuse = false
     ): Sale {
         if ($sale->status !== Sale::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Sale is already released.'));
         }
 
-        return DB::transaction(function () use ($sale, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $payments, $tradeIns) {
+        return DB::transaction(function () use ($sale, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $payments, $tradeIns, $allowSoldSerialReuse) {
             // Release old reservations first (keep -> in_stock)
             $this->unreserveSaleUnits($sale, strict: false);
 
@@ -241,7 +244,7 @@ class SaleService
 
             // Replace trade-ins
             SaleTradeIn::where('sale_id', $sale->id)->delete();
-            foreach ($this->buildTradeIns($tradeIns) as $ti) {
+            foreach ($this->buildTradeIns($tradeIns, $allowSoldSerialReuse) as $ti) {
                 SaleTradeIn::create([
                     'sale_id' => $sale->id,
                     'sku' => $ti['sku'],
@@ -318,7 +321,7 @@ class SaleService
      *
      * @param  array<int, array{payment_method_id: int, amount: float, notes?: string|null}>  $payments
      */
-    public function releaseSale(Sale $sale, array $payments, string $saleDate, ?int $userId = null): Sale
+    public function releaseSale(Sale $sale, array $payments, string $saleDate, ?int $userId = null, bool $allowSoldSerialReuse = true): Sale
     {
         if ($sale->status !== Sale::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Sale is already released.'));
@@ -326,7 +329,7 @@ class SaleService
 
         $branch = Branch::findOrFail($sale->branch_id);
 
-        return DB::transaction(function () use ($sale, $branch, $payments, $saleDate, $userId) {
+        return DB::transaction(function () use ($sale, $branch, $payments, $saleDate, $userId, $allowSoldSerialReuse) {
             $details = SaleDetail::where('sale_id', $sale->id)->get();
             if ($details->isEmpty()) {
                 throw new InvalidArgumentException(__('Invalid sale items.'));
@@ -432,18 +435,26 @@ class SaleService
                     ['address' => null, 'phone' => null]
                 );
 
-                // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
-                // Lokasi mengikuti cabang penjualan
-                $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
+                $existingSoldUnit = ProductUnit::where('serial_number', $tradeIn->serial_number)
+                    ->where('status', ProductUnit::STATUS_SOLD)
+                    ->lockForUpdate()
+                    ->first();
+                if ($existingSoldUnit && ! $allowSoldSerialReuse) {
+                    throw new InvalidArgumentException(
+                        __('Nomor serial tukar tambah sudah pernah terjual. Konfirmasi update data terlebih dahulu: :serial', [
+                            'serial' => $tradeIn->serial_number,
+                        ])
+                    );
+                }
+
                 $sellingPrice = $hpp;
                 $isActive = $sellingPrice > 0;
                 $unitStatus = $sellingPrice > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
 
-                $newProduct = Product::create([
+                $productPayload = [
                     'category_id' => $tradeIn->category_id,
                     'distributor_id' => $tradeInDistributor->id,
-                    'user_id' => $userId,
-                    'sku' => $sku,
+                    'user_id' => $userId ?? auth()->id(),
                     'brand' => $tradeIn->brand ?? '',
                     'series' => $tradeIn->series ?? '',
                     'processor' => $tradeIn->processor ?? '',
@@ -457,28 +468,65 @@ class SaleService
                     'is_active' => $isActive,
                     'location_type' => Stock::LOCATION_BRANCH,
                     'location_id' => (int) $branch->id,
-                ]);
+                ];
 
-                $tradeIn->update(['product_id' => $newProduct->id]);
+                if ($existingSoldUnit) {
+                    $existingProduct = Product::find($existingSoldUnit->product_id);
+                    if (! $existingProduct) {
+                        throw new InvalidArgumentException(__('Produk lama untuk serial :serial tidak ditemukan.', ['serial' => $tradeIn->serial_number]));
+                    }
+                    $existingProduct->update(array_merge($productPayload, [
+                        'sku' => $existingProduct->sku ?: $tradeIn->sku,
+                    ]));
+                    $tradeIn->update(['product_id' => $existingProduct->id]);
 
-                // Unit: inactive jika harga jual 0, in_stock jika ada harga jual
-                ProductUnit::create([
-                    'product_id' => $newProduct->id,
-                    'user_id' => $userId,
-                    'serial_number' => $tradeIn->serial_number,
-                    'location_type' => Stock::LOCATION_BRANCH,
-                    'location_id' => (int) $branch->id,
-                    'status' => $unitStatus,
-                    'received_date' => $saleDate,
-                ]);
-                Stock::updateOrCreate(
-                    [
-                        'product_id' => $newProduct->id,
+                    $existingSoldUnit->update([
+                        'product_id' => $existingProduct->id,
+                        'user_id' => $userId ?? auth()->id(),
+                        'harga_hpp' => $hpp,
+                        'harga_jual' => $sellingPrice,
                         'location_type' => Stock::LOCATION_BRANCH,
                         'location_id' => (int) $branch->id,
-                    ],
-                    ['quantity' => 0]
-                );
+                        'status' => $unitStatus,
+                        'received_date' => $saleDate,
+                        'sold_at' => null,
+                        'notes' => null,
+                    ]);
+
+                    Stock::updateOrCreate(
+                        [
+                            'product_id' => $existingProduct->id,
+                            'location_type' => Stock::LOCATION_BRANCH,
+                            'location_id' => (int) $branch->id,
+                        ],
+                        ['quantity' => 0]
+                    );
+                } else {
+                    // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
+                    // Lokasi mengikuti cabang penjualan
+                    $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
+                    $newProduct = Product::create(array_merge($productPayload, ['sku' => $sku]));
+                    $tradeIn->update(['product_id' => $newProduct->id]);
+
+                    // Unit: inactive jika harga jual 0, in_stock jika ada harga jual
+                    ProductUnit::create([
+                        'product_id' => $newProduct->id,
+                        'user_id' => $userId,
+                        'serial_number' => $tradeIn->serial_number,
+                        'location_type' => Stock::LOCATION_BRANCH,
+                        'location_id' => (int) $branch->id,
+                        'status' => $unitStatus,
+                        'received_date' => $saleDate,
+                    ]);
+                    Stock::updateOrCreate(
+                        [
+                            'product_id' => $newProduct->id,
+                            'location_type' => Stock::LOCATION_BRANCH,
+                            'location_id' => (int) $branch->id,
+                        ],
+                        ['quantity' => 0]
+                    );
+                }
             }
 
             $sale->update([
@@ -592,7 +640,7 @@ class SaleService
      * @param  array<int, array{sku?: string, serial_number?: string, brand?: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id?: int, trade_in_value?: float}>  $tradeIns
      * @return array<int, array{sku: string, serial_number: string, brand: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id: int, trade_in_value: float}>
      */
-    private function buildTradeIns(array $tradeIns): array
+    private function buildTradeIns(array $tradeIns, bool $allowSoldSerialReuse = false): array
     {
         $result = [];
         foreach ($tradeIns as $ti) {
@@ -639,12 +687,27 @@ class SaleService
             }
 
             $serials = array_map(fn ($row) => (string) $row['serial_number'], $result);
-            $exists = ProductUnit::whereIn('serial_number', $serials)
-                ->pluck('serial_number')
-                ->all();
-            if (! empty($exists)) {
+            $existingUnits = ProductUnit::whereIn('serial_number', $serials)
+                ->get(['serial_number', 'status']);
+            $blocked = [];
+            $sold = [];
+            foreach ($existingUnits as $unit) {
+                if ($unit->status === ProductUnit::STATUS_SOLD) {
+                    $sold[] = $unit->serial_number;
+                } else {
+                    $blocked[] = $unit->serial_number;
+                }
+            }
+            if (! empty($blocked)) {
                 throw new InvalidArgumentException(
-                    __('Nomor serial tukar tambah sudah terdaftar: :serials', ['serials' => implode(', ', $exists)])
+                    __('Nomor serial tukar tambah sudah terdaftar (bukan SOLD): :serials', ['serials' => implode(', ', array_values(array_unique($blocked)))])
+                );
+            }
+            if (! empty($sold) && ! $allowSoldSerialReuse) {
+                throw new InvalidArgumentException(
+                    __('Nomor serial tukar tambah sudah pernah terjual. Konfirmasi update data terlebih dahulu: :serials', [
+                        'serials' => implode(', ', array_values(array_unique($sold))),
+                    ])
                 );
             }
         }

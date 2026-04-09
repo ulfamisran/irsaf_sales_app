@@ -179,6 +179,7 @@ class SaleController extends Controller
             $payments = $request->input('payments', []);
             $tradeIns = $request->input('trade_ins', []);
             $tradeIns = is_array($tradeIns) ? array_filter($tradeIns, fn ($t) => ! empty(trim((string) ($t['sku'] ?? ''))) && ! empty(trim((string) ($t['brand'] ?? ''))) && (int) ($t['category_id'] ?? 0) > 0 && ! empty(trim((string) ($t['serial_number'] ?? ''))) && (float) ($t['trade_in_value'] ?? 0) > 0) : [];
+            $allowSoldSerialReuse = $request->boolean('confirm_reuse_sold_serials');
 
             if ($status === Sale::STATUS_RELEASED) {
                 $sale = $this->saleService->createReleasedSale(
@@ -191,7 +192,8 @@ class SaleController extends Controller
                     $tax,
                     $description,
                     $user->id,
-                    $tradeIns
+                    $tradeIns,
+                    $allowSoldSerialReuse
                 );
             } else {
                 $sale = $this->saleService->createDraftSale(
@@ -204,7 +206,8 @@ class SaleController extends Controller
                     $description,
                     $user->id,
                     $payments,
-                    $tradeIns
+                    $tradeIns,
+                    $allowSoldSerialReuse
                 );
             }
         } catch (\InvalidArgumentException $e) {
@@ -328,6 +331,7 @@ class SaleController extends Controller
             $payments = $request->input('payments', []);
             $tradeIns = $request->input('trade_ins', []);
             $tradeIns = is_array($tradeIns) ? array_filter($tradeIns, fn ($t) => ! empty(trim((string) ($t['sku'] ?? ''))) && ! empty(trim((string) ($t['brand'] ?? ''))) && (int) ($t['category_id'] ?? 0) > 0 && ! empty(trim((string) ($t['serial_number'] ?? ''))) && (float) ($t['trade_in_value'] ?? 0) > 0) : [];
+            $allowSoldSerialReuse = $request->boolean('confirm_reuse_sold_serials');
 
             // Update always keeps it OPEN; release must be done via explicit action.
             $sale = $this->saleService->updateDraftSale(
@@ -339,7 +343,8 @@ class SaleController extends Controller
                 $tax,
                 $description,
                 $payments,
-                $tradeIns
+                $tradeIns,
+                $allowSoldSerialReuse
             );
             AuditLog::create([
                 'user_id' => $user->id,
@@ -554,6 +559,88 @@ class SaleController extends Controller
                 ];
             })->values(),
         ]);
+    }
+
+    public function checkReusableTradeInSerials(Request $request): JsonResponse
+    {
+        $serials = [];
+        $tradeIns = $request->input('trade_ins', []);
+        if (is_array($tradeIns)) {
+            foreach ($tradeIns as $tradeIn) {
+                $sn = trim((string) ($tradeIn['serial_number'] ?? ''));
+                if ($sn !== '') {
+                    $serials[] = $sn;
+                }
+            }
+        }
+        $serials = array_values(array_unique($serials));
+        if (empty($serials)) {
+            return response()->json([
+                'has_reusable_sold_serials' => false,
+                'sold_serials' => [],
+                'blocked_serials' => [],
+            ]);
+        }
+
+        $existingUnits = ProductUnit::whereIn('serial_number', $serials)
+            ->get(['serial_number', 'status']);
+        $soldSerials = [];
+        $blockedSerials = [];
+        foreach ($existingUnits as $unit) {
+            if ($unit->status === ProductUnit::STATUS_SOLD) {
+                $soldSerials[] = $unit->serial_number;
+            } else {
+                $blockedSerials[] = $unit->serial_number;
+            }
+        }
+
+        return response()->json([
+            'has_reusable_sold_serials' => ! empty($soldSerials),
+            'sold_serials' => array_values(array_unique($soldSerials)),
+            'blocked_serials' => array_values(array_unique($blockedSerials)),
+        ]);
+    }
+
+    /**
+     * Autocomplete: cari unit by nomor serial untuk mengisi form tukar tambah dari data produk terkait.
+     */
+    public function searchTradeInSerial(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+        ]);
+
+        $q = trim($validated['q']);
+        $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q);
+
+        // Tanpa filter cabang: unit bisa berasal dari cabang/gudang lain; lokasi diperbarui saat tukar tambah disimpan.
+        $units = ProductUnit::query()
+            ->with(['product:id,category_id,sku,brand,series,processor,ram,storage,color,specs'])
+            ->where('serial_number', 'like', '%'.$escaped.'%')
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [ProductUnit::STATUS_SOLD])
+            ->limit(20)
+            ->get();
+
+        $results = $units->map(function (ProductUnit $unit) {
+            $p = $unit->product;
+
+            return [
+                'serial_number' => $unit->serial_number,
+                'sku' => $p?->sku ?? '',
+                'brand' => $p?->brand ?? '',
+                'series' => $p?->series ?? '',
+                'processor' => $p?->processor ?? '',
+                'ram' => $p?->ram ?? '',
+                'storage' => $p?->storage ?? '',
+                'color' => $p?->color ?? '',
+                'specs' => $p?->specs ?? '',
+                'category_id' => $p?->category_id,
+                'harga_hpp' => $unit->harga_hpp !== null ? (float) $unit->harga_hpp : null,
+                'status' => $unit->status,
+            ];
+        })->values();
+
+        return response()->json(['results' => $results]);
     }
 
     public function invoice(Sale $sale): View

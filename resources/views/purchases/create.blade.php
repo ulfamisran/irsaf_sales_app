@@ -15,6 +15,7 @@
                 <div class="p-6">
                     <form method="POST" action="{{ route('purchases.store') }}" id="purchase-form">
                         @csrf
+                        <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <div class="space-y-6">
                             {{-- Lokasi --}}
                             <div x-data="{ locationType: '{{ old('location_type', $defaultLocationType) }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
@@ -239,6 +240,7 @@
         let paymentMethods = @json($paymentMethodsJson);
         let products = @json($productsJson);
         const formDataUrl = @json(route('purchases.form-data', [], false));
+        const checkReusableSerialsUrl = @json(route('purchases.check-reusable-serials', [], false));
         const baseUrl = '{{ url("") }}';
 
         function productOptionHtml(p) {
@@ -557,6 +559,64 @@
             if (e.target.matches('#warehouse_id, #branch_id')) window.loadPurchaseDistributors?.();
         });
         document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.loadPurchaseDistributors?.(), 200));
+
+        const purchaseForm = document.getElementById('purchase-form');
+        const confirmReuseInput = document.getElementById('confirm_reuse_sold_serials');
+        if (purchaseForm && confirmReuseInput) {
+            purchaseForm.addEventListener('submit', async function(e) {
+                if (purchaseForm.dataset.reuseConfirmed === '1' || confirmReuseInput.value === '1') {
+                    return;
+                }
+                e.preventDefault();
+                try {
+                    const formData = new FormData(purchaseForm);
+                    const res = await fetch(baseUrl + checkReusableSerialsUrl, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                    });
+                    if (!res.ok) {
+                        purchaseForm.dataset.reuseConfirmed = '1';
+                        purchaseForm.requestSubmit();
+                        return;
+                    }
+                    const data = await res.json();
+                    const blocked = Array.isArray(data.blocked_serials) ? data.blocked_serials : [];
+                    if (blocked.length > 0) {
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Serial sudah dipakai',
+                            text: 'Serial berikut tidak bisa dipakai ulang karena bukan status SOLD: ' + blocked.join(', '),
+                        });
+                        return;
+                    }
+                    const sold = Array.isArray(data.sold_serials) ? data.sold_serials : [];
+                    if (sold.length > 0) {
+                        const confirmResult = await Swal.fire({
+                            icon: 'warning',
+                            title: 'Serial pernah terdaftar',
+                            html: 'Unit berikut sudah pernah ada dan statusnya <b>SOLD</b>:<br><b>' + sold.join(', ') + '</b><br><br>Lanjutkan update data unit/barang dengan data terbaru?',
+                            showCancelButton: true,
+                            confirmButtonText: 'Ya, update',
+                            cancelButtonText: 'Batal',
+                        });
+                        if (!confirmResult.isConfirmed) {
+                            return;
+                        }
+                        confirmReuseInput.value = '1';
+                        purchaseForm.dataset.reuseConfirmed = '1';
+                    }
+                    purchaseForm.dataset.reuseConfirmed = '1';
+                    purchaseForm.requestSubmit();
+                } catch (err) {
+                    purchaseForm.dataset.reuseConfirmed = '1';
+                    purchaseForm.requestSubmit();
+                }
+            });
+        }
     </script>
     @endpush
 </x-app-layout>

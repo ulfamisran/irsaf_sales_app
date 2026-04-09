@@ -58,10 +58,11 @@
                             ? ($u->warehouse?->name ?? ('#'.$u->location_id))
                             : ($u->branch?->name ?? ('#'.$u->location_id));
                         $soldInfo = $soldInfoBySerial[$u->serial_number] ?? null;
+                        $soldDateFromSale = data_get($soldInfo, 'sale_date');
                         $soldDate = $u->sold_at
                             ? $u->sold_at->format('d/m/Y H:i')
-                            : ($soldInfo?->sale_date?->format('d/m/Y') ?? null);
-                        $invoice = $soldInfo['invoice_number'] ?? null;
+                            : ($soldDateFromSale ? \Illuminate\Support\Carbon::parse($soldDateFromSale)->format('d/m/Y') : null);
+                        $invoice = data_get($soldInfo, 'invoice_number');
                         $soldText = $soldDate ? $soldDate : '';
                         if ($invoice) {
                             $soldText .= ($soldText ? ' | ' : '') . $invoice;

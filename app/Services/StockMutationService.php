@@ -171,13 +171,14 @@ class StockMutationService
         ?array $serialNumbers = null,
         ?string $receivedDate = null,
         ?float $purchasePrice = null,
-        ?float $sellingPrice = null
+        ?float $sellingPrice = null,
+        bool $allowSoldSerialReuse = false
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
         if (! empty($serialNumbers)) {
-            return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $purchasePrice, $sellingPrice);
+            return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $purchasePrice, $sellingPrice, $allowSoldSerialReuse);
         }
 
         return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $userId) {
@@ -641,7 +642,8 @@ class StockMutationService
         ?string $receivedDate = null,
         ?int $userId = null,
         ?float $purchasePrice = null,
-        ?float $sellingPrice = null
+        ?float $sellingPrice = null,
+        bool $allowSoldSerialReuse = false
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
@@ -650,28 +652,58 @@ class StockMutationService
         $jual = $sellingPrice !== null ? round((float) $sellingPrice, 2) : (float) ($product->selling_price ?? 0);
         $unitStatus = $jual > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus) {
-            $exists = ProductUnit::whereIn('serial_number', $serialNumbers)
-                ->pluck('serial_number')
-                ->all();
-            if (! empty($exists)) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus, $allowSoldSerialReuse) {
+            $existingUnits = ProductUnit::whereIn('serial_number', $serialNumbers)
+                ->lockForUpdate()
+                ->get(['id', 'serial_number', 'status']);
+            $existingBySerial = $existingUnits->keyBy(fn (ProductUnit $u) => strtoupper((string) $u->serial_number));
+            $blockedSerials = [];
+            foreach ($existingUnits as $unit) {
+                if ($unit->status !== ProductUnit::STATUS_SOLD) {
+                    $blockedSerials[] = $unit->serial_number;
+                }
+            }
+            if (! empty($blockedSerials)) {
                 throw new InvalidArgumentException(
-                    __('Nomor serial sudah terdaftar: :serials', ['serials' => implode(', ', $exists)])
+                    __('Nomor serial sudah terdaftar (bukan SOLD): :serials', ['serials' => implode(', ', array_values(array_unique($blockedSerials)))])
                 );
             }
 
             foreach ($serialNumbers as $sn) {
-                ProductUnit::create([
-                    'product_id' => $product->id,
-                    'user_id' => $userId,
-                    'harga_hpp' => $hpp,
-                    'harga_jual' => $jual,
-                    'serial_number' => $sn,
-                    'location_type' => $locationType,
-                    'location_id' => $locationId,
-                    'status' => $unitStatus,
-                    'received_date' => $receivedDate,
-                ]);
+                $serialKey = strtoupper((string) $sn);
+                $existingUnit = $existingBySerial->get($serialKey);
+                if ($existingUnit && ! $allowSoldSerialReuse) {
+                    throw new InvalidArgumentException(
+                        __('Nomor serial sudah pernah terjual. Konfirmasi update data terlebih dahulu: :serial', ['serial' => $sn])
+                    );
+                }
+
+                if ($existingUnit) {
+                    $existingUnit->update([
+                        'product_id' => $product->id,
+                        'user_id' => $userId,
+                        'harga_hpp' => $hpp,
+                        'harga_jual' => $jual,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                        'status' => $unitStatus,
+                        'received_date' => $receivedDate,
+                        'sold_at' => null,
+                        'notes' => null,
+                    ]);
+                } else {
+                    ProductUnit::create([
+                        'product_id' => $product->id,
+                        'user_id' => $userId,
+                        'harga_hpp' => $hpp,
+                        'harga_jual' => $jual,
+                        'serial_number' => $sn,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                        'status' => $unitStatus,
+                        'received_date' => $receivedDate,
+                    ]);
+                }
             }
 
             $this->recalculateStockQuantity($product->id, $locationType, $locationId);

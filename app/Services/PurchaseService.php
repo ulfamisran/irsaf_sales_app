@@ -40,7 +40,8 @@ class PurchaseService
         ?string $dueDate = null,
         ?int $userId = null,
         array $payments = [],
-        ?string $invoiceNumber = null
+        ?string $invoiceNumber = null,
+        bool $allowSoldSerialReuse = false
     ): Purchase {
         $userId = $userId ?? auth()->id();
         $this->validateLocation($locationType, $locationId);
@@ -76,7 +77,8 @@ class PurchaseService
             $dueDate,
             $userId,
             $payments,
-            $invoiceNumber
+            $invoiceNumber,
+            $allowSoldSerialReuse
         ) {
             $invoiceNumber = ! empty(trim((string) $invoiceNumber))
                 ? trim($invoiceNumber)
@@ -108,6 +110,7 @@ class PurchaseService
                 ]);
 
                 $product = Product::findOrFail($detail['product_id']);
+                $product->update(['is_active' => true]);
                 $serialNumbers = $detail['serial_numbers'] ?? [];
                 $this->stockMutationService->addStock(
                     $product,
@@ -116,7 +119,10 @@ class PurchaseService
                     $detail['quantity'],
                     $userId,
                     ! empty($serialNumbers) ? $serialNumbers : null,
-                    $purchaseDate
+                    $purchaseDate,
+                    null,
+                    null,
+                    $allowSoldSerialReuse
                 );
             }
 

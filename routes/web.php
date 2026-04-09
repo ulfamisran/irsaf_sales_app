@@ -263,6 +263,9 @@ Route::middleware('auth')->group(function () {
     Route::get('purchases/form-data', [PurchaseController::class, 'formData'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.form-data');
+    Route::post('purchases/check-reusable-serials', [PurchaseController::class, 'checkReusableSerials'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.check-reusable-serials');
     Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');
@@ -284,6 +287,12 @@ Route::middleware('auth')->group(function () {
     Route::get('sales/available-products', [SaleController::class, 'availableProducts'])
         ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
         ->name('sales.available-products');
+    Route::post('sales/check-reusable-trade-in-serials', [SaleController::class, 'checkReusableTradeInSerials'])
+        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->name('sales.check-reusable-trade-in-serials');
+    Route::get('sales/trade-in-search-serial', [SaleController::class, 'searchTradeInSerial'])
+        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->name('sales.trade-in-search-serial');
     Route::get('sales/export', [SaleController::class, 'export'])
         ->middleware('role:admin_cabang,kasir')
         ->name('sales.export');

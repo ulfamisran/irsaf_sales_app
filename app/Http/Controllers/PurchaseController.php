@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Distributor;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\Role;
 use App\Models\Stock;
@@ -209,7 +210,8 @@ class PurchaseController extends Controller
                 $request->due_date,
                 $user->id,
                 $payments,
-                $request->invoice_number
+                $request->invoice_number,
+                $request->boolean('confirm_reuse_sold_serials')
             );
 
             AuditLog::create([
@@ -430,6 +432,54 @@ class PurchaseController extends Controller
                 'series' => $p->series ?? '',
                 'purchase_price' => (float) ($p->purchase_price ?? 0),
             ])->values(),
+        ]);
+    }
+
+    public function checkReusableSerials(Request $request): JsonResponse
+    {
+        $serials = [];
+        $items = $request->input('items', []);
+        if (is_array($items)) {
+            foreach ($items as $item) {
+                $itemSerials = [];
+                if (! empty($item['serial_numbers']) && is_array($item['serial_numbers'])) {
+                    $itemSerials = $item['serial_numbers'];
+                } elseif (! empty($item['serial_numbers_text'])) {
+                    $itemSerials = preg_split('/[\r\n,]+/', (string) $item['serial_numbers_text']) ?: [];
+                }
+                foreach ($itemSerials as $sn) {
+                    $sn = trim((string) $sn);
+                    if ($sn !== '') {
+                        $serials[] = $sn;
+                    }
+                }
+            }
+        }
+        $serials = array_values(array_unique($serials));
+        if (empty($serials)) {
+            return response()->json([
+                'has_reusable_sold_serials' => false,
+                'sold_serials' => [],
+                'blocked_serials' => [],
+            ]);
+        }
+
+        $existingUnits = ProductUnit::whereIn('serial_number', $serials)
+            ->get(['serial_number', 'status']);
+        $soldSerials = [];
+        $blockedSerials = [];
+        foreach ($existingUnits as $unit) {
+            if ($unit->status === ProductUnit::STATUS_SOLD) {
+                $soldSerials[] = $unit->serial_number;
+            } else {
+                $blockedSerials[] = $unit->serial_number;
+            }
+        }
+
+        return response()->json([
+            'has_reusable_sold_serials' => ! empty($soldSerials),
+            'sold_serials' => array_values(array_unique($soldSerials)),
+            'blocked_serials' => array_values(array_unique($blockedSerials)),
         ]);
     }
 

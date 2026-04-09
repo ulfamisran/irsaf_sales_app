@@ -19,6 +19,7 @@
                     <form method="POST" action="{{ route('sales.update', $sale) }}" id="sale-form">
                         @csrf
                         @method('PATCH')
+                        <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <input type="hidden" name="status" value="open">
                         <input type="hidden" name="branch_id" value="{{ $sale->branch_id }}">
 
@@ -274,8 +275,12 @@
         const appBaseUrl = @json(request()->getBaseUrl()); // supports subfolder installs
         const availableProductsPath = @json(route('sales.available-products', [], false));
         const availableSerialsPath = @json(route('sales.available-serials', [], false));
+        const checkReusableTradeInSerialsPath = @json(route('sales.check-reusable-trade-in-serials', [], false));
+        const tradeInSerialSearchPath = @json(route('sales.trade-in-search-serial', [], false));
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
+        const checkReusableTradeInSerialsUrl = appBaseUrl + checkReusableTradeInSerialsPath;
+        const tradeInSerialSearchUrl = appBaseUrl + tradeInSerialSearchPath;
 
         function productOptionsHtml() {
             return '<option value="">Select Product</option>' + products.map(p =>
@@ -678,6 +683,105 @@
             return out;
         };
 
+        function fillTradeInRowFromSerialResult(row, item) {
+            const set = (partialName, v) => {
+                const el = row.querySelector('input[name*="' + partialName + '"]');
+                if (el) el.value = v == null || v === undefined ? '' : String(v);
+            };
+            set('[brand]', item.brand);
+            set('[series]', item.series);
+            set('[processor]', item.processor);
+            set('[ram]', item.ram);
+            set('[storage]', item.storage);
+            set('[color]', item.color);
+            set('[specs]', item.specs);
+            set('[serial_number]', item.serial_number);
+            const catEl = row.querySelector('input[name*="[category_id]"]');
+            if (catEl) {
+                const cid = item.category_id || laptopCategoryId || '';
+                catEl.value = cid ? String(cid) : '';
+            }
+            const skuInput = row.querySelector('input[name*="[sku]"]');
+            const skuDisplay = row.querySelector('.trade-in-sku-display');
+            const skuVal = item.sku || '';
+            if (skuInput) skuInput.value = skuVal;
+            if (skuDisplay) skuDisplay.value = skuVal;
+            const valInp = row.querySelector('.trade-in-value-input');
+            if (valInp && item.harga_hpp != null && Number(item.harga_hpp) > 0) {
+                valInp.value = String(Math.round(Number(item.harga_hpp)));
+                if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+            }
+            const dd = row.querySelector('.trade-in-serial-dropdown');
+            const si = row.querySelector('.trade-in-serial-search');
+            if (dd) { dd.innerHTML = ''; dd.classList.add('hidden'); }
+            if (si) si.value = '';
+            refreshTradeInSum();
+            refreshPaymentSum();
+        }
+
+        function attachTradeInSerialSearch(row) {
+            const input = row.querySelector('.trade-in-serial-search');
+            const dropdown = row.querySelector('.trade-in-serial-dropdown');
+            if (!input || !dropdown) return;
+            let debounce = null;
+            let lastController = null;
+            input.addEventListener('input', () => {
+                clearTimeout(debounce);
+                const q = input.value.trim();
+                if (q.length < 2) {
+                    dropdown.classList.add('hidden');
+                    dropdown.innerHTML = '';
+                    return;
+                }
+                debounce = setTimeout(async () => {
+                    lastController?.abort();
+                    lastController = new AbortController();
+                    try {
+                        const url = new URL(tradeInSerialSearchUrl, window.location.origin);
+                        url.searchParams.set('q', q);
+                        const res = await fetch(url.toString(), {
+                            headers: { Accept: 'application/json' },
+                            signal: lastController.signal,
+                        });
+                        if (!res.ok) throw new Error('fetch');
+                        const data = await res.json();
+                        const results = Array.isArray(data.results) ? data.results : [];
+                        dropdown.innerHTML = '';
+                        if (results.length === 0) {
+                            const empty = document.createElement('div');
+                            empty.className = 'px-3 py-2 text-xs text-slate-500';
+                            empty.textContent = @json(__('Tidak ada data serial yang cocok.'));
+                            dropdown.appendChild(empty);
+                        } else {
+                            results.forEach((item) => {
+                                const btn = document.createElement('button');
+                                btn.type = 'button';
+                                btn.className = 'w-full text-left px-3 py-2 text-sm hover:bg-amber-100 border-b border-amber-100/80 last:border-0';
+                                const st = item.status || '';
+                                btn.textContent = (item.serial_number || '') + ' — ' + [item.brand, item.series].filter(Boolean).join(' ') + (st ? ' (' + st + ')' : '');
+                                btn.addEventListener('mousedown', (ev) => {
+                                    ev.preventDefault();
+                                    fillTradeInRowFromSerialResult(row, item);
+                                });
+                                dropdown.appendChild(btn);
+                            });
+                        }
+                        dropdown.classList.remove('hidden');
+                    } catch (e) {
+                        if (e.name === 'AbortError') return;
+                        dropdown.innerHTML = '';
+                        dropdown.classList.add('hidden');
+                    }
+                }, 300);
+            });
+            input.addEventListener('blur', () => {
+                setTimeout(() => dropdown.classList.add('hidden'), 200);
+            });
+            input.addEventListener('focus', () => {
+                if (dropdown.children.length) dropdown.classList.remove('hidden');
+            });
+        }
+
         function addTradeInRow(pref = {}) {
             const container = document.getElementById('trade-in-rows');
             if (!container) return;
@@ -686,6 +790,12 @@
             const div = document.createElement('div');
             div.className = 'trade-in-row rounded-lg border border-amber-200 bg-white p-3 space-y-3';
             div.innerHTML = `
+                <div class="trade-in-serial-autocomplete relative rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                    <label class="block text-xs font-medium text-amber-900 mb-1">` + @json(__('Cari nomor serial')) + `</label>
+                    <input type="text" class="trade-in-serial-search block w-full rounded-md border border-amber-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="` + @json(__('Ketik minimal 2 karakter, lalu pilih dari daftar')) + `" autocomplete="off">
+                    <div class="trade-in-serial-dropdown hidden absolute left-3 right-3 mt-1 max-h-52 overflow-auto rounded-md border border-amber-200 bg-white shadow-lg z-50"></div>
+                    <p class="mt-1 text-[11px] text-amber-800/80">` + @json(__('Mengisi otomatis dari unit di seluruh cabang/gudang. Lokasi unit diperbarui saat transaksi disimpan.')) + `</p>
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">` + @json(__('Merek')) + `</label>
@@ -740,6 +850,7 @@
                 </div>
             `;
             container.appendChild(div);
+            attachTradeInSerialSearch(div);
             if (pref.category_id) {
                 const sel = div.querySelector('select[name*="[category_id]"]');
                 if (sel) sel.value = String(pref.category_id);
@@ -856,6 +967,63 @@
             });
         }
         toggleRemoveButtons();
+
+        const saleForm = document.getElementById('sale-form');
+        const confirmReuseInput = document.getElementById('confirm_reuse_sold_serials');
+        if (saleForm && confirmReuseInput) {
+            saleForm.addEventListener('submit', async function(e) {
+                if (saleForm.dataset.reuseConfirmed === '1' || confirmReuseInput.value === '1') {
+                    return;
+                }
+                e.preventDefault();
+                try {
+                    const formData = new FormData(saleForm);
+                    const res = await fetch(checkReusableTradeInSerialsUrl, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                    });
+                    if (!res.ok) {
+                        saleForm.dataset.reuseConfirmed = '1';
+                        saleForm.requestSubmit();
+                        return;
+                    }
+                    const data = await res.json();
+                    const blocked = Array.isArray(data.blocked_serials) ? data.blocked_serials : [];
+                    if (blocked.length > 0) {
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Serial tukar tambah tidak valid',
+                            text: 'Serial berikut tidak bisa dipakai ulang karena bukan status SOLD: ' + blocked.join(', '),
+                        });
+                        return;
+                    }
+                    const sold = Array.isArray(data.sold_serials) ? data.sold_serials : [];
+                    if (sold.length > 0) {
+                        const confirmResult = await Swal.fire({
+                            icon: 'warning',
+                            title: 'Serial tukar tambah sudah pernah ada',
+                            html: 'Unit berikut sudah pernah ada dan statusnya <b>SOLD</b>:<br><b>' + sold.join(', ') + '</b><br><br>Lanjutkan update data unit/barang dengan data terbaru?',
+                            showCancelButton: true,
+                            confirmButtonText: 'Ya, update',
+                            cancelButtonText: 'Batal',
+                        });
+                        if (!confirmResult.isConfirmed) {
+                            return;
+                        }
+                        confirmReuseInput.value = '1';
+                    }
+                    saleForm.dataset.reuseConfirmed = '1';
+                    saleForm.requestSubmit();
+                } catch (err) {
+                    saleForm.dataset.reuseConfirmed = '1';
+                    saleForm.requestSubmit();
+                }
+            });
+        }
     </script>
 </x-app-layout>
 
