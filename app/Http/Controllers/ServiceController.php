@@ -19,6 +19,7 @@ use App\Models\AuditLog;
 use App\Services\ServiceService;
 use App\Services\KasBalanceService;
 use App\Services\StockMutationService;
+use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ServiceController extends Controller
 {
@@ -121,7 +123,7 @@ class ServiceController extends Controller
         return view('services.index', compact('services', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
     }
 
-    public function export(Request $request): Response
+    public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
         $query = Service::with(['branch', 'user', 'customer', 'payments', 'serviceMaterials'])
@@ -175,13 +177,10 @@ class ServiceController extends Controller
             'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
             'branchLine' => $branchLine,
         ];
-        $filename = 'riwayat-service-' . now()->format('Ymd-His') . '.xls';
+        $filename = 'riwayat-service-' . now()->format('Ymd-His') . '.xlsx';
         $html = view('services.export', compact('services', 'filterMeta'))->render();
 
-        return response($html, 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ]);
+        return ExcelExporter::downloadFromHtml($html, $filename, 'services');
     }
 
     public function exportPdf(Request $request)

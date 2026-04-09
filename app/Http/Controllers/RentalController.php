@@ -13,6 +13,7 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Services\RentalService;
+use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RentalController extends Controller
 {
@@ -124,7 +126,7 @@ class RentalController extends Controller
         return view('rentals.index', compact('rentals', 'warehouses', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalRental', 'paymentMethods', 'paymentMethodTotals'));
     }
 
-    public function export(Request $request): Response
+    public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
         $query = Rental::with(['branch', 'customer', 'warehouse', 'user', 'payments'])
@@ -189,13 +191,10 @@ class RentalController extends Controller
             'dateTo' => $request->filled('date_to') ? (string) $request->date_to : ($autoDateTo ?: '-'),
             'branchLine' => $branchLine,
         ];
-        $filename = 'riwayat-penyewaan-' . now()->format('Ymd-His') . '.xls';
+        $filename = 'riwayat-penyewaan-' . now()->format('Ymd-His') . '.xlsx';
         $html = view('rentals.export', compact('rentals', 'filterMeta'))->render();
 
-        return response($html, 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ]);
+        return ExcelExporter::downloadFromHtml($html, $filename, 'rentals');
     }
 
     public function exportPdf(Request $request)
@@ -654,3 +653,4 @@ class RentalController extends Controller
         return (int) $customer->id;
     }
 }
+

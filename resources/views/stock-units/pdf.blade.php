@@ -21,6 +21,9 @@
         <div><strong>CABANG/GUDANG:</strong> {{ $locationLabel }}</div>
         <div><strong>KATEGORI PRODUK:</strong> {{ $categoryLabel ?? __('Semua') }}</div>
         <div><strong>STATUS STOK:</strong> {{ $statusLabel }}</div>
+        @if (!empty($isTruncated))
+            <div><strong>CATATAN:</strong> PDF dibatasi {{ number_format((int) ($pdfRowLimit ?? 0), 0, ',', '.') }} baris dari total {{ number_format((int) ($totalUnitsForPdf ?? 0), 0, ',', '.') }} baris agar proses unduh tetap stabil.</div>
+        @endif
     </div>
 
     <table>

@@ -16,6 +16,7 @@ use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
 use App\Services\SaleService;
+use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +26,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SaleController extends Controller
 {
@@ -57,7 +59,7 @@ class SaleController extends Controller
     /**
      * Export rekap penjualan ke Excel (HTML table, .xls) — query string sama seperti index.
      */
-    public function export(Request $request): Response
+    public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
         $ctx = $this->buildSalesListQuery($request);
@@ -66,13 +68,10 @@ class SaleController extends Controller
         $sales = (clone $exportQuery)->with(['payments', 'tradeIns'])->get();
         $filterMeta = $this->salesExportFilterMeta($request, $ctx, $sales);
 
-        $filename = 'rekap-penjualan-' . now()->format('Ymd-His') . '.xls';
+        $filename = 'rekap-penjualan-' . now()->format('Ymd-His') . '.xlsx';
         $html = view('sales.export', array_merge($summary, compact('sales', 'filterMeta')))->render();
 
-        return response($html, 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ]);
+        return ExcelExporter::downloadFromHtml($html, $filename, 'sales');
     }
 
     /**
@@ -835,3 +834,4 @@ class SaleController extends Controller
         return (int) $customer->id;
     }
 }
+

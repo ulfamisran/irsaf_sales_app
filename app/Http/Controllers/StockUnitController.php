@@ -12,10 +12,12 @@ use App\Models\SaleDetail;
 use App\Models\SaleTradeIn;
 use App\Models\Stock;
 use App\Models\Warehouse;
+use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StockUnitController extends Controller
 {
@@ -179,7 +181,7 @@ class StockUnitController extends Controller
     /**
      * Export unit list to Excel-compatible format (HTML table).
      */
-    public function export(Request $request): Response
+    public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
 
@@ -249,7 +251,7 @@ class StockUnitController extends Controller
             ->groupBy('product_id')
             ->pluck('total', 'product_id');
 
-        $filename = 'stock-units-' . now()->format('Ymd-His') . '.xls';
+        $filename = 'stock-units-' . now()->format('Ymd-His') . '.xlsx';
         $html = view('stock-units.export', compact(
             'products',
             'unitsByProduct',
@@ -259,10 +261,7 @@ class StockUnitController extends Controller
             'tradeInProductIds'
         ))->render();
 
-        return response($html, 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ]);
+        return ExcelExporter::downloadFromHtml($html, $filename, 'stock');
     }
 
     /**
@@ -271,6 +270,7 @@ class StockUnitController extends Controller
     public function exportPdf(Request $request)
     {
         $user = $request->user();
+        $pdfRowLimit = 1500;
 
         $listBase = ProductUnit::query();
         $countBase = ProductUnit::query();
@@ -321,6 +321,22 @@ class StockUnitController extends Controller
                     ];
                 }
             }
+        }
+
+        $totalUnitsForPdf = (int) $unitsByProduct->flatten(1)->count();
+        $isTruncated = $totalUnitsForPdf > $pdfRowLimit;
+        if ($isTruncated) {
+            $remaining = $pdfRowLimit;
+            $unitsByProduct = $unitsByProduct->map(function ($group) use (&$remaining) {
+                if ($remaining <= 0) {
+                    return collect();
+                }
+                $slice = $group->take($remaining);
+                $remaining -= $slice->count();
+                return $slice;
+            })->filter(fn ($group) => $group->isNotEmpty());
+            $productIdsInPdf = $unitsByProduct->keys()->all();
+            $products = $products->whereIn('id', $productIdsInPdf)->values();
         }
 
         $statusOptions = [
@@ -380,7 +396,10 @@ class StockUnitController extends Controller
             'tradeInProductIds',
             'locationLabel',
             'statusLabel',
-            'categoryLabel'
+            'categoryLabel',
+            'isTruncated',
+            'pdfRowLimit',
+            'totalUnitsForPdf'
         ))->setPaper('a4', 'landscape');
 
         return $pdf->download('monitoring-stok-' . now()->format('Ymd-His') . '.pdf');
@@ -449,3 +468,4 @@ class StockUnitController extends Controller
         }
     }
 }
+
