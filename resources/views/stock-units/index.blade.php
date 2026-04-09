@@ -24,6 +24,15 @@
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <div class="flex flex-wrap gap-3 items-end">
+                        <div style="width: 200px;">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Produk') }}</label>
+                            <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($categories ?? [] as $cat)
+                                    <option value="{{ $cat->id }}" {{ (string) request('category_id') === (string) $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                         <div style="width: 220px;">
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
                             <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

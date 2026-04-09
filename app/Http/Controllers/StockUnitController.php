@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Branch;
@@ -78,6 +79,7 @@ class StockUnitController extends Controller
         }
 
         $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);
+        $categories = Category::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $canFilterLocation = $user->isSuperAdminOrAdminPusat();
@@ -120,6 +122,7 @@ class StockUnitController extends Controller
             'productsPage',
             'unitsByProduct',
             'products',
+            'categories',
             'statusOptions',
             'branches',
             'warehouses',
@@ -361,6 +364,13 @@ class StockUnitController extends Controller
             ? $statusOptions[$statusFilter]
             : __('Semua');
 
+        $categoryId = (int) $request->get('category_id', 0);
+        $categoryLabel = __('Semua');
+        if ($categoryId > 0) {
+            $cat = Category::find($categoryId);
+            $categoryLabel = $cat?->name ?? __('Semua');
+        }
+
         $pdf = Pdf::loadView('stock-units.pdf', compact(
             'products',
             'unitsByProduct',
@@ -369,7 +379,8 @@ class StockUnitController extends Controller
             'soldInfoBySerial',
             'tradeInProductIds',
             'locationLabel',
-            'statusLabel'
+            'statusLabel',
+            'categoryLabel'
         ))->setPaper('a4', 'landscape');
 
         return $pdf->download('monitoring-stok-' . now()->format('Ymd-His') . '.pdf');
@@ -396,6 +407,13 @@ class StockUnitController extends Controller
         if ($request->filled('product_id')) {
             $listBase->where('product_id', (int) $request->product_id);
             $countBase->where('product_id', (int) $request->product_id);
+        }
+        if ($request->filled('category_id')) {
+            $categoryId = (int) $request->category_id;
+            if ($categoryId > 0) {
+                $listBase->whereHas('product', fn ($q) => $q->where('category_id', $categoryId));
+                $countBase->whereHas('product', fn ($q) => $q->where('category_id', $categoryId));
+            }
         }
         if ($request->filled('status')) {
             $listBase->where('status', (string) $request->status);

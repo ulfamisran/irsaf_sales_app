@@ -655,7 +655,7 @@ class StockMutationService
         return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus, $allowSoldSerialReuse) {
             $existingUnits = ProductUnit::whereIn('serial_number', $serialNumbers)
                 ->lockForUpdate()
-                ->get(['id', 'serial_number', 'status']);
+                ->get(['id', 'serial_number', 'status', 'product_id', 'location_type', 'location_id']);
             $existingBySerial = $existingUnits->keyBy(fn (ProductUnit $u) => strtoupper((string) $u->serial_number));
             $blockedSerials = [];
             foreach ($existingUnits as $unit) {
@@ -679,6 +679,9 @@ class StockMutationService
                 }
 
                 if ($existingUnit) {
+                    $oldProductId = (int) $existingUnit->product_id;
+                    $oldLocationType = (string) $existingUnit->location_type;
+                    $oldLocationId = (int) $existingUnit->location_id;
                     $existingUnit->update([
                         'product_id' => $product->id,
                         'user_id' => $userId,
@@ -691,6 +694,7 @@ class StockMutationService
                         'sold_at' => null,
                         'notes' => null,
                     ]);
+                    $this->recalculateStockQuantity($oldProductId, $oldLocationType, $oldLocationId);
                 } else {
                     ProductUnit::create([
                         'product_id' => $product->id,

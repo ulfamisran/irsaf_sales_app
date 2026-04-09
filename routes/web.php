@@ -266,6 +266,9 @@ Route::middleware('auth')->group(function () {
     Route::post('purchases/check-reusable-serials', [PurchaseController::class, 'checkReusableSerials'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.check-reusable-serials');
+    Route::get('purchases/search-unit-by-serial', [PurchaseController::class, 'searchUnitBySerial'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.search-unit-by-serial');
     Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');

@@ -484,6 +484,59 @@ class PurchaseController extends Controller
     }
 
     /**
+     * Autocomplete nomor serial untuk pembelian (sumber data seluruh lokasi; lokasi unit mengikuti lokasi pembelian saat disimpan).
+     */
+    public function searchUnitBySerial(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+        ]);
+
+        $q = trim($validated['q']);
+        $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q);
+
+        $units = ProductUnit::query()
+            ->with([
+                'product:id,category_id,sku,brand,series,processor,ram,storage,color,specs,purchase_price',
+                'warehouse:id,name',
+                'branch:id,name',
+            ])
+            ->where('serial_number', 'like', '%'.$escaped.'%')
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [ProductUnit::STATUS_SOLD])
+            ->limit(20)
+            ->get();
+
+        $results = $units->map(function (ProductUnit $unit) {
+            $p = $unit->product;
+            $locationLabel = $unit->location_type === Stock::LOCATION_WAREHOUSE
+                ? __('Gudang') . ': ' . ($unit->warehouse?->name ?? '#'.$unit->location_id)
+                : __('Cabang') . ': ' . ($unit->branch?->name ?? '#'.$unit->location_id);
+
+            return [
+                'product_id' => (int) $unit->product_id,
+                'serial_number' => $unit->serial_number,
+                'sku' => $p?->sku ?? '',
+                'brand' => $p?->brand ?? '',
+                'series' => $p?->series ?? '',
+                'processor' => $p?->processor ?? '',
+                'ram' => $p?->ram ?? '',
+                'storage' => $p?->storage ?? '',
+                'color' => $p?->color ?? '',
+                'specs' => $p?->specs ?? '',
+                'category_id' => $p?->category_id,
+                'purchase_price' => $p ? (float) ($p->purchase_price ?? 0) : 0.0,
+                'harga_hpp' => $unit->harga_hpp !== null ? (float) $unit->harga_hpp : null,
+                'status' => $unit->status,
+                'location_type' => $unit->location_type,
+                'location_id' => (int) $unit->location_id,
+                'location_label' => $locationLabel,
+            ];
+        })->values();
+
+        return response()->json(['results' => $results]);
+    }
+
+    /**
      * Get products for purchase form, filtered by location and optional category.
      */
     private function getProductsForPurchase(string $locationType, ?int $locationId, ?int $categoryId)

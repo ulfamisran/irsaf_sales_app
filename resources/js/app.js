@@ -41,11 +41,20 @@ export function parseRupiahToNumber(value) {
 }
 
 function wrapWithRpPrefix(input) {
-    if (input.dataset.rpWrapped) return;
+    if (input.dataset.rpWrapped) {
+        const wrapper = input.parentElement;
+        if (wrapper?.classList?.contains('relative')) {
+            wrapper.classList.add('w-full', 'max-w-full', 'min-w-0');
+        }
+        if (!input.classList.contains('w-full')) {
+            input.classList.add('w-full', 'max-w-full', 'min-w-0');
+        }
+        return;
+    }
     input.dataset.rpWrapped = '1';
 
     const wrapper = document.createElement('div');
-    wrapper.className = 'relative';
+    wrapper.className = 'relative w-full max-w-full min-w-0';
 
     const prefix = document.createElement('span');
     prefix.className = 'absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 text-sm pointer-events-none';
@@ -58,6 +67,9 @@ function wrapWithRpPrefix(input) {
     if (!input.classList.contains('pl-10')) {
         input.classList.remove('pl-3', 'px-3');
         input.classList.add('pl-10');
+    }
+    if (!input.classList.contains('w-full')) {
+        input.classList.add('w-full', 'max-w-full', 'min-w-0');
     }
 }
 

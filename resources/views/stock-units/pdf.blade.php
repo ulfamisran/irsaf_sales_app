@@ -19,6 +19,7 @@
     <h1>MONITORING STOK</h1>
     <div class="meta">
         <div><strong>CABANG/GUDANG:</strong> {{ $locationLabel }}</div>
+        <div><strong>KATEGORI PRODUK:</strong> {{ $categoryLabel ?? __('Semua') }}</div>
         <div><strong>STATUS STOK:</strong> {{ $statusLabel }}</div>
     </div>
 

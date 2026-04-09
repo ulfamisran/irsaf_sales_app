@@ -133,6 +133,12 @@
                                 </div>
                                 <div id="purchase-items" class="space-y-4">
                                     <div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                        <div class="purchase-serial-autocomplete relative rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3">
+                                            <x-input-label :value="__('Cari nomor serial')" class="text-xs font-medium text-indigo-900" />
+                                            <input type="text" class="purchase-serial-search block mt-1 w-full rounded-md border border-indigo-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Ketik minimal 2 karakter, pilih dari daftar — mengisi produk & serial') }}" autocomplete="off">
+                                            <div class="purchase-serial-dropdown hidden absolute left-0 right-0 z-30 mt-1 max-h-52 overflow-auto rounded-md border border-indigo-200 bg-white shadow-lg"></div>
+                                            <p class="mt-1 text-[11px] text-indigo-900/80">{{ __('Mencari unit di semua lokasi. Saat disimpan, lokasi unit mengikuti lokasi pembelian yang dipilih di atas.') }}</p>
+                                        </div>
                                         <div class="product-selector-block mb-3">
                                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                                                 <div>
@@ -166,18 +172,18 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3">
-                                            <div class="md:col-span-2">
+                                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3 items-start">
+                                            <div class="min-w-0 md:col-span-2">
                                                 <x-input-label :value="__('Qty')" />
-                                                <x-text-input type="number" name="items[0][quantity]" min="1" value="1" class="item-qty" required />
+                                                <x-text-input type="number" name="items[0][quantity]" min="1" value="1" class="item-qty block mt-1 w-full max-w-full" required />
                                             </div>
-                                            <div class="md:col-span-2">
+                                            <div class="min-w-0 md:col-span-2">
                                                 <x-input-label :value="__('Harga Beli')" />
-                                                <x-text-input type="text" name="items[0][unit_price]" data-rupiah="true" class="item-price" placeholder="0" required />
+                                                <x-text-input type="text" name="items[0][unit_price]" data-rupiah="true" class="item-price block mt-1 w-full max-w-full" placeholder="0" required />
                                             </div>
-                                            <div class="md:col-span-8">
+                                            <div class="min-w-0 md:col-span-8">
                                                 <x-input-label :value="__('Serial (1 per baris, opsional)')" />
-                                                <textarea name="items[0][serial_numbers_text]" class="item-serials block mt-1 w-full rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002"></textarea>
+                                                <textarea name="items[0][serial_numbers_text]" class="item-serials block mt-1 w-full max-w-full min-w-0 rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002"></textarea>
                                             </div>
                                         </div>
                                         <div class="mt-2 flex justify-end">
@@ -241,7 +247,9 @@
         let products = @json($productsJson);
         const formDataUrl = @json(route('purchases.form-data', [], false));
         const checkReusableSerialsUrl = @json(route('purchases.check-reusable-serials', [], false));
+        const purchaseSerialSearchPath = @json(route('purchases.search-unit-by-serial', [], false));
         const baseUrl = '{{ url("") }}';
+        const purchaseSerialSearchUrl = baseUrl + purchaseSerialSearchPath;
 
         function productOptionHtml(p) {
             const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -309,6 +317,139 @@
             });
         }
         document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+
+        function getPurchaseLocationHint() {
+            const lt = document.querySelector('input[name="location_type"]:checked')?.value;
+            if (lt === 'warehouse') {
+                const sel = document.getElementById('warehouse_id');
+                const t = sel?.options?.[sel.selectedIndex]?.text?.trim() || '';
+                return t ? ('{{ __("Gudang") }}: ' + t) : '{{ __("Gudang (pilih lokasi)") }}';
+            }
+            if (lt === 'branch') {
+                const sel = document.getElementById('branch_id');
+                const t = sel?.options?.[sel.selectedIndex]?.text?.trim() || '';
+                return t ? ('{{ __("Cabang") }}: ' + t) : '{{ __("Cabang (pilih lokasi)") }}';
+            }
+            return '-';
+        }
+
+        function clearPurchaseSerialDropdown(row) {
+            const dd = row.querySelector('.purchase-serial-dropdown');
+            const si = row.querySelector('.purchase-serial-search');
+            if (dd) { dd.innerHTML = ''; dd.classList.add('hidden'); }
+            if (si) si.value = '';
+        }
+
+        function applyPurchaseUnitSelection(row, item) {
+            const pid = item.product_id;
+            const purchasePrice = Number(item.purchase_price || 0);
+            const hpp = item.harga_hpp != null ? Number(item.harga_hpp) : null;
+            const priceToUse = (hpp != null && !Number.isNaN(hpp) && hpp > 0) ? hpp : purchasePrice;
+            const prod = { id: pid, sku: item.sku || '', brand: item.brand || '', series: item.series || '', purchase_price: purchasePrice };
+            if (!products.some(p => String(p.id) === String(pid))) products.push(prod);
+            populateProductDropdown(row);
+            const brandEl = row.querySelector('.brand-filter');
+            const seriesEl = row.querySelector('.series-filter');
+            if (brandEl) brandEl.value = '';
+            if (seriesEl) seriesEl.innerHTML = '<option value="">{{ __("Semua Series") }}</option>';
+            filterProductOptions(row);
+            const productIdInput = row.querySelector('.product-id-input');
+            if (productIdInput) productIdInput.value = String(pid);
+            const label = row.querySelector('.product-select-label');
+            if (label) {
+                label.textContent = (item.sku || '') + ' - ' + (item.brand || '') + ' ' + (item.series || '');
+                label.classList.remove('text-slate-500');
+            }
+            const priceInp = row.querySelector('.item-price');
+            if (priceInp) {
+                priceInp.value = new Intl.NumberFormat('id-ID').format(Math.round(priceToUse));
+                updateAllTotals();
+            }
+            const ta = row.querySelector('.item-serials');
+            if (ta) ta.value = item.serial_number || '';
+            const qtyInp = row.querySelector('.item-qty');
+            if (qtyInp) qtyInp.value = '1';
+            clearPurchaseSerialDropdown(row);
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
+        }
+
+        function attachPurchaseSerialSearch(row) {
+            if (row.dataset.purchaseSerialSearchBound === '1') return;
+            row.dataset.purchaseSerialSearchBound = '1';
+            const input = row.querySelector('.purchase-serial-search');
+            const dropdown = row.querySelector('.purchase-serial-dropdown');
+            if (!input || !dropdown) return;
+            let debounce = null;
+            let lastController = null;
+            input.addEventListener('input', () => {
+                clearTimeout(debounce);
+                const q = input.value.trim();
+                if (q.length < 2) {
+                    dropdown.classList.add('hidden');
+                    dropdown.innerHTML = '';
+                    return;
+                }
+                debounce = setTimeout(async () => {
+                    lastController?.abort();
+                    lastController = new AbortController();
+                    try {
+                        const url = new URL(purchaseSerialSearchUrl, window.location.origin);
+                        url.searchParams.set('q', q);
+                        const res = await fetch(url.toString(), {
+                            headers: { Accept: 'application/json' },
+                            signal: lastController.signal,
+                        });
+                        if (!res.ok) throw new Error('fetch');
+                        const data = await res.json();
+                        const results = Array.isArray(data.results) ? data.results : [];
+                        dropdown.innerHTML = '';
+                        if (results.length === 0) {
+                            const empty = document.createElement('div');
+                            empty.className = 'px-3 py-2 text-xs text-slate-500';
+                            empty.textContent = @json(__('Tidak ada data serial yang cocok.'));
+                            dropdown.appendChild(empty);
+                        } else {
+                            results.forEach((item) => {
+                                const btn = document.createElement('button');
+                                btn.type = 'button';
+                                btn.className = 'w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 border-b border-slate-100 last:border-0';
+                                const st = item.status || '';
+                                const loc = item.location_label || '';
+                                btn.textContent = (item.serial_number || '') + ' — ' + [item.brand, item.series].filter(Boolean).join(' ') + (loc ? ' · ' + loc : '') + (st ? ' (' + st + ')' : '');
+                                btn.addEventListener('mousedown', async (ev) => {
+                                    ev.preventDefault();
+                                    if (String(item.status) === 'sold') {
+                                        const locPurchase = getPurchaseLocationHint();
+                                        const r = await Swal.fire({
+                                            icon: 'warning',
+                                            title: @json(__('Serial pernah terjual (SOLD)')),
+                                            html: @json(__('Unit ini sudah pernah tercatat terjual. Data unit dan produk akan diperbarui sesuai isian pembelian ini, dan <b>lokasi unit akan dipindahkan</b> ke lokasi pembelian:')) + '<br><br><b>' + locPurchase + '</b>',
+                                            showCancelButton: true,
+                                            confirmButtonText: @json(__('Lanjut isi baris')),
+                                            cancelButtonText: @json(__('Batal')),
+                                        });
+                                        if (!r.isConfirmed) return;
+                                    }
+                                    applyPurchaseUnitSelection(row, item);
+                                });
+                                dropdown.appendChild(btn);
+                            });
+                        }
+                        dropdown.classList.remove('hidden');
+                    } catch (e) {
+                        if (e.name === 'AbortError') return;
+                        dropdown.innerHTML = '';
+                        dropdown.classList.add('hidden');
+                    }
+                }, 300);
+            });
+            input.addEventListener('blur', () => {
+                setTimeout(() => dropdown.classList.add('hidden'), 200);
+            });
+            input.addEventListener('focus', () => {
+                if (dropdown.children.length) dropdown.classList.remove('hidden');
+            });
+        }
 
         function paymentMethodOptionLabel(method) {
             const saldo = Number(method?.saldo || 0);
@@ -401,10 +542,16 @@
             tpl.querySelector('.brand-filter').innerHTML = '<option value="">Semua Merk</option>';
             tpl.querySelector('.series-filter').innerHTML = '<option value="">Semua Series</option>';
             tpl.querySelector('.product-dropdown-list').innerHTML = '';
+            tpl.removeAttribute('data-purchase-serial-search-bound');
+            const ps = tpl.querySelector('.purchase-serial-search');
+            const pd = tpl.querySelector('.purchase-serial-dropdown');
+            if (ps) ps.value = '';
+            if (pd) { pd.innerHTML = ''; pd.classList.add('hidden'); }
             tpl.querySelector('.remove-item').style.display = '';
             tpl.querySelector('.remove-item').onclick = () => { tpl.remove(); updateAllTotals(); };
             document.getElementById('purchase-items').appendChild(tpl);
             populateProductDropdown(tpl);
+            attachPurchaseSerialSearch(tpl);
             attachItemTotalListeners(tpl);
             itemIdx++;
             if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
@@ -433,6 +580,7 @@
 
         document.querySelectorAll('.purchase-item').forEach(row => {
             populateProductDropdown(row);
+            attachPurchaseSerialSearch(row);
             attachItemTotalListeners(row);
         });
         updateAllTotals();
@@ -598,7 +746,7 @@
                         const confirmResult = await Swal.fire({
                             icon: 'warning',
                             title: 'Serial pernah terdaftar',
-                            html: 'Unit berikut sudah pernah ada dan statusnya <b>SOLD</b>:<br><b>' + sold.join(', ') + '</b><br><br>Lanjutkan update data unit/barang dengan data terbaru?',
+                            html: 'Unit berikut sudah pernah ada dan statusnya <b>SOLD</b>:<br><b>' + sold.join(', ') + '</b><br><br>Lanjutkan update data unit/barang dengan data terbaru?<br><br><span class="text-sm">Lokasi unit akan disesuaikan ke <b>' + getPurchaseLocationHint() + '</b> (lokasi pembelian).</span>',
                             showCancelButton: true,
                             confirmButtonText: 'Ya, update',
                             cancelButtonText: 'Batal',
