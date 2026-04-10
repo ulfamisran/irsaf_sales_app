@@ -9,6 +9,7 @@ use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
 use App\Models\Role;
 use App\Models\Warehouse;
+use App\Models\AuditLog;
 use App\Services\KasBalanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -28,6 +29,7 @@ class MutasiDanaController extends Controller
                   ->orWhere('reference_type', CashFlow::REFERENCE_SETOR_TUNAI);
             })
             ->where('type', CashFlow::TYPE_OUT)
+            ->whereNull('reference_id')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
 
@@ -68,6 +70,7 @@ class MutasiDanaController extends Controller
         $records = $query->paginate(20)->withQueryString();
 
         $outIds = $records->pluck('id')->all();
+        $reversalExpenseCategoryId = ExpenseCategory::query()->where('code', 'REVERSAL')->value('id');
         $inRecords = ! empty($outIds)
             ? CashFlow::with('paymentMethod')
                 ->where(function ($q) {
@@ -79,6 +82,16 @@ class MutasiDanaController extends Controller
                 ->get()
                 ->keyBy('reference_id')
             : collect();
+        $cancelledOutIds = (! empty($outIds) && $reversalExpenseCategoryId)
+            ? CashFlow::query()
+                ->where('reference_type', CashFlow::REFERENCE_MUTASI_DANA)
+                ->where('type', CashFlow::TYPE_OUT)
+                ->where('expense_category_id', $reversalExpenseCategoryId)
+                ->whereIn('reference_id', $outIds)
+                ->pluck('reference_id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+            : [];
 
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
@@ -86,6 +99,7 @@ class MutasiDanaController extends Controller
         return view('mutasi-dana.index', compact(
             'records',
             'inRecords',
+            'cancelledOutIds',
             'branches',
             'warehouses',
             'canFilterLocation',
@@ -232,5 +246,125 @@ class MutasiDanaController extends Controller
         }
 
         return redirect()->route('mutasi-dana.index')->with('success', __('Mutasi dana berhasil dicatat.'));
+    }
+
+    public function cancel(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! in_array($cashFlow->reference_type, [CashFlow::REFERENCE_MUTASI_DANA], true)
+            || $cashFlow->type !== CashFlow::TYPE_OUT
+            || $cashFlow->reference_id !== null) {
+            abort(404);
+        }
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                if ((int) $cashFlow->branch_id !== (int) $user->branch_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                if ((int) $cashFlow->warehouse_id !== (int) $user->warehouse_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } else {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            $outRecord = CashFlow::query()->lockForUpdate()->findOrFail($cashFlow->id);
+            $inRecord = CashFlow::query()
+                ->lockForUpdate()
+                ->where('reference_type', CashFlow::REFERENCE_MUTASI_DANA)
+                ->where('type', CashFlow::TYPE_IN)
+                ->where('reference_id', $outRecord->id)
+                ->first();
+
+            if (! $inRecord) {
+                DB::rollBack();
+                return back()->with('error', __('Mutasi tujuan tidak ditemukan. Cancel tidak dapat diproses.'));
+            }
+
+            $reversalExpenseCategoryId = ExpenseCategory::query()->where('code', 'REVERSAL')->value('id');
+            $alreadyCancelled = $reversalExpenseCategoryId
+                ? CashFlow::query()
+                    ->where('reference_type', CashFlow::REFERENCE_MUTASI_DANA)
+                    ->where('type', CashFlow::TYPE_OUT)
+                    ->where('expense_category_id', $reversalExpenseCategoryId)
+                    ->where('reference_id', $outRecord->id)
+                    ->exists()
+                : false;
+            if ($alreadyCancelled) {
+                DB::rollBack();
+                return back()->with('error', __('Mutasi dana ini sudah dibatalkan.'));
+            }
+
+            $descBase = __('Reversal cancel mutasi dana') . ' #' . $outRecord->id;
+            $today = now()->toDateString();
+
+            $reversalExpenseCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Pengembalian dana pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
+            $reversalIncomeCategory = IncomeCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Koreksi pemasukan dari pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
+
+            // Reversal kas sumber: dana dikembalikan (IN) ke metode asal.
+            CashFlow::create([
+                'branch_id' => $outRecord->branch_id,
+                'warehouse_id' => $outRecord->warehouse_id,
+                'type' => CashFlow::TYPE_IN,
+                'amount' => (float) $outRecord->amount,
+                'description' => $descBase . ' - ' . __('Kembali ke kas sumber'),
+                'reference_type' => CashFlow::REFERENCE_MUTASI_DANA,
+                'reference_id' => $inRecord->id,
+                'income_category_id' => $reversalIncomeCategory->id,
+                'payment_method_id' => $outRecord->payment_method_id,
+                'transaction_date' => $today,
+                'user_id' => $user->id,
+            ]);
+
+            // Reversal kas tujuan: tarik balik dana dari metode tujuan (OUT).
+            CashFlow::create([
+                'branch_id' => $inRecord->branch_id,
+                'warehouse_id' => $inRecord->warehouse_id,
+                'type' => CashFlow::TYPE_OUT,
+                'amount' => (float) $inRecord->amount,
+                'description' => $descBase . ' - ' . __('Tarik dari kas tujuan'),
+                'reference_type' => CashFlow::REFERENCE_MUTASI_DANA,
+                'reference_id' => $outRecord->id,
+                'expense_category_id' => $reversalExpenseCategory->id,
+                'payment_method_id' => $inRecord->payment_method_id,
+                'transaction_date' => $today,
+                'user_id' => $user->id,
+            ]);
+
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'mutasi_dana.cancel',
+                'reference_type' => 'cash_flow',
+                'reference_id' => $outRecord->id,
+                'description' => 'Cancel mutasi dana #' . $outRecord->id,
+            ]);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('mutasi-dana.index')->with('success', __('Mutasi dana berhasil dibatalkan (reversal kas sumber & kas tujuan sudah dicatat).'));
     }
 }

@@ -86,13 +86,16 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Dana Tujuan') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Nominal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($records as $rec)
                             @php
                                 $inRec = $inRecords[$rec->id] ?? null;
+                                $isCancelled = in_array((int) $rec->id, $cancelledOutIds ?? [], true);
                             @endphp
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3 text-sm">{{ $rec->transaction_date->format('d/m/Y') }}</td>
@@ -107,11 +110,30 @@
                                 <td class="px-4 py-3 text-sm">{{ $inRec?->paymentMethod?->display_label ?? '-' }}</td>
                                 <td class="px-4 py-3 text-right text-sm font-medium">Rp {{ number_format($rec->amount, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-sm text-slate-600">{{ $rec->description ?? '-' }}</td>
+                                <td class="px-4 py-3 text-sm">
+                                    @if ($isCancelled)
+                                        <span class="inline-flex items-center px-2 py-1 rounded-md bg-red-100 text-red-700 text-xs font-medium">{{ __('Dibatalkan') }}</span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-xs font-medium">{{ __('Aktif') }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-sm">{{ $rec->user?->name ?? '-' }}</td>
+                                <td class="px-4 py-3 text-right text-sm">
+                                    @if (! $isCancelled)
+                                        <form method="POST" action="{{ route('mutasi-dana.cancel', $rec) }}" onsubmit="return confirm('{{ __('Batalkan mutasi dana ini? Sistem akan membuat reversal kas sumber dan kas tujuan.') }}')">
+                                            @csrf
+                                            <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-md bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">
+                                                {{ __('Cancel') }}
+                                            </button>
+                                        </form>
+                                    @else
+                                        <span class="text-xs text-slate-400">-</span>
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada riwayat mutasi dana.') }}</td>
+                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Belum ada riwayat mutasi dana.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

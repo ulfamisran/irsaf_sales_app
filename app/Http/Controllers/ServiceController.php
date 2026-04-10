@@ -371,6 +371,7 @@ class ServiceController extends Controller
             ->orderBy('nama_bank')
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        $materialProducts = $this->getInStockProductsForBranch((int) $service->branch_id);
 
         $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
