@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class MutasiDanaController extends Controller
@@ -29,9 +30,12 @@ class MutasiDanaController extends Controller
                   ->orWhere('reference_type', CashFlow::REFERENCE_SETOR_TUNAI);
             })
             ->where('type', CashFlow::TYPE_OUT)
-            ->whereNull('reference_id')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
+        $hasReferenceIdColumn = Schema::hasColumn('cash_flows', 'reference_id');
+        if ($hasReferenceIdColumn) {
+            $query->whereNull('reference_id');
+        }
 
         $filterLocked = false;
         $locationLabel = null;
@@ -71,7 +75,7 @@ class MutasiDanaController extends Controller
 
         $outIds = $records->pluck('id')->all();
         $reversalExpenseCategoryId = ExpenseCategory::query()->where('code', 'REVERSAL')->value('id');
-        $inRecords = ! empty($outIds)
+        $inRecords = (! empty($outIds) && $hasReferenceIdColumn)
             ? CashFlow::with('paymentMethod')
                 ->where(function ($q) {
                     $q->where('reference_type', CashFlow::REFERENCE_MUTASI_DANA)
@@ -82,7 +86,7 @@ class MutasiDanaController extends Controller
                 ->get()
                 ->keyBy('reference_id')
             : collect();
-        $cancelledOutIds = (! empty($outIds) && $reversalExpenseCategoryId)
+        $cancelledOutIds = (! empty($outIds) && $reversalExpenseCategoryId && $hasReferenceIdColumn)
             ? CashFlow::query()
                 ->where('reference_type', CashFlow::REFERENCE_MUTASI_DANA)
                 ->where('type', CashFlow::TYPE_OUT)
@@ -251,25 +255,14 @@ class MutasiDanaController extends Controller
     public function cancel(Request $request, CashFlow $cashFlow): RedirectResponse
     {
         $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
 
         if (! in_array($cashFlow->reference_type, [CashFlow::REFERENCE_MUTASI_DANA], true)
             || $cashFlow->type !== CashFlow::TYPE_OUT
             || $cashFlow->reference_id !== null) {
             abort(404);
-        }
-
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-                if ((int) $cashFlow->branch_id !== (int) $user->branch_id) {
-                    abort(403, __('Unauthorized.'));
-                }
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                if ((int) $cashFlow->warehouse_id !== (int) $user->warehouse_id) {
-                    abort(403, __('Unauthorized.'));
-                }
-            } else {
-                abort(403, __('Unauthorized.'));
-            }
         }
 
         DB::beginTransaction();

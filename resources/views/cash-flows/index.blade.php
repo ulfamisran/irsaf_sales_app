@@ -163,7 +163,7 @@
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Tipe') }}</th>
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
-                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Sumber Dana') }}</th>
+                            <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Kas Pembayaran') }}</th>
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Kategori') }}</th>
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                             <th class="px-2 py-2 text-left text-[10px] font-medium text-slate-500 uppercase">{{ __('Referensi') }}</th>

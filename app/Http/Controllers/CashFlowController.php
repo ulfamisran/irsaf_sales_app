@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\ExpenseCategory;
 use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
+use App\Models\SalePayment;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use Illuminate\Http\RedirectResponse;
@@ -809,6 +810,7 @@ class CashFlowController extends Controller
         $query->orderBy('transaction_date')->orderBy('id');
 
         $cashFlowsRaw = $query->limit(1000)->get();
+        $this->hydrateSaleCashFlowPaymentMethods($cashFlowsRaw);
         $runningBalance = 0.0;
         foreach ($cashFlowsRaw as $cf) {
             $runningBalance += $cf->type === CashFlow::TYPE_IN ? (float) $cf->amount : -(float) $cf->amount;
@@ -877,6 +879,49 @@ class CashFlowController extends Controller
         }
 
         return [$paymentMethodId];
+    }
+
+    /**
+     * Baris kas masuk penjualan (release) lama bisa tanpa payment_method_id; tampilkan metode dari sale_payments jika cocok nominal.
+     *
+     * @param  \Illuminate\Support\Collection<int, CashFlow>|\Illuminate\Database\Eloquent\Collection<int, CashFlow>  $cashFlows
+     */
+    private function hydrateSaleCashFlowPaymentMethods($cashFlows): void
+    {
+        $saleIds = $cashFlows
+            ->filter(fn (CashFlow $cf) => $cf->reference_type === CashFlow::REFERENCE_SALE
+                && $cf->type === CashFlow::TYPE_IN
+                && ! $cf->payment_method_id)
+            ->pluck('reference_id')
+            ->filter()
+            ->unique()
+            ->values();
+        if ($saleIds->isEmpty()) {
+            return;
+        }
+
+        $paymentsBySale = SalePayment::query()
+            ->whereIn('sale_id', $saleIds->all())
+            ->with('paymentMethod')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('sale_id');
+
+        foreach ($cashFlows as $cf) {
+            if ($cf->reference_type !== CashFlow::REFERENCE_SALE || $cf->type !== CashFlow::TYPE_IN || $cf->payment_method_id) {
+                continue;
+            }
+            $saleId = (int) $cf->reference_id;
+            $list = $paymentsBySale->get($saleId);
+            if (! $list || $list->isEmpty()) {
+                continue;
+            }
+            $amt = (float) $cf->amount;
+            $match = $list->first(fn (SalePayment $sp) => abs((float) $sp->amount - $amt) < 0.02);
+            if ($match?->paymentMethod) {
+                $cf->setRelation('paymentMethod', $match->paymentMethod);
+            }
+        }
     }
 
     public function createOut(Request $request): View

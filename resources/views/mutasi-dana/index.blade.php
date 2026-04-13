@@ -119,7 +119,7 @@
                                 </td>
                                 <td class="px-4 py-3 text-sm">{{ $rec->user?->name ?? '-' }}</td>
                                 <td class="px-4 py-3 text-right text-sm">
-                                    @if (! $isCancelled)
+                                    @if (! $isCancelled && auth()->user()?->isSuperAdminOrAdminPusat())
                                         <form method="POST" action="{{ route('mutasi-dana.cancel', $rec) }}" onsubmit="return confirm('{{ __('Batalkan mutasi dana ini? Sistem akan membuat reversal kas sumber dan kas tujuan.') }}')">
                                             @csrf
                                             <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-md bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium">

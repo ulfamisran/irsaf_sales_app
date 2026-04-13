@@ -464,7 +464,7 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('mutasi-dana.store');
     Route::post('mutasi-dana/{cashFlow}/cancel', [\App\Http\Controllers\MutasiDanaController::class, 'cancel'])
-        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->middleware('role:super_admin,admin_pusat')
         ->name('mutasi-dana.cancel');
     Route::get('mutasi-dana/form-data', [\App\Http\Controllers\MutasiDanaController::class, 'formData'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')

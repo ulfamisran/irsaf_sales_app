@@ -422,6 +422,7 @@ class SaleService
                     'reference_type' => CashFlow::REFERENCE_SALE,
                     'reference_id' => $sale->id,
                     'income_category_id' => $penjualanCategory->id,
+                    'payment_method_id' => (int) $sp->payment_method_id,
                     'transaction_date' => $saleDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
