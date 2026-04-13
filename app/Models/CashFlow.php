@@ -9,6 +9,7 @@ use App\Models\Warehouse;
 
 /**
  * @property-read \App\Models\PaymentMethod|null $paymentMethod
+ * @property-read string $kas_pembayaran_label
  */
 class CashFlow extends Model
 {
@@ -83,5 +84,42 @@ class CashFlow extends Model
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    /**
+     * Akhiran setelah " - " pada deskripsi kas masuk penjualan (isi metode bayar saat data dibuat).
+     */
+    public static function parsePaymentMethodSuffixFromSaleDescription(?string $description): ?string
+    {
+        if ($description === null || trim($description) === '') {
+            return null;
+        }
+        if (preg_match('/ - (.+)$/', trim($description), $m)) {
+            $tail = trim((string) $m[1]);
+
+            return $tail !== '' ? $tail : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Label kas/metode untuk kolom "Kas Pembayaran" (termasuk arsip penjualan tanpa sale_payments / payment_method_id).
+     */
+    public function getKasPembayaranLabelAttribute(): string
+    {
+        if ($this->payment_method_id) {
+            return $this->paymentMethod?->display_label ?? '-';
+        }
+        if ($this->relationLoaded('paymentMethod') && $this->paymentMethod) {
+            return $this->paymentMethod->display_label;
+        }
+        if ($this->reference_type === self::REFERENCE_SALE && $this->type === self::TYPE_IN) {
+            $parsed = self::parsePaymentMethodSuffixFromSaleDescription($this->description);
+
+            return $parsed ?? '-';
+        }
+
+        return $this->paymentMethod?->display_label ?? '-';
     }
 }

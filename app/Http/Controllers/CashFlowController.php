@@ -16,6 +16,7 @@ use App\Services\KasBalanceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class CashFlowController extends Controller
@@ -796,11 +797,14 @@ class CashFlowController extends Controller
                 $q->whereDate('transaction_date', '<=', $request->date_to);
             }
             if ($request->filled('payment_method_id')) {
-                $pmIds = $this->resolvePaymentMethodIdsForFilter((int) $request->payment_method_id, $branchId, $warehouseId);
-                if (! empty($pmIds)) {
-                    $q->whereIn('payment_method_id', $pmIds);
-                } else {
-                    $q->where('payment_method_id', $request->payment_method_id);
+                $this->applyArusKasPaymentMethodFilter($q, $request, $branchId, $warehouseId);
+            }
+            if ($request->filled('category_key')) {
+                $raw = (string) $request->input('category_key');
+                if (preg_match('/^income:(\d+)$/', $raw, $m)) {
+                    $q->where('type', CashFlow::TYPE_IN)->where('income_category_id', (int) $m[1]);
+                } elseif (preg_match('/^expense:(\d+)$/', $raw, $m)) {
+                    $q->where('type', CashFlow::TYPE_OUT)->where('expense_category_id', (int) $m[1]);
                 }
             }
         };
@@ -828,14 +832,19 @@ class CashFlowController extends Controller
             ->groupBy('type')
             ->pluck('total', 'type');
 
-        $totalTradeIn = (float) DB::table('sale_trade_ins')
-            ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-            ->where('sales.status', \App\Models\Sale::STATUS_RELEASED)
-            ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
-            ->sum('sale_trade_ins.trade_in_value');
+        $totalTradeIn = $request->filled('category_key')
+            ? 0.0
+            : (float) DB::table('sale_trade_ins')
+                ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+                ->where('sales.status', \App\Models\Sale::STATUS_RELEASED)
+                ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+                ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
+                ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+                ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+                ->sum('sale_trade_ins.trade_in_value');
+
+        $cashFlowIncomeCategories = IncomeCategory::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        $cashFlowExpenseCategories = ExpenseCategory::where('is_active', true)->orderBy('name')->get(['id', 'name']);
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
@@ -852,7 +861,107 @@ class CashFlowController extends Controller
             ->orderBy('no_rekening')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        return view('cash-flows.index', compact('cashFlows', 'summary', 'branches', 'warehouses', 'paymentMethods', 'canFilterLocation', 'filterLocked', 'locationLabel', 'lockedBranchId', 'lockedWarehouseId', 'totalTradeIn', 'branchId', 'warehouseId', 'orderDirection'));
+        return view('cash-flows.index', compact(
+            'cashFlows',
+            'summary',
+            'branches',
+            'warehouses',
+            'paymentMethods',
+            'canFilterLocation',
+            'filterLocked',
+            'locationLabel',
+            'lockedBranchId',
+            'lockedWarehouseId',
+            'totalTradeIn',
+            'branchId',
+            'warehouseId',
+            'orderDirection',
+            'cashFlowIncomeCategories',
+            'cashFlowExpenseCategories'
+        ));
+    }
+
+    /**
+     * Filter arus kas by payment method: baris dengan payment_method_id, atau penjualan (kas masuk) lama
+     * yang payment_method_id null tetapi cocok dengan sale_payments (sale_id + nominal + metode).
+     */
+    private function applyArusKasPaymentMethodFilter($query, Request $request, ?int $branchId, ?int $warehouseId): void
+    {
+        $pmIds = $this->resolvePaymentMethodIdsForFilter((int) $request->payment_method_id, $branchId, $warehouseId);
+        $ids = ! empty($pmIds) ? $pmIds : [(int) $request->payment_method_id];
+        $ids = array_values(array_unique(array_filter($ids, fn ($id) => (int) $id > 0)));
+        if ($ids === []) {
+            $query->where('payment_method_id', (int) $request->payment_method_id);
+
+            return;
+        }
+
+        $saleIncomeCategoryIds = IncomeCategory::query()
+            ->where('code', 'SALE')
+            ->pluck('id')
+            ->all();
+
+        $query->where(function ($w) use ($ids, $saleIncomeCategoryIds) {
+            $w->whereIn('cash_flows.payment_method_id', $ids)
+                ->orWhere(function ($o) use ($ids, $saleIncomeCategoryIds) {
+                    $o->where('cash_flows.reference_type', CashFlow::REFERENCE_SALE)
+                        ->where('cash_flows.type', CashFlow::TYPE_IN)
+                        ->whereNull('cash_flows.payment_method_id')
+                        ->where(function ($inner) use ($ids, $saleIncomeCategoryIds) {
+                            $inner->whereExists(function ($sub) use ($ids) {
+                                $sub->select(DB::raw(1))
+                                    ->from('sale_payments as sp')
+                                    ->whereRaw('sp.sale_id = cash_flows.reference_id')
+                                    ->whereIn('sp.payment_method_id', $ids)
+                                    ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02');
+                            });
+                            $pms = PaymentMethod::query()->whereIn('id', $ids)->get();
+                            if ($pms->isEmpty()) {
+                                return;
+                            }
+                            $inner->orWhere(function ($legacyMatch) use ($pms, $saleIncomeCategoryIds) {
+                                if ($saleIncomeCategoryIds !== []) {
+                                    $legacyMatch->whereIn('cash_flows.income_category_id', $saleIncomeCategoryIds);
+                                }
+                                $legacyMatch->where(function ($descOr) use ($pms) {
+                                    foreach ($pms as $pm) {
+                                        $label = trim((string) ($pm->display_label ?? ''));
+                                        if ($label === '') {
+                                            continue;
+                                        }
+                                        $descOr->orWhere(function ($one) use ($label) {
+                                            $this->addCashFlowDescriptionContainsLabelInsensitive($one, $label);
+                                        });
+                                    }
+                                });
+                            });
+                        });
+                });
+        });
+    }
+
+    /**
+     * Pencarian label metode di deskripsi (setara ILIKE): PostgreSQL pakai ilike, driver lain LOWER(...) LIKE.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder  $query
+     */
+    private function addCashFlowDescriptionContainsLabelInsensitive($query, string $label): void
+    {
+        $escaped = $this->escapeSqlLike(trim($label));
+        if ($escaped === '') {
+            return;
+        }
+        $driver = DB::connection()->getDriverName();
+        if ($driver === 'pgsql') {
+            $query->where('cash_flows.description', 'ilike', '%'.$escaped.'%');
+            return;
+        }
+        $query->whereRaw('LOWER(cash_flows.description) LIKE ?', ['%' . Str::lower($escaped) . '%']);
+    }
+
+    private function escapeSqlLike(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $value);
     }
 
     /**
@@ -920,6 +1029,32 @@ class CashFlowController extends Controller
             $match = $list->first(fn (SalePayment $sp) => abs((float) $sp->amount - $amt) < 0.02);
             if ($match?->paymentMethod) {
                 $cf->setRelation('paymentMethod', $match->paymentMethod);
+            }
+        }
+
+        foreach ($cashFlows as $cf) {
+            if ($cf->reference_type !== CashFlow::REFERENCE_SALE || $cf->type !== CashFlow::TYPE_IN || $cf->payment_method_id) {
+                continue;
+            }
+            if ($cf->relationLoaded('paymentMethod') && $cf->paymentMethod) {
+                continue;
+            }
+            $label = CashFlow::parsePaymentMethodSuffixFromSaleDescription($cf->description);
+            if ($label === null || $label === '') {
+                continue;
+            }
+            $bid = (int) ($cf->branch_id ?? 0);
+            $wid = (int) ($cf->warehouse_id ?? 0);
+            if ($bid <= 0 && $wid <= 0) {
+                continue;
+            }
+            $pm = PaymentMethod::query()
+                ->where('is_active', true)
+                ->forLocation($bid > 0 ? $bid : null, $wid > 0 ? $wid : null)
+                ->get()
+                ->first(fn (PaymentMethod $p) => trim((string) ($p->display_label ?? '')) === $label);
+            if ($pm) {
+                $cf->setRelation('paymentMethod', $pm);
             }
         }
     }

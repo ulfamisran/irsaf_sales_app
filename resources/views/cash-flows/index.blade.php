@@ -80,6 +80,26 @@
                             <option value="OUT" {{ request('type') == 'OUT' ? 'selected' : '' }}>{{ __('Keluar') }}</option>
                         </select>
                     </div>
+                    <div class="min-w-[200px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori') }}</label>
+                        <select name="category_key" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="">{{ __('Semua') }}</option>
+                            @if (($cashFlowIncomeCategories ?? collect())->isNotEmpty())
+                                <optgroup label="{{ __('Pemasukan') }}">
+                                    @foreach ($cashFlowIncomeCategories as $ic)
+                                        <option value="income:{{ $ic->id }}" {{ request('category_key') === 'income:'.$ic->id ? 'selected' : '' }}>{{ $ic->name }}</option>
+                                    @endforeach
+                                </optgroup>
+                            @endif
+                            @if (($cashFlowExpenseCategories ?? collect())->isNotEmpty())
+                                <optgroup label="{{ __('Pengeluaran') }}">
+                                    @foreach ($cashFlowExpenseCategories as $ec)
+                                        <option value="expense:{{ $ec->id }}" {{ request('category_key') === 'expense:'.$ec->id ? 'selected' : '' }}>{{ $ec->name }}</option>
+                                    @endforeach
+                                </optgroup>
+                            @endif
+                        </select>
+                    </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -198,7 +218,7 @@
                                         {{ __('Cabang') }}: {{ $cf->branch?->name ?? '-' }}
                                     @endif
                                 </td>
-                                <td class="px-2 py-2">{{ $cf->paymentMethod?->display_label ?? '-' }}</td>
+                                <td class="px-2 py-2">{{ $cf->kas_pembayaran_label }}</td>
                                 <td class="px-2 py-2">
                                     @if ($cf->type === 'OUT')
                                         {{ $cf->expenseCategory?->name ?? '-' }}
