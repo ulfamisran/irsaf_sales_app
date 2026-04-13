@@ -60,16 +60,29 @@
                                 <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                             </select>
                         </div>
+                        @php
+                            $selectedLocationType = (string) request('location_type', '');
+                        @endphp
                         <div class="w-[140px]">
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
-                            <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <select name="location_id" id="su_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ request('location_id') == $w->id ? 'selected' : '' }}>{{ __('Gudang') }}: {{ $w->name }}</option>
-                                @endforeach
-                                @foreach ($branches as $b)
-                                    <option value="{{ $b->id }}" {{ request('location_id') == $b->id ? 'selected' : '' }}>{{ __('Cabang') }}: {{ $b->name }}</option>
-                                @endforeach
+                                @if ($selectedLocationType === 'warehouse')
+                                    @foreach ($warehouses as $w)
+                                        <option value="{{ $w->id }}" {{ request('location_id') == $w->id ? 'selected' : '' }}>{{ __('Gudang') }}: {{ $w->name }}</option>
+                                    @endforeach
+                                @elseif ($selectedLocationType === 'branch')
+                                    @foreach ($branches as $b)
+                                        <option value="{{ $b->id }}" {{ request('location_id') == $b->id ? 'selected' : '' }}>{{ __('Cabang') }}: {{ $b->name }}</option>
+                                    @endforeach
+                                @else
+                                    @foreach ($warehouses as $w)
+                                        <option value="{{ $w->id }}" {{ request('location_id') == $w->id ? 'selected' : '' }}>{{ __('Gudang') }}: {{ $w->name }}</option>
+                                    @endforeach
+                                    @foreach ($branches as $b)
+                                        <option value="{{ $b->id }}" {{ request('location_id') == $b->id ? 'selected' : '' }}>{{ __('Cabang') }}: {{ $b->name }}</option>
+                                    @endforeach
+                                @endif
                             </select>
                         </div>
                         @elseif($filterLocked ?? false)
@@ -92,6 +105,29 @@
                         </div>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <div class="card-modern overflow-hidden mb-6">
+            <div class="p-4 border-b border-gray-100">
+                <h3 class="text-sm font-semibold text-slate-700">{{ __('Total In Stock per Kategori') }}</h3>
+                <p class="text-xs text-slate-500">{{ __('Mengikuti filter aktif pada daftar unit') }}</p>
+            </div>
+            <div class="p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    @forelse(($inStockCategoryTotals ?? collect()) as $item)
+                        <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                            <p class="text-xs text-slate-500">{{ $item['category_name'] ?? '-' }}</p>
+                            <p class="text-lg font-semibold text-indigo-700">{{ number_format((int) ($item['total'] ?? 0), 0, ',', '.') }}</p>
+                        </div>
+                    @empty
+                        <div class="col-span-full text-sm text-slate-500">{{ __('Tidak ada barang in stock untuk filter saat ini.') }}</div>
+                    @endforelse
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-200">
+                    <p class="text-sm text-slate-600">{{ __('Total Seluruh In Stock') }}</p>
+                    <p class="text-xl font-semibold text-emerald-600">{{ number_format((int) ($totalInStockUnits ?? 0), 0, ',', '.') }}</p>
+                </div>
             </div>
         </div>
 
@@ -220,4 +256,47 @@
             </div>
         </div>
     </div>
+
+    @if($canFilterLocation ?? false)
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const typeSelect = document.querySelector('select[name="location_type"]');
+            const locationSelect = document.getElementById('su_location_id');
+            if (!typeSelect || !locationSelect) return;
+
+            const warehouses = @json(($warehouses ?? collect())->map(fn($w) => ['id' => $w->id, 'name' => $w->name])->values());
+            const branches = @json(($branches ?? collect())->map(fn($b) => ['id' => $b->id, 'name' => $b->name])->values());
+
+            function rebuildLocationOptions() {
+                const type = typeSelect.value;
+                let rows = [];
+                if (type === 'warehouse') {
+                    rows = warehouses.map((w) => ({ value: String(w.id), label: `{{ __('Gudang') }}: ${w.name}` }));
+                } else if (type === 'branch') {
+                    rows = branches.map((b) => ({ value: String(b.id), label: `{{ __('Cabang') }}: ${b.name}` }));
+                } else {
+                    rows = [
+                        ...warehouses.map((w) => ({ value: String(w.id), label: `{{ __('Gudang') }}: ${w.name}` })),
+                        ...branches.map((b) => ({ value: String(b.id), label: `{{ __('Cabang') }}: ${b.name}` })),
+                    ];
+                }
+
+                locationSelect.innerHTML = `<option value="">{{ __('Semua') }}</option>`;
+                rows.forEach((row) => {
+                    const option = document.createElement('option');
+                    option.value = row.value;
+                    option.textContent = row.label;
+                    locationSelect.appendChild(option);
+                });
+            }
+
+            typeSelect.addEventListener('change', function () {
+                locationSelect.value = '';
+                rebuildLocationOptions();
+            });
+        });
+    </script>
+    @endpush
+    @endif
 </x-app-layout>

@@ -13,11 +13,14 @@ use App\Models\PaymentMethod;
 use App\Models\SalePayment;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
+use App\Support\ExcelExporter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CashFlowController extends Controller
 {
@@ -879,6 +882,185 @@ class CashFlowController extends Controller
             'cashFlowIncomeCategories',
             'cashFlowExpenseCategories'
         ));
+    }
+
+    public function export(Request $request): StreamedResponse
+    {
+        $data = $this->buildArusKasExportData($request);
+        $filename = 'laporan-arus-kas-' . now()->format('Ymd-His') . '.xlsx';
+        $html = view('cash-flows.export', $data)->render();
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $data = $this->buildArusKasExportData($request);
+
+        $pdf = Pdf::loadView('cash-flows.export-pdf', $data)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-arus-kas-' . now()->format('Ymd-His') . '.pdf');
+    }
+
+    /**
+     * Build filtered cash flow report data for export.
+     *
+     * @return array{cashFlows:\Illuminate\Support\Collection,summary:\Illuminate\Support\Collection,totalTradeIn:float,filterMeta:array<string,string>,orderDirection:string}
+     */
+    private function buildArusKasExportData(Request $request): array
+    {
+        $user = $request->user();
+
+        $branchId = null;
+        $warehouseId = null;
+        $filterLocked = false;
+        $locationLabel = null;
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+                $filterLocked = true;
+                $branch = Branch::find($branchId);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+                $filterLocked = true;
+                $warehouse = Warehouse::find($warehouseId);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+                abort(403, __('User branch or warehouse not set.'));
+            }
+        } else {
+            if ($request->filled('warehouse_id')) {
+                $warehouseId = (int) $request->warehouse_id;
+            } elseif ($request->filled('branch_id')) {
+                $branchId = (int) $request->branch_id;
+            }
+        }
+
+        $applyFilters = function ($q) use ($request, $branchId, $warehouseId) {
+            $q->where(function ($qq) {
+                $qq->whereNull('reference_type')
+                    ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                    ->orWhereIn('reference_id', function ($sq) {
+                        $sq->select('id')->from('rentals')->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('type', CashFlow::TYPE_OUT);
+                    });
+            });
+            if ($branchId) {
+                $q->where('branch_id', $branchId);
+            }
+            if ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId);
+            }
+            if ($request->filled('type')) {
+                $q->where('type', $request->type);
+            }
+            if ($request->filled('date_from')) {
+                $q->whereDate('transaction_date', '>=', $request->date_from);
+            }
+            if ($request->filled('date_to')) {
+                $q->whereDate('transaction_date', '<=', $request->date_to);
+            }
+            if ($request->filled('payment_method_id')) {
+                $this->applyArusKasPaymentMethodFilter($q, $request, $branchId, $warehouseId);
+            }
+            if ($request->filled('category_key')) {
+                $raw = (string) $request->input('category_key');
+                if (preg_match('/^income:(\d+)$/', $raw, $m)) {
+                    $q->where('type', CashFlow::TYPE_IN)->where('income_category_id', (int) $m[1]);
+                } elseif (preg_match('/^expense:(\d+)$/', $raw, $m)) {
+                    $q->where('type', CashFlow::TYPE_OUT)->where('expense_category_id', (int) $m[1]);
+                }
+            }
+        };
+
+        $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'incomeCategory', 'paymentMethod']);
+        $applyFilters($query);
+        $query->orderBy('transaction_date')->orderBy('id');
+
+        $cashFlowsRaw = $query->get();
+        $this->hydrateSaleCashFlowPaymentMethods($cashFlowsRaw);
+
+        $runningBalance = 0.0;
+        foreach ($cashFlowsRaw as $cf) {
+            $runningBalance += $cf->type === CashFlow::TYPE_IN ? (float) $cf->amount : -(float) $cf->amount;
+            $cf->running_balance = round($runningBalance, 2);
+        }
+
+        $orderDirection = $request->input('order', 'bawah_ke_atas');
+        $cashFlows = $orderDirection === 'atas_ke_bawah'
+            ? $cashFlowsRaw->values()
+            : $cashFlowsRaw->reverse()->values();
+
+        $summaryBase = CashFlow::query();
+        $applyFilters($summaryBase);
+        $summary = (clone $summaryBase)
+            ->selectRaw('type, SUM(amount) as total')
+            ->groupBy('type')
+            ->pluck('total', 'type');
+
+        $totalTradeIn = $request->filled('category_key')
+            ? 0.0
+            : (float) DB::table('sale_trade_ins')
+                ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+                ->where('sales.status', \App\Models\Sale::STATUS_RELEASED)
+                ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+                ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
+                ->when($request->filled('date_from'), fn ($q) => $q->whereDate('sales.sale_date', '>=', $request->date_from))
+                ->when($request->filled('date_to'), fn ($q) => $q->whereDate('sales.sale_date', '<=', $request->date_to))
+                ->sum('sale_trade_ins.trade_in_value');
+
+        $locationLine = __('Semua');
+        if ($filterLocked && $locationLabel) {
+            $locationLine = $locationLabel;
+        } elseif ($warehouseId) {
+            $warehouse = Warehouse::find($warehouseId);
+            $locationLine = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+        } elseif ($branchId) {
+            $branch = Branch::find($branchId);
+            $locationLine = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+        }
+
+        $typeLine = match ((string) $request->input('type')) {
+            CashFlow::TYPE_IN => __('Masuk'),
+            CashFlow::TYPE_OUT => __('Keluar'),
+            default => __('Semua'),
+        };
+
+        $paymentMethodLine = __('Semua');
+        if ($request->filled('payment_method_id')) {
+            $pm = PaymentMethod::find((int) $request->payment_method_id);
+            $paymentMethodLine = $pm?->display_label ?? ('#' . (int) $request->payment_method_id);
+        }
+
+        $categoryLine = __('Semua');
+        if ($request->filled('category_key')) {
+            $raw = (string) $request->input('category_key');
+            if (preg_match('/^income:(\d+)$/', $raw, $m)) {
+                $incomeCategory = IncomeCategory::find((int) $m[1]);
+                $categoryLine = __('Pemasukan') . ': ' . ($incomeCategory?->name ?? ('#' . (int) $m[1]));
+            } elseif (preg_match('/^expense:(\d+)$/', $raw, $m)) {
+                $expenseCategory = ExpenseCategory::find((int) $m[1]);
+                $categoryLine = __('Pengeluaran') . ': ' . ($expenseCategory?->name ?? ('#' . (int) $m[1]));
+            }
+        }
+
+        $filterMeta = [
+            'location' => $locationLine,
+            'type' => $typeLine,
+            'payment_method' => $paymentMethodLine,
+            'category' => $categoryLine,
+            'date_from' => $request->filled('date_from') ? (string) $request->date_from : '-',
+            'date_to' => $request->filled('date_to') ? (string) $request->date_to : '-',
+            'order' => $orderDirection === 'atas_ke_bawah' ? __('Atas ke bawah') : __('Bawah ke atas'),
+        ];
+
+        return compact('cashFlows', 'summary', 'totalTradeIn', 'filterMeta', 'orderDirection');
     }
 
     /**

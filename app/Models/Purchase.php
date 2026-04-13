@@ -17,6 +17,7 @@ class Purchase extends Model
     public const JENIS_PEMBELIAN_UNIT = 'Pembelian Unit';
     public const JENIS_DISTRIBUSI_UNIT = 'Distribusi Unit';
     public const JENIS_PEMBELIAN_SPAREPART_SERVICE = 'Pembelian Sparepart Service';
+    public const JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO = 'Pembelian Sparepart Service Laptop Toko';
 
     protected $fillable = [
         'invoice_number',
@@ -55,6 +56,11 @@ class Purchase extends Model
     public function isSparepartService(): bool
     {
         return $this->jenis_pembelian === self::JENIS_PEMBELIAN_SPAREPART_SERVICE;
+    }
+
+    public function isSparepartServiceLaptopToko(): bool
+    {
+        return $this->jenis_pembelian === self::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO;
     }
 
     public function isCancelled(): bool

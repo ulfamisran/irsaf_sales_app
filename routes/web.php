@@ -396,6 +396,12 @@ Route::middleware('auth')->group(function () {
     Route::get('cash-flows', [CashFlowController::class, 'index'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.index');
+    Route::get('cash-flows/export', [CashFlowController::class, 'export'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.export');
+    Route::get('cash-flows/export-pdf', [CashFlowController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang')
+        ->name('cash-flows.export-pdf');
     Route::get('cash-flows/in', [CashFlowController::class, 'inIndex'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.index');
@@ -480,12 +486,30 @@ Route::middleware('auth')->group(function () {
     Route::get('finance/profit-loss', [FinanceController::class, 'profitLoss'])
         ->middleware('role:admin_cabang')
         ->name('finance.profit-loss');
+    Route::get('finance/profit-loss/export', [FinanceController::class, 'profitLossExport'])
+        ->middleware('role:admin_cabang')
+        ->name('finance.profit-loss.export');
+    Route::get('finance/profit-loss/export-pdf', [FinanceController::class, 'profitLossExportPdf'])
+        ->middleware('role:admin_cabang')
+        ->name('finance.profit-loss.export-pdf');
     Route::get('finance/profit-loss-comparison', [FinanceController::class, 'profitLossComparison'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('finance.profit-loss-comparison');
+    Route::get('finance/profit-loss-comparison/export', [FinanceController::class, 'profitLossComparisonExport'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('finance.profit-loss-comparison.export');
+    Route::get('finance/profit-loss-comparison/export-pdf', [FinanceController::class, 'profitLossComparisonExportPdf'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('finance.profit-loss-comparison.export-pdf');
     Route::get('finance/cash-monitoring', [FinanceController::class, 'cashMonitoring'])
         ->middleware('role:admin_cabang')
         ->name('finance.cash-monitoring');
+    Route::get('finance/cash-monitoring/export', [FinanceController::class, 'cashMonitoringExport'])
+        ->middleware('role:admin_cabang')
+        ->name('finance.cash-monitoring.export');
+    Route::get('finance/cash-monitoring/export-pdf', [FinanceController::class, 'cashMonitoringExportPdf'])
+        ->middleware('role:admin_cabang')
+        ->name('finance.cash-monitoring.export-pdf');
     Route::get('finance/cash-monitoring/detail', [FinanceController::class, 'cashMonitoringDetail'])
         ->middleware('role:admin_cabang')
         ->name('finance.cash-monitoring.detail');

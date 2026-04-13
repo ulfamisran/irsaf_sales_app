@@ -74,6 +74,9 @@
                                         <option value="{{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE }}" {{ old('jenis_pembelian') === \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE ? 'selected' : '' }}>
                                             {{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE }}
                                         </option>
+                                        <option value="{{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO }}" {{ old('jenis_pembelian') === \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO ? 'selected' : '' }}>
+                                            {{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO }}
+                                        </option>
                                     </select>
                                     <p class="mt-1 text-xs text-slate-600">{{ __('Untuk servis: buat invoice service (Open), lalu catat sparepart di sini dengan jenis ini dan pilih nomor invoice service sebagai referensi. Stok masuk ke cabang yang sama.') }}</p>
                                     <x-input-error :messages="$errors->get('jenis_pembelian')" class="mt-2" />
@@ -284,6 +287,7 @@
         const baseUrl = '{{ url("") }}';
         const purchaseSerialSearchUrl = baseUrl + purchaseSerialSearchPath;
         const JENIS_SPAREPART_SERVICE = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE);
+        const JENIS_SPAREPART_SERVICE_LAPTOP_TOKO = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO);
         const serviceInvoicePlaceholder = @json($serviceInvoicePlaceholder);
 
         function productOptionHtml(p) {
@@ -302,7 +306,7 @@
             const serviceSel = document.getElementById('service_id');
             if (!jenisSel || !serviceRow || !serviceSel) return;
             if (locType === 'warehouse') {
-                if (jenisSel.value === JENIS_SPAREPART_SERVICE) {
+                if (jenisSel.value === JENIS_SPAREPART_SERVICE || jenisSel.value === JENIS_SPAREPART_SERVICE_LAPTOP_TOKO) {
                     jenisSel.value = @json(\App\Models\Purchase::JENIS_PEMBELIAN_UNIT);
                 }
                 serviceRow.classList.add('hidden');

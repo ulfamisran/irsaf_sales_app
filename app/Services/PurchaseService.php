@@ -54,6 +54,7 @@ class PurchaseService
             Purchase::JENIS_PEMBELIAN_UNIT,
             Purchase::JENIS_DISTRIBUSI_UNIT,
             Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
+            Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO,
         ];
         if (! in_array($jenisPembelian, $allowedJenis, true)) {
             $jenisPembelian = Purchase::JENIS_PEMBELIAN_UNIT;
@@ -74,6 +75,9 @@ class PurchaseService
                 throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
             }
         } else {
+            if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO && $locationType !== Stock::LOCATION_BRANCH) {
+                throw new InvalidArgumentException(__('Pembelian Sparepart Service Laptop Toko hanya dapat dilakukan ke lokasi Cabang.'));
+            }
             $serviceId = null;
         }
 
@@ -367,6 +371,17 @@ class PurchaseService
                 ]
             );
             $descPrefix = 'Pembelian Sparepart User (SERVICE)';
+        } elseif ($purchase->isSparepartServiceLaptopToko()) {
+            $expenseCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'SP-TOKO'],
+                [
+                    'name' => 'Biaya Pembenahan Laptop Toko',
+                    'description' => 'Pengeluaran pembelian sparepart untuk pembenahan laptop toko',
+                    'is_active' => true,
+                    'affects_profit_loss' => true,
+                ]
+            );
+            $descPrefix = 'Pembenahan Laptop Toko';
         } else {
             $expenseCategory = ExpenseCategory::firstOrCreate(
                 ['code' => 'PEMBELIAN'],

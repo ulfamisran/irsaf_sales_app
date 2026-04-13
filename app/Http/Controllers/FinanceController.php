@@ -13,13 +13,70 @@ use App\Models\Sale;
 use App\Models\Service;
 use App\Models\Stock;
 use App\Models\Warehouse;
+use App\Support\ExcelExporter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinanceController extends Controller
 {
+    public function profitLossExport(Request $request): StreamedResponse
+    {
+        $data = $this->profitLoss($request)->getData();
+        $html = view('finance.export-profit-loss', (array) $data)->render();
+        $filename = 'laba-rugi-' . now()->format('Ymd-His') . '.xlsx';
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function profitLossExportPdf(Request $request)
+    {
+        $data = $this->profitLoss($request)->getData();
+        $pdf = Pdf::loadView('finance.export-profit-loss-pdf', (array) $data)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('laba-rugi-' . now()->format('Ymd-His') . '.pdf');
+    }
+
+    public function cashMonitoringExport(Request $request): StreamedResponse
+    {
+        $data = $this->cashMonitoring($request)->getData();
+        $html = view('finance.export-cash-monitoring', (array) $data)->render();
+        $filename = 'monitoring-kas-' . now()->format('Ymd-His') . '.xlsx';
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function cashMonitoringExportPdf(Request $request)
+    {
+        $data = $this->cashMonitoring($request)->getData();
+        $pdf = Pdf::loadView('finance.export-cash-monitoring-pdf', (array) $data)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('monitoring-kas-' . now()->format('Ymd-His') . '.pdf');
+    }
+
+    public function profitLossComparisonExport(Request $request): StreamedResponse
+    {
+        $data = $this->profitLossComparison($request)->getData();
+        $html = view('finance.export-profit-loss-comparison', (array) $data)->render();
+        $filename = 'perbandingan-laba-rugi-' . now()->format('Ymd-His') . '.xlsx';
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function profitLossComparisonExportPdf(Request $request)
+    {
+        $data = $this->profitLossComparison($request)->getData();
+        $pdf = Pdf::loadView('finance.export-profit-loss-comparison-pdf', (array) $data)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('perbandingan-laba-rugi-' . now()->format('Ymd-His') . '.pdf');
+    }
+
     public function profitLoss(Request $request): View
     {
         $user = $request->user();
@@ -89,6 +146,7 @@ class FinanceController extends Controller
             ->where('sales.status', Sale::STATUS_RELEASED)
             ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+            ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
             ->sum('sale_payments.amount');
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;

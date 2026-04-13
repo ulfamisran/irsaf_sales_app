@@ -120,6 +120,32 @@ class StockUnitController extends Controller
             ->groupBy('product_id')
             ->pluck('total', 'product_id');
 
+        $filteredProductCategoryMap = Product::query()
+            ->whereIn('id', (clone $countBase)->select('product_id')->distinct())
+            ->pluck('category_id', 'id');
+        $categoryNameMap = Category::query()->pluck('name', 'id');
+        $inStockCategoryTotals = [];
+        foreach ($inStockCounts as $productId => $total) {
+            $categoryId = (int) ($filteredProductCategoryMap[$productId] ?? 0);
+            $categoryKey = $categoryId > 0 ? (string) $categoryId : 'uncategorized';
+            $categoryName = $categoryId > 0
+                ? (string) ($categoryNameMap[$categoryId] ?? ('#' . $categoryId))
+                : (string) __('Tanpa Kategori');
+
+            if (! isset($inStockCategoryTotals[$categoryKey])) {
+                $inStockCategoryTotals[$categoryKey] = [
+                    'category_id' => $categoryId > 0 ? $categoryId : null,
+                    'category_name' => $categoryName,
+                    'total' => 0,
+                ];
+            }
+            $inStockCategoryTotals[$categoryKey]['total'] += (int) $total;
+        }
+        $inStockCategoryTotals = collect($inStockCategoryTotals)
+            ->sortByDesc('total')
+            ->values();
+        $totalInStockUnits = (int) $inStockCategoryTotals->sum('total');
+
         return view('stock-units.index', compact(
             'productsPage',
             'unitsByProduct',
@@ -134,6 +160,8 @@ class StockUnitController extends Controller
             'locationId',
             'locationLabel',
             'inStockCounts',
+            'inStockCategoryTotals',
+            'totalInStockUnits',
             'soldInfoBySerial',
             'tradeInProductIds'
         ));
@@ -436,6 +464,7 @@ class StockUnitController extends Controller
         }
         if ($request->filled('status')) {
             $listBase->where('status', (string) $request->status);
+            $countBase->where('status', (string) $request->status);
         }
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('location_type')) {

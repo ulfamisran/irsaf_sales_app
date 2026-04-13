@@ -71,14 +71,18 @@ class PurchaseRequest extends FormRequest
     {
         $validator->after(function (Validator $validator): void {
             $jenis = (string) $this->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
-            if ($jenis !== Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
-                return;
-            }
-            if ($this->input('location_type') !== 'branch') {
+            if (in_array($jenis, [
+                Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
+                Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO,
+            ], true) && $this->input('location_type') !== 'branch') {
                 $validator->errors()->add(
                     'jenis_pembelian',
-                    __('Pembelian Sparepart Service hanya untuk lokasi Cabang.')
+                    __('Jenis pembelian sparepart service hanya untuk lokasi Cabang.')
                 );
+            }
+
+            if ($jenis !== Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
+                return;
             }
             $branchId = (int) ($this->input('branch_id') ?? 0);
             $serviceId = (int) ($this->input('service_id') ?? 0);
@@ -107,7 +111,7 @@ class PurchaseRequest extends FormRequest
             'jenis_pembelian' => [
                 'required',
                 'string',
-                'in:'.Purchase::JENIS_PEMBELIAN_UNIT.','.Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
+                'in:'.Purchase::JENIS_PEMBELIAN_UNIT.','.Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE.','.Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO,
             ],
             'service_id' => [
                 'nullable',

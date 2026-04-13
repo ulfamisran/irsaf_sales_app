@@ -7,7 +7,7 @@
     <div class="max-w-7xl mx-auto">
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('cash-flows.index') }}" class="flex flex-wrap gap-4 items-end">
+                <form method="GET" action="{{ route('cash-flows.index') }}" class="flex flex-wrap gap-4 items-end" id="cf_filter_form" data-form-data-url="{{ route('data-by-location.form-data') }}">
                     @if(($canFilterLocation ?? false) || ($filterLocked ?? false))
                         @php
                             $branchSelectDisabled = $filterLocked ?? false;
@@ -62,7 +62,7 @@
                     @if(count($paymentMethods ?? []) > 0)
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Metode Pembayaran') }}</label>
-                            <select name="payment_method_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="payment_method_id" id="cf_payment_method_id" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
                                 @foreach ($paymentMethods ?? [] as $pm)
                                     <option value="{{ $pm->id }}" {{ request('payment_method_id') == $pm->id ? 'selected' : '' }}>
@@ -115,6 +115,9 @@
                             <option value="atas_ke_bawah" {{ request('order') === 'atas_ke_bawah' ? 'selected' : '' }}>{{ __('Atas ke bawah') }} ({{ __('Saldo awal di atas, saldo akhir di bawah') }})</option>
                         </select>
                     </div>
+                    @php
+                        $downloadQuery = request()->query();
+                    @endphp
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,16 +128,16 @@
                         <a href="{{ route('cash-flows.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
+                        <a href="{{ route('cash-flows.export', $downloadQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                            {{ __('Download Excel') }}
+                        </a>
+                        <a href="{{ route('cash-flows.export-pdf', $downloadQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700">
+                            {{ __('Download PDF') }}
+                        </a>
                     </div>
                 </form>
             </div>
         </div>
-
-        @php
-            $totalCashIn = (float) ($summary['IN'] ?? 0);
-            $totalTradeInValue = (float) ($totalTradeIn ?? 0);
-            $totalInCombined = $totalCashIn + $totalTradeInValue;
-        @endphp
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div class="card-modern p-6 flex flex-col gap-4">
@@ -146,18 +149,18 @@
                 </span>
                 <div>
                     <p class="text-sm text-slate-600">{{ __('Total Dana Masuk (Gabungan)') }}</p>
-                    <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalInCombined, 0, ',', '.') }}</p>
+                    <p class="text-xl font-semibold text-emerald-600">{{ number_format(((float) ($summary['IN'] ?? 0)) + ((float) ($totalTradeIn ?? 0)), 0, ',', '.') }}</p>
                     <p class="text-xs text-slate-500 mt-1">{{ __('Gabungan dana masuk + nilai barang tukar tambah') }}</p>
                 </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div class="rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
                         <p class="text-xs text-emerald-700">{{ __('Dana Masuk (Uang)') }}</p>
-                        <p class="text-lg font-semibold text-emerald-700">{{ number_format($totalCashIn, 0, ',', '.') }}</p>
+                        <p class="text-lg font-semibold text-emerald-700">{{ number_format((float) ($summary['IN'] ?? 0), 0, ',', '.') }}</p>
                     </div>
                     <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
                         <p class="text-xs text-indigo-700">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</p>
-                        <p class="text-lg font-semibold text-indigo-700">{{ number_format($totalTradeInValue, 0, ',', '.') }}</p>
+                        <p class="text-lg font-semibold text-indigo-700">{{ number_format((float) ($totalTradeIn ?? 0), 0, ',', '.') }}</p>
                     </div>
                 </div>
             </div>
@@ -281,6 +284,44 @@
             const brBlock = document.querySelector('.filter-cf-branch');
             const whSelect = whBlock?.querySelector('select[name="warehouse_id"]');
             const brSelect = brBlock?.querySelector('select[name="branch_id"]');
+            const paymentMethodSelect = document.getElementById('cf_payment_method_id');
+            const filterForm = document.getElementById('cf_filter_form');
+            const formDataUrl = filterForm?.dataset?.formDataUrl || '';
+            const defaultPmOptions = paymentMethodSelect ? paymentMethodSelect.innerHTML : '';
+
+            async function refreshPaymentMethodsByLocation() {
+                if (!paymentMethodSelect || !formDataUrl) return;
+                if (!locType || !whSelect || !brSelect) return;
+
+                const selectedPmId = paymentMethodSelect.value;
+                const selectedType = locType.value;
+                const locationId = selectedType === 'warehouse' ? whSelect.value : (selectedType === 'branch' ? brSelect.value : '');
+
+                if (!selectedType || !locationId) {
+                    paymentMethodSelect.innerHTML = defaultPmOptions;
+                    if (selectedPmId) paymentMethodSelect.value = selectedPmId;
+                    return;
+                }
+
+                try {
+                    const url = `${formDataUrl}?location_type=${encodeURIComponent(selectedType)}&location_id=${encodeURIComponent(locationId)}`;
+                    const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    if (!response.ok) return;
+
+                    const data = await response.json();
+                    const pms = Array.isArray(data?.payment_methods) ? data.payment_methods : [];
+                    const options = [`<option value="">{{ __('Semua') }}</option>`];
+                    pms.forEach((pm) => {
+                        options.push(`<option value="${pm.id}">${pm.label ?? '-'}</option>`);
+                    });
+                    paymentMethodSelect.innerHTML = options.join('');
+                    if (selectedPmId && pms.some((pm) => String(pm.id) === String(selectedPmId))) {
+                        paymentMethodSelect.value = selectedPmId;
+                    }
+                } catch (e) {
+                    // Keep existing options when ajax fails.
+                }
+            }
             if (locType && !locType.disabled) {
                 function toggle() {
                     const v = locType.value;
@@ -288,6 +329,7 @@
                         wrapper.style.display = 'none';
                         if (whSelect) { whSelect.value = ''; whSelect.disabled = true; }
                         if (brSelect) { brSelect.value = ''; brSelect.disabled = true; }
+                        refreshPaymentMethodsByLocation();
                         return;
                     }
                     wrapper.style.display = '';
@@ -304,8 +346,11 @@
                         if (whSelect) { whSelect.value = ''; whSelect.disabled = true; }
                         if (brSelect) { brSelect.disabled = false; }
                     }
+                    refreshPaymentMethodsByLocation();
                 }
                 locType.addEventListener('change', toggle);
+                if (whSelect) whSelect.addEventListener('change', refreshPaymentMethodsByLocation);
+                if (brSelect) brSelect.addEventListener('change', refreshPaymentMethodsByLocation);
                 toggle();
             }
         });

@@ -83,6 +83,9 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to', $dateTo ?? '') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    @php
+                        $downloadQuery = request()->query();
+                    @endphp
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,6 +95,12 @@
                         </button>
                         <a href="{{ route('finance.cash-monitoring') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
+                        </a>
+                        <a href="{{ route('finance.cash-monitoring.export', $downloadQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                            {{ __('Download Excel') }}
+                        </a>
+                        <a href="{{ route('finance.cash-monitoring.export-pdf', $downloadQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700">
+                            {{ __('Download PDF') }}
                         </a>
                     </div>
                 </form>
@@ -198,7 +207,7 @@
             </div>
             @endif
 
-            @forelse ($displayBranches as $branch)
+            @forelse (($displayBranches ?? ($branches ?? collect())) as $branch)
                 @php
                     $totals = $branchTotals[$branch->id] ?? [];
                     $expense = $branchExpense[$branch->id] ?? 0;
@@ -266,7 +275,7 @@
                 </div>
             @endforelse
             @if (! $selectedBranchId)
-            @forelse ($displayWarehouses as $warehouse)
+            @forelse (($displayWarehouses ?? ($warehouses ?? collect())) as $warehouse)
                 @php
                     $totals = $warehouseTotals[$warehouse->id] ?? [];
                     $expense = $warehouseExpense[$warehouse->id] ?? 0;
