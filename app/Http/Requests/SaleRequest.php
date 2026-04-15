@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -64,7 +65,9 @@ class SaleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'exists:branches,id'],
+            'sale_location_type' => ['nullable', Rule::in(['branch', 'warehouse'])],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
             'sale_date' => ['required', 'date'],
             'status' => ['required', Rule::in(['open', 'released'])],
 
@@ -101,5 +104,39 @@ class SaleRequest extends FormRequest
             'trade_ins.*.category_id' => ['nullable', 'exists:categories,id'],
             'trade_ins.*.trade_in_value' => ['nullable', 'numeric', 'min:0'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $user = $this->user();
+            if (! $user) {
+                return;
+            }
+            if ($this->isMethod('POST') && $this->routeIs('sales.store')) {
+                if ($user->isSuperAdminOrAdminPusat()) {
+                    $type = $this->input('sale_location_type');
+                    if (! in_array($type, ['branch', 'warehouse'], true)) {
+                        $validator->errors()->add('sale_location_type', __('Pilih tipe lokasi penjualan (cabang atau gudang).'));
+
+                        return;
+                    }
+                    if ($type === 'branch' && ! $this->filled('branch_id')) {
+                        $validator->errors()->add('branch_id', __('Cabang wajib dipilih.'));
+                    }
+                    if ($type === 'warehouse' && ! $this->filled('warehouse_id')) {
+                        $validator->errors()->add('warehouse_id', __('Gudang wajib dipilih.'));
+                    }
+                } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+                    if (! $user->branch_id) {
+                        $validator->errors()->add('branch_id', __('Cabang pengguna belum diatur.'));
+                    }
+                } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+                    if (! $user->warehouse_id) {
+                        $validator->errors()->add('warehouse_id', __('Gudang pengguna belum diatur.'));
+                    }
+                }
+            }
+        });
     }
 }

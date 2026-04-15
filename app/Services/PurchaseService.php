@@ -137,52 +137,15 @@ class PurchaseService
                 'user_id' => $userId,
             ]);
 
-            foreach ($details as $detail) {
-                PurchaseDetail::create([
-                    'purchase_id' => $purchase->id,
-                    'product_id' => $detail['product_id'],
-                    'quantity' => $detail['quantity'],
-                    'unit_price' => $detail['unit_price'],
-                    'subtotal' => $detail['subtotal'],
-                    'serial_numbers' => ! empty($detail['serial_numbers']) ? implode("\n", $detail['serial_numbers']) : null,
-                ]);
-
-                $product = Product::findOrFail($detail['product_id']);
-                $product->update(['is_active' => true]);
-                $serialNumbers = $detail['serial_numbers'] ?? [];
-                // Pembelian selalu menambah stok (IN).
-                $this->stockMutationService->addStock(
-                    $product,
-                    $locationType,
-                    $locationId,
-                    $detail['quantity'],
-                    $userId,
-                    ! empty($serialNumbers) ? $serialNumbers : null,
-                    $purchaseDate,
-                    null,
-                    null,
-                    $allowSoldSerialReuse
-                );
-
-                // Khusus pembelian sparepart service: catat juga di riwayat mutasi stok sebagai IN.
-                if ($purchase->isSparepartService()) {
-                    StockMutation::create([
-                        'invoice_number' => $purchase->invoice_number,
-                        'product_id' => $product->id,
-                        'from_location_type' => $locationType,
-                        'from_location_id' => $locationId,
-                        'to_location_type' => $locationType,
-                        'to_location_id' => $locationId,
-                        'quantity' => (int) $detail['quantity'],
-                        'biaya_distribusi_per_unit' => 0,
-                        'distribution_payment_method_id' => null,
-                        'mutation_date' => $purchaseDate,
-                        'notes' => 'IN Pembelian Sparepart User (SERVICE) - ' . $purchase->invoice_number,
-                        'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
-                        'user_id' => $userId,
-                    ]);
-                }
-            }
+            $this->persistPurchaseLineItems(
+                $purchase,
+                $details,
+                $locationType,
+                $locationId,
+                $purchaseDate,
+                (int) $userId,
+                $allowSoldSerialReuse
+            );
 
             foreach ($payments as $p) {
                 $amt = round((float) ($p['amount'] ?? 0), 2);
@@ -194,6 +157,234 @@ class PurchaseService
 
             return $purchase->fresh()->load(['details.product', 'payments.paymentMethod', 'distributor', 'service']);
         });
+    }
+
+    /**
+     * Update purchase line items and totals after reversing prior stock effects.
+     * Allowed only when there are no recorded payments and the purchase is not distribution-linked.
+     *
+     * @param  array<int, array{product_id: int, quantity: int, unit_price: float, serial_numbers?: array<int,string>}>  $items
+     */
+    public function updatePurchase(
+        Purchase $purchase,
+        int $distributorId,
+        array $items,
+        string $purchaseDate,
+        ?string $description,
+        ?string $termin,
+        ?string $dueDate,
+        ?int $userId,
+        ?string $invoiceNumber,
+        bool $allowSoldSerialReuse
+    ): Purchase {
+        $userId = $userId ?? (int) auth()->id();
+
+        if ($purchase->isCancelled()) {
+            throw new InvalidArgumentException(__('Pembelian yang dibatalkan tidak dapat diubah.'));
+        }
+        if ((float) $purchase->total_paid > 0.02) {
+            throw new InvalidArgumentException(__('Pembelian yang sudah ada pembayaran tidak dapat diubah.'));
+        }
+        if ($purchase->isDistribusiUnit()) {
+            throw new InvalidArgumentException(__('Pembelian distribusi tidak dapat diedit di sini.'));
+        }
+        if ($purchase->stock_mutation_id) {
+            throw new InvalidArgumentException(__('Pembelian terhubung mutasi stok tidak dapat diedit di sini.'));
+        }
+
+        $locationType = $purchase->warehouse_id ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+        $locationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
+        $this->validateLocation($locationType, $locationId);
+
+        if (empty($items)) {
+            throw new InvalidArgumentException(__('Pembelian harus memiliki minimal satu barang.'));
+        }
+
+        $jenisPembelian = (string) $purchase->jenis_pembelian;
+        $serviceId = $purchase->service_id;
+
+        if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
+            if ($locationType !== Stock::LOCATION_BRANCH) {
+                throw new InvalidArgumentException(__('Pembelian Sparepart Service hanya dapat dilakukan ke lokasi Cabang.'));
+            }
+            if (! $serviceId) {
+                throw new InvalidArgumentException(__('Pilih nomor invoice service sebagai referensi.'));
+            }
+            $service = Service::find($serviceId);
+            if (! $service || $service->status !== Service::STATUS_OPEN) {
+                throw new InvalidArgumentException(__('Invoice service tidak valid atau sudah tidak berstatus open.'));
+            }
+            if ((int) $service->branch_id !== $locationId) {
+                throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
+            }
+        }
+
+        [$details, $total] = $this->buildDetails($items);
+
+        return DB::transaction(function () use (
+            $purchase,
+            $distributorId,
+            $details,
+            $total,
+            $purchaseDate,
+            $description,
+            $termin,
+            $dueDate,
+            $userId,
+            $invoiceNumber,
+            $allowSoldSerialReuse,
+            $locationType,
+            $locationId
+        ) {
+            $oldInvoice = (string) $purchase->invoice_number;
+
+            $purchase->load('details.product');
+            $this->revertPurchaseStockFromCurrentDetails($purchase, $locationType, $locationId);
+            $this->deleteSparepartInMutationsForPurchaseInvoice($oldInvoice);
+
+            PurchaseDetail::where('purchase_id', $purchase->id)->delete();
+            $purchase->unsetRelation('details');
+
+            $newInvoice = ! empty(trim((string) $invoiceNumber))
+                ? trim((string) $invoiceNumber)
+                : $oldInvoice;
+
+            if ($newInvoice !== $oldInvoice && Purchase::where('invoice_number', $newInvoice)->whereKeyNot($purchase->id)->exists()) {
+                throw new InvalidArgumentException(__('Nomor invoice sudah dipakai pembelian lain.'));
+            }
+
+            $purchase->update([
+                'invoice_number' => $newInvoice,
+                'distributor_id' => $distributorId,
+                'purchase_date' => $purchaseDate,
+                'total' => $total,
+                'description' => $description,
+                'termin' => $termin,
+                'due_date' => $dueDate ?: null,
+            ]);
+            $purchase = $purchase->fresh();
+
+            $this->persistPurchaseLineItems(
+                $purchase,
+                $details,
+                $locationType,
+                $locationId,
+                $purchaseDate,
+                $userId,
+                $allowSoldSerialReuse
+            );
+
+            return $purchase->fresh()->load(['details.product', 'payments.paymentMethod', 'distributor', 'service']);
+        });
+    }
+
+    /**
+     * @param  array<int, array{product_id: int, quantity: int, unit_price: float, subtotal: float, serial_numbers: array<int, string>}>  $details
+     */
+    private function persistPurchaseLineItems(
+        Purchase $purchase,
+        array $details,
+        string $locationType,
+        int $locationId,
+        string $purchaseDate,
+        int $userId,
+        bool $allowSoldSerialReuse
+    ): void {
+        foreach ($details as $detail) {
+            PurchaseDetail::create([
+                'purchase_id' => $purchase->id,
+                'product_id' => $detail['product_id'],
+                'quantity' => $detail['quantity'],
+                'unit_price' => $detail['unit_price'],
+                'subtotal' => $detail['subtotal'],
+                'serial_numbers' => ! empty($detail['serial_numbers']) ? implode("\n", $detail['serial_numbers']) : null,
+            ]);
+
+            $product = Product::findOrFail($detail['product_id']);
+            $product->update(['is_active' => true]);
+            $serialNumbers = $detail['serial_numbers'] ?? [];
+            $this->stockMutationService->addStock(
+                $product,
+                $locationType,
+                $locationId,
+                $detail['quantity'],
+                $userId,
+                ! empty($serialNumbers) ? $serialNumbers : null,
+                $purchaseDate,
+                null,
+                null,
+                $allowSoldSerialReuse
+            );
+
+            if ($purchase->isSparepartService()) {
+                StockMutation::create([
+                    'invoice_number' => $purchase->invoice_number,
+                    'product_id' => $product->id,
+                    'from_location_type' => $locationType,
+                    'from_location_id' => $locationId,
+                    'to_location_type' => $locationType,
+                    'to_location_id' => $locationId,
+                    'quantity' => (int) $detail['quantity'],
+                    'biaya_distribusi_per_unit' => 0,
+                    'distribution_payment_method_id' => null,
+                    'mutation_date' => $purchaseDate,
+                    'notes' => 'IN Pembelian Sparepart User (SERVICE) - '.$purchase->invoice_number,
+                    'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
+                    'user_id' => $userId,
+                ]);
+            }
+        }
+    }
+
+    private function revertPurchaseStockFromCurrentDetails(Purchase $purchase, string $locationType, int $locationId): void
+    {
+        foreach ($purchase->details as $detail) {
+            $product = $detail->product;
+            if (! $product) {
+                continue;
+            }
+            $serialNumbers = $detail->serial_numbers
+                ? array_filter(array_map('trim', explode("\n", $detail->serial_numbers)))
+                : [];
+
+            if (! empty($serialNumbers)) {
+                $units = ProductUnit::where('product_id', $product->id)
+                    ->where('location_type', $locationType)
+                    ->where('location_id', $locationId)
+                    ->whereIn('serial_number', $serialNumbers)
+                    ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
+                    ->get();
+
+                ProductUnit::whereIn('id', $units->pluck('id'))->update([
+                    'status' => ProductUnit::STATUS_CANCEL,
+                ]);
+
+                $this->stockMutationService->recalculateStockQuantityIfExists($product->id, $locationType, $locationId);
+            } else {
+                $stock = Stock::firstOrCreate(
+                    [
+                        'product_id' => $product->id,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                    ],
+                    ['quantity' => 0]
+                );
+                $qty = min((int) $detail->quantity, (int) $stock->quantity);
+                if ($qty > 0) {
+                    $stock->decrement('quantity', $qty);
+                }
+            }
+
+            $product->update(['is_active' => false]);
+        }
+    }
+
+    private function deleteSparepartInMutationsForPurchaseInvoice(string $invoiceNumber): void
+    {
+        StockMutation::query()
+            ->where('invoice_number', $invoiceNumber)
+            ->where('notes', 'like', 'IN Pembelian Sparepart User (SERVICE)%')
+            ->delete();
     }
 
     /**

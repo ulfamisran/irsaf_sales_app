@@ -21,13 +21,19 @@
                         @method('PATCH')
                         <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <input type="hidden" name="status" value="open">
+                        @if($sale->isWarehouseSale())
+                        <input type="hidden" name="warehouse_id" value="{{ $sale->warehouse_id }}">
+                        <input type="hidden" name="branch_id" value="">
+                        @else
                         <input type="hidden" name="branch_id" value="{{ $sale->branch_id }}">
+                        <input type="hidden" name="warehouse_id" value="">
+                        @endif
 
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <x-input-label for="branch_id_display" :value="__('Branch')" />
-                                    <x-text-input id="branch_id_display" class="block mt-1 w-full" type="text" :value="$sale->branch?->name" disabled />
+                                    <x-input-label for="branch_id_display" :value="__('Lokasi')" />
+                                    <x-text-input id="branch_id_display" class="block mt-1 w-full" type="text" :value="$sale->isWarehouseSale() ? (__('Gudang') . ': ' . ($sale->warehouse?->name ?? '')) : (__('Cabang') . ': ' . ($sale->branch?->name ?? ''))" disabled />
                                 </div>
                                 <div>
                                     <x-input-label for="sale_date" :value="__('Sale Date')" />
@@ -342,9 +348,12 @@
             }
         }
 
+        const saleStockLocationType = @json($sale->stockLocationType());
+        const saleStockLocationId = @json((string) $sale->stockLocationId());
+
         async function loadProductsForBranch() {
-            const branchId = @json((string) $sale->branch_id);
-            if (!branchId) {
+            const locId = saleStockLocationId;
+            if (!locId) {
                 products = [];
                 document.querySelectorAll('.product-select').forEach(sel => updateProductSelectOptions(sel));
                 return;
@@ -352,7 +361,11 @@
 
             try {
                 const url = new URL(availableProductsUrl, window.location.origin);
-                url.searchParams.set('branch_id', branchId);
+                if (saleStockLocationType === 'warehouse') {
+                    url.searchParams.set('warehouse_id', locId);
+                } else {
+                    url.searchParams.set('branch_id', locId);
+                }
                 const res = await fetch(url.toString(), {
                     headers: { 'Accept': 'application/json' }
                 });
@@ -403,7 +416,6 @@
         }
 
         async function loadSerialsForRow(row) {
-            const branchId = @json((string) $sale->branch_id);
             const productSelect = row.querySelector('.product-select');
             const serialSelect = row.querySelector('.serial-select');
             if (!serialSelect) return;
@@ -411,7 +423,7 @@
             const productId = productSelect?.value;
             const existingSelected = Array.from(serialSelect.selectedOptions || []).map(o => o.value);
 
-            if (!branchId || !productId) {
+            if (!saleStockLocationId || !productId) {
                 rowSerials.set(row, existingSelected);
                 rowUnits.set(row, []);
                 setSerialInputsEnabled(row, false);
@@ -421,7 +433,11 @@
 
             try {
                 const url = new URL(availableSerialsUrl, window.location.origin);
-                url.searchParams.set('branch_id', branchId);
+                if (saleStockLocationType === 'warehouse') {
+                    url.searchParams.set('warehouse_id', saleStockLocationId);
+                } else {
+                    url.searchParams.set('branch_id', saleStockLocationId);
+                }
                 url.searchParams.set('product_id', productId);
                 const res = await fetch(url.toString(), {
                     headers: { 'Accept': 'application/json' }

@@ -8,7 +8,17 @@
                     <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
                 @endif
             </h2>
-            <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali ke Riwayat')" />
+            <div class="flex flex-wrap items-center gap-2">
+                @if ($purchase->canBeEdited())
+                    <a href="{{ route('purchases.edit', $purchase) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                        {{ __('Ubah pembelian') }}
+                    </a>
+                @endif
+                <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali ke Riwayat')" />
+            </div>
         </div>
     </x-slot>
 

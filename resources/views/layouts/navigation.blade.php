@@ -156,8 +156,10 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if ($isSuperAdmin || $isAdminCabang || $isKasir)
+                        @if ($isSuperAdmin || $isAdminCabang || $isKasir || $isAdminGudang)
                             <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
+                        @endif
+                        @if ($isSuperAdmin || $isAdminCabang || $isKasir)
                             <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
                         @endif
                         @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)

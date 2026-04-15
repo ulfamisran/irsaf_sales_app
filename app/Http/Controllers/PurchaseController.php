@@ -193,6 +193,112 @@ class PurchaseController extends Controller
         ));
     }
 
+    public function edit(Request $request, Purchase $purchase): View|RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $purchase->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        if (! $purchase->canBeEdited()) {
+            return redirect()->route('purchases.show', $purchase)
+                ->with('error', __('Pembelian ini tidak dapat diubah (sudah ada pembayaran, distribusi, atau status tidak mengizinkan).'));
+        }
+
+        $purchase->load(['details.product', 'service.customer', 'warehouse', 'branch']);
+
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isWarehouseUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG]);
+
+        $warehouses = Warehouse::orderBy('name')->get();
+        $branches = Branch::orderBy('name')->get();
+
+        $defaultLocationType = $purchase->warehouse_id ? 'warehouse' : 'branch';
+        $defaultLocationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
+
+        $products = $defaultLocationId
+            ? $this->getProductsForPurchase($defaultLocationType, $defaultLocationId, null)
+            : collect();
+
+        $distributors = Distributor::orderBy('name')->get(['id', 'name']);
+        if ($defaultLocationId) {
+            if ($defaultLocationType === 'branch') {
+                $distributors = Distributor::where('branch_id', $defaultLocationId)
+                    ->orWhere(function ($q) {
+                        $q->whereNull('branch_id')->whereNull('warehouse_id');
+                    })
+                    ->orderBy('name')
+                    ->get(['id', 'name']);
+            } else {
+                $distributors = Distributor::where('warehouse_id', $defaultLocationId)
+                    ->orWhere(function ($q) {
+                        $q->whereNull('branch_id')->whereNull('warehouse_id');
+                    })
+                    ->orderBy('name')
+                    ->get(['id', 'name']);
+            }
+        }
+
+        $paymentMethods = collect();
+        $saldoByPaymentMethod = [];
+        if ($defaultLocationId) {
+            $branchId = $defaultLocationType === 'branch' ? $defaultLocationId : null;
+            $warehouseId = $defaultLocationType === 'warehouse' ? $defaultLocationId : null;
+            $paymentMethods = PaymentMethod::query()
+                ->where('is_active', true)
+                ->forLocation($branchId, $warehouseId)
+                ->orderBy('jenis_pembayaran')
+                ->orderBy('nama_bank')
+                ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+            $saldoByPaymentMethod = (new KasBalanceService)->getSaldoPerPaymentMethodForLocation($defaultLocationType, $defaultLocationId);
+        }
+
+        $categories = Category::orderBy('name')->get(['id', 'name']);
+
+        $openServicesInitial = collect();
+        if ($defaultLocationType === 'branch' && $defaultLocationId) {
+            $openServicesInitial = Service::query()
+                ->with(['customer:id,name'])
+                ->where('branch_id', $defaultLocationId)
+                ->where(function ($q) use ($purchase) {
+                    $q->where('status', Service::STATUS_OPEN)
+                        ->when($purchase->service_id, fn ($q2) => $q2->orWhere('id', $purchase->service_id));
+                })
+                ->orderByDesc('entry_date')
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id', 'status']);
+        }
+
+        $isEdit = true;
+        $editPurchase = $purchase;
+
+        return view('purchases.create', compact(
+            'warehouses',
+            'branches',
+            'products',
+            'categories',
+            'distributors',
+            'paymentMethods',
+            'saldoByPaymentMethod',
+            'isBranchUser',
+            'isWarehouseUser',
+            'defaultLocationType',
+            'defaultLocationId',
+            'openServicesInitial',
+            'isEdit',
+            'editPurchase'
+        ));
+    }
+
     public function store(PurchaseRequest $request): RedirectResponse
     {
         $user = $request->user();
@@ -245,6 +351,54 @@ class PurchaseController extends Controller
         }
 
         return redirect()->route('purchases.show', $purchase)->with('success', __('Pembelian berhasil dicatat.'));
+    }
+
+    public function update(PurchaseRequest $request, Purchase $purchase): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $purchase->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        if (! $purchase->canBeEdited()) {
+            return redirect()->route('purchases.show', $purchase)
+                ->with('error', __('Pembelian ini tidak dapat diubah.'));
+        }
+
+        try {
+            $updated = $this->purchaseService->updatePurchase(
+                $purchase,
+                (int) $request->distributor_id,
+                $request->items,
+                $request->purchase_date,
+                $request->description,
+                $request->termin,
+                $request->due_date,
+                $user->id,
+                $request->invoice_number,
+                $request->boolean('confirm_reuse_sold_serials'),
+            );
+
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'purchase.update',
+                'reference_type' => 'purchase',
+                'reference_id' => $updated->id,
+                'description' => 'Ubah pembelian '.$updated->invoice_number,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('purchases.show', $purchase)->with('success', __('Pembelian berhasil diperbarui.'));
     }
 
     public function show(Purchase $purchase): View

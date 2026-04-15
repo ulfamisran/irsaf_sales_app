@@ -1,8 +1,12 @@
 <x-app-layout>
-    <x-slot name="title">{{ __('Catat Pembelian') }}</x-slot>
+    @php
+        $isEdit = $isEdit ?? false;
+        $editPurchase = $editPurchase ?? null;
+    @endphp
+    <x-slot name="title">{{ $isEdit ? __('Ubah Pembelian') : __('Catat Pembelian') }}</x-slot>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ __('Catat Pembelian') }}
+            {{ $isEdit ? __('Ubah Pembelian') : __('Catat Pembelian') }}
         </h2>
     </x-slot>
 
@@ -13,11 +17,41 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('purchases.store') }}" id="purchase-form">
+                    <form method="POST" action="{{ $isEdit ? route('purchases.update', $editPurchase) : route('purchases.store') }}" id="purchase-form">
                         @csrf
+                        @if ($isEdit)
+                            @method('PUT')
+                            <input type="hidden" name="location_type" value="{{ $editPurchase->warehouse_id ? 'warehouse' : 'branch' }}">
+                            @if ($editPurchase->warehouse_id)
+                                <input type="hidden" name="warehouse_id" value="{{ $editPurchase->warehouse_id }}">
+                            @else
+                                <input type="hidden" name="branch_id" value="{{ $editPurchase->branch_id }}">
+                            @endif
+                            <input type="hidden" name="jenis_pembelian" value="{{ $editPurchase->jenis_pembelian }}">
+                            @if ($editPurchase->service_id)
+                                <input type="hidden" name="service_id" value="{{ $editPurchase->service_id }}">
+                            @endif
+                        @endif
                         <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <div class="space-y-6">
+                            @if ($isEdit)
+                                <div class="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-700">
+                                    <p><span class="font-medium text-slate-800">{{ __('Lokasi') }}:</span>
+                                        @if ($editPurchase->warehouse_id)
+                                            {{ __('Gudang') }} — {{ $editPurchase->warehouse?->name ?? '—' }}
+                                        @else
+                                            {{ __('Cabang') }} — {{ $editPurchase->branch?->name ?? '—' }}
+                                        @endif
+                                    </p>
+                                    <p class="mt-1"><span class="font-medium text-slate-800">{{ __('Jenis pembelian') }}:</span> {{ $editPurchase->jenis_pembelian }}</p>
+                                    @if ($editPurchase->service_id && $editPurchase->service)
+                                        <p class="mt-1"><span class="font-medium text-slate-800">{{ __('Referensi service') }}:</span> {{ $editPurchase->service->invoice_number }}</p>
+                                    @endif
+                                    <p class="mt-2 text-xs text-amber-800">{{ __('Lokasi, jenis, dan referensi service tidak dapat diubah dari form ini. Hanya barang, distributor, tanggal, dan invoice yang dapat disesuaikan.') }}</p>
+                                </div>
+                            @endif
                             {{-- Lokasi --}}
+                            @unless ($isEdit)
                             <div x-data="{ locationType: '{{ old('location_type', $defaultLocationType) }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
                                 <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
                                 <div class="mt-2 flex gap-6">
@@ -61,8 +95,10 @@
                                     </select>
                                 </div>
                             </div>
+                            @endunless
 
                             {{-- Jenis pembelian & referensi service --}}
+                            @unless ($isEdit)
                             <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-4">
                                 <div>
                                     <x-input-label for="jenis_pembelian" :value="__('Jenis Pembelian')" />
@@ -96,12 +132,13 @@
                                     <x-input-error :messages="$errors->get('service_id')" class="mt-2" />
                                 </div>
                             </div>
+                            @endunless
 
                             {{-- No. Invoice --}}
                             <div>
                                 <x-input-label for="invoice_number" :value="__('No. Invoice Pembelian')" />
-                                <x-text-input id="invoice_number" name="invoice_number" type="text" :value="old('invoice_number')" placeholder="Opsional - kosongkan untuk auto-generate (PBL-YYYYMMDD-0001)" />
-                                <p class="mt-1 text-xs text-slate-500">{{ __('Kosongkan untuk generate otomatis.') }}</p>
+                                <x-text-input id="invoice_number" name="invoice_number" type="text" :value="old('invoice_number', $isEdit ? $editPurchase->invoice_number : null)" :placeholder="$isEdit ? '' : 'Opsional - kosongkan untuk auto-generate (PBL-YYYYMMDD-0001)'" />
+                                <p class="mt-1 text-xs text-slate-500">{{ $isEdit ? __('Nomor invoice saat ini. Kosongkan untuk mempertahankan nomor yang sama.') : __('Kosongkan untuk generate otomatis.') }}</p>
                             </div>
 
                             {{-- Distributor --}}
@@ -110,7 +147,7 @@
                                 <select id="distributor_id" name="distributor_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                     <option value="">Pilih Distributor</option>
                                     @foreach ($distributors as $d)
-                                        <option value="{{ $d->id }}" {{ old('distributor_id') == $d->id ? 'selected' : '' }}>{{ $d->name }}</option>
+                                        <option value="{{ $d->id }}" {{ (int) old('distributor_id', $isEdit ? $editPurchase->distributor_id : 0) === (int) $d->id ? 'selected' : '' }}>{{ $d->name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -119,22 +156,22 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <x-input-label for="purchase_date" :value="__('Tanggal Pembelian')" />
-                                    <x-text-input id="purchase_date" class="block mt-1 w-full" type="date" name="purchase_date" :value="old('purchase_date', date('Y-m-d'))" required />
+                                    <x-text-input id="purchase_date" class="block mt-1 w-full" type="date" name="purchase_date" :value="old('purchase_date', $isEdit ? $editPurchase->purchase_date->format('Y-m-d') : date('Y-m-d'))" required />
                                 </div>
                                 <div>
                                     <x-input-label for="termin" :value="__('Termin')" />
-                                    <x-text-input id="termin" class="block mt-1 w-full" type="text" name="termin" :value="old('termin')" placeholder="NET 30, Tunai, dll" />
+                                    <x-text-input id="termin" class="block mt-1 w-full" type="text" name="termin" :value="old('termin', $isEdit ? $editPurchase->termin : null)" placeholder="NET 30, Tunai, dll" />
                                 </div>
                                 <div>
                                     <x-input-label for="due_date" :value="__('Jatuh Tempo')" />
-                                    <x-text-input id="due_date" class="block mt-1 w-full" type="date" name="due_date" :value="old('due_date')" />
+                                    <x-text-input id="due_date" class="block mt-1 w-full" type="date" name="due_date" :value="old('due_date', $isEdit && $editPurchase->due_date ? $editPurchase->due_date->format('Y-m-d') : null)" />
                                 </div>
                             </div>
 
                             {{-- Deskripsi --}}
                             <div>
                                 <x-input-label for="description" :value="__('Deskripsi Transaksi')" />
-                                <textarea id="description" name="description" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="2" placeholder="Catatan pembelian...">{{ old('description') }}</textarea>
+                                <textarea id="description" name="description" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="2" placeholder="Catatan pembelian...">{{ old('description', $isEdit ? $editPurchase->description : null) }}</textarea>
                             </div>
 
                             {{-- Barang --}}
@@ -167,64 +204,13 @@
                                     </div>
                                 </div>
                                 <div id="purchase-items" class="space-y-4">
-                                    <div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                                        <div class="purchase-serial-autocomplete relative rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3">
-                                            <x-input-label :value="__('Cari nomor serial')" class="text-xs font-medium text-indigo-900" />
-                                            <input type="text" class="purchase-serial-search block mt-1 w-full rounded-md border border-indigo-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Ketik minimal 2 karakter, pilih dari daftar — mengisi produk & serial') }}" autocomplete="off">
-                                            <div class="purchase-serial-dropdown hidden absolute left-0 right-0 z-30 mt-1 max-h-52 overflow-auto rounded-md border border-indigo-200 bg-white shadow-lg"></div>
-                                            <p class="mt-1 text-[11px] text-indigo-900/80">{{ __('Mencari unit di semua lokasi. Saat disimpan, lokasi unit mengikuti lokasi pembelian yang dipilih di atas.') }}</p>
-                                        </div>
-                                        <div class="product-selector-block mb-3">
-                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                                                <div>
-                                                    <x-input-label :value="__('Merk')" class="mb-1" />
-                                                    <select class="brand-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                                        <option value="">Semua Merk</option>
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <x-input-label :value="__('Series')" class="mb-1" />
-                                                    <select class="series-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                                        <option value="">Semua Series</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <x-input-label :value="__('Produk')" class="mb-1" />
-                                                <input type="hidden" name="items[0][product_id]" class="product-id-input" value="" required>
-                                                <div class="product-dropdown-wrapper relative">
-                                                    <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                                        <span class="product-select-label text-slate-500">Pilih Produk</span>
-                                                        <svg class="h-5 w-5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
-                                                    </button>
-                                                    <div class="product-dropdown hidden absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                                                        <div class="p-2 border-b border-gray-100">
-                                                            <input type="text" class="product-search w-full rounded-md border border-gray-300 py-2 px-3 text-sm" placeholder="Cari SKU, merk, series...">
-                                                        </div>
-                                                        <div class="product-dropdown-list max-h-60 overflow-auto py-1"></div>
-                                                        <div class="product-dropdown-empty hidden px-3 py-4 text-sm text-slate-500 text-center">Tidak ada produk yang cocok.</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3 items-start">
-                                            <div class="min-w-0 md:col-span-2">
-                                                <x-input-label :value="__('Qty')" />
-                                                <x-text-input type="number" name="items[0][quantity]" min="1" value="1" class="item-qty block mt-1 w-full max-w-full" required />
-                                            </div>
-                                            <div class="min-w-0 md:col-span-2">
-                                                <x-input-label :value="__('Harga Beli')" />
-                                                <x-text-input type="text" name="items[0][unit_price]" data-rupiah="true" class="item-price block mt-1 w-full max-w-full" placeholder="0" required />
-                                            </div>
-                                            <div class="min-w-0 md:col-span-8">
-                                                <x-input-label :value="__('Serial (1 per baris, opsional)')" />
-                                                <textarea name="items[0][serial_numbers_text]" class="item-serials block mt-1 w-full max-w-full min-w-0 rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002"></textarea>
-                                            </div>
-                                        </div>
-                                        <div class="mt-2 flex justify-end">
-                                            <button type="button" class="remove-item text-sm text-red-600 hover:text-red-800" style="display:none">Hapus</button>
-                                        </div>
-                                    </div>
+                                    @if ($isEdit && $editPurchase?->details?->isNotEmpty())
+                                        @foreach ($editPurchase->details as $idx => $detail)
+                                            @include('purchases._item_row', ['idx' => $idx, 'detail' => $detail, 'hideRemove' => $editPurchase->details->count() <= 1])
+                                        @endforeach
+                                    @else
+                                        @include('purchases._item_row', ['idx' => 0, 'detail' => null, 'hideRemove' => true])
+                                    @endif
                                 </div>
                                 <button type="button" id="add-item" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium">+ Tambah Barang</button>
                             </div>
@@ -235,6 +221,7 @@
                                 <p class="text-2xl font-bold text-indigo-600 mt-1" id="purchase-total-text">0</p>
                             </div>
 
+                            @unless ($isEdit)
                             {{-- Pembayaran (opsional - bisa kosong untuk termin) --}}
                             <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                                 <x-input-label :value="__('Pembayaran (Opsional)')" class="font-semibold" />
@@ -256,10 +243,11 @@
                                     </div>
                                 </div>
                             </div>
+                            @endunless
 
                             <div class="flex gap-4">
-                                <x-primary-button>Simpan Pembelian</x-primary-button>
-                                <a href="{{ route('purchases.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">Batal</a>
+                                <x-primary-button>{{ $isEdit ? __('Simpan Perubahan') : __('Simpan Pembelian') }}</x-primary-button>
+                                <a href="{{ $isEdit ? route('purchases.show', $editPurchase) : route('purchases.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Batal') }}</a>
                             </div>
                         </div>
                     </form>
@@ -289,6 +277,8 @@
         const JENIS_SPAREPART_SERVICE = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE);
         const JENIS_SPAREPART_SERVICE_LAPTOP_TOKO = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO);
         const serviceInvoicePlaceholder = @json($serviceInvoicePlaceholder);
+        const isEdit = @json($isEdit);
+        let itemIdx = {{ ($isEdit && $editPurchase) ? $editPurchase->details->count() : 1 }};
 
         function productOptionHtml(p) {
             const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -300,6 +290,7 @@
         }
 
         function syncPurchaseJenisServiceUi() {
+            if (isEdit) return;
             const locType = document.querySelector('input[name="location_type"]:checked')?.value;
             const jenisSel = document.getElementById('jenis_pembelian');
             const serviceRow = document.getElementById('service-invoice-row');
@@ -398,6 +389,16 @@
         document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
 
         function getPurchaseLocationHint() {
+            const hiddenLt = document.querySelector('#purchase-form input[name="location_type"][type="hidden"]');
+            if (hiddenLt && hiddenLt.value) {
+                const lt = hiddenLt.value;
+                if (lt === 'warehouse') {
+                    const w = document.querySelector('#purchase-form input[name="warehouse_id"][type="hidden"]')?.value;
+                    return w ? ('{{ __("Gudang") }} (ID ' + w + ')') : '{{ __("Gudang") }}';
+                }
+                const b = document.querySelector('#purchase-form input[name="branch_id"][type="hidden"]')?.value;
+                return b ? ('{{ __("Cabang") }} (ID ' + b + ')') : '{{ __("Cabang") }}';
+            }
             const lt = document.querySelector('input[name="location_type"]:checked')?.value;
             if (lt === 'warehouse') {
                 const sel = document.getElementById('warehouse_id');
@@ -605,13 +606,12 @@
             }
         }
 
-        let itemIdx = 1;
         let paymentIdx = 0;
 
         document.getElementById('add-item')?.addEventListener('click', function() {
             const tpl = document.querySelector('.purchase-item').cloneNode(true);
             tpl.querySelectorAll('input, select, textarea').forEach(el => {
-                el.name = el.name?.replace(/\[0\]/, '[' + itemIdx + ']');
+                if (el.name) el.name = el.name.replace(/items\[\d+\]/, 'items[' + itemIdx + ']');
                 if (el.type !== 'hidden') el.value = '';
                 if (el.classList.contains('item-qty')) el.value = '1';
                 if (el.classList.contains('product-id-input')) el.value = '';
@@ -627,7 +627,12 @@
             if (ps) ps.value = '';
             if (pd) { pd.innerHTML = ''; pd.classList.add('hidden'); }
             tpl.querySelector('.remove-item').style.display = '';
-            tpl.querySelector('.remove-item').onclick = () => { tpl.remove(); updateAllTotals(); };
+            tpl.querySelector('.remove-item').addEventListener('click', function onRemove() {
+                if (document.querySelectorAll('.purchase-item').length > 1) {
+                    tpl.remove();
+                    updateAllTotals();
+                }
+            });
             document.getElementById('purchase-items').appendChild(tpl);
             populateProductDropdown(tpl);
             attachPurchaseSerialSearch(tpl);
@@ -646,11 +651,13 @@
         }
 
 
-        document.querySelector('.remove-item')?.addEventListener('click', function() {
-            if (document.querySelectorAll('.purchase-item').length > 1) {
-                this.closest('.purchase-item').remove();
-                updateAllTotals();
-            }
+        document.querySelectorAll('.purchase-item .remove-item').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (document.querySelectorAll('.purchase-item').length > 1) {
+                    this.closest('.purchase-item')?.remove();
+                    updateAllTotals();
+                }
+            });
         });
 
         document.getElementById('add-payment')?.addEventListener('click', function() {
@@ -697,18 +704,29 @@
             });
         });
 
-        const oldPayments = @json(old('payments', []));
-        const hasValidOld = Array.isArray(oldPayments) && oldPayments.length > 0 && oldPayments.some(p => p && (p.payment_method_id || (p.amount && parseInt(String(p.amount).replace(/\D/g,''), 10) > 0)));
-        if (hasValidOld) {
-            oldPayments.forEach(p => addPaymentRow(paymentIdx++, p));
-        } else {
-            addPaymentRow(paymentIdx++, {});
+        if (!isEdit) {
+            const oldPayments = @json(old('payments', []));
+            const hasValidOld = Array.isArray(oldPayments) && oldPayments.length > 0 && oldPayments.some(p => p && (p.payment_method_id || (p.amount && parseInt(String(p.amount).replace(/\D/g,''), 10) > 0)));
+            if (hasValidOld) {
+                oldPayments.forEach(p => addPaymentRow(paymentIdx++, p));
+            } else {
+                addPaymentRow(paymentIdx++, {});
+            }
+            updateAllTotals();
         }
-        updateAllTotals();
 
         window.loadPurchaseDistributors = async function() {
-            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
-            const locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            let locType = document.querySelector('#purchase-form input[name="location_type"][type="hidden"]')?.value;
+            let locId = null;
+            if (locType === 'warehouse') {
+                locId = document.querySelector('#purchase-form input[name="warehouse_id"][type="hidden"]')?.value;
+            } else if (locType === 'branch') {
+                locId = document.querySelector('#purchase-form input[name="branch_id"][type="hidden"]')?.value;
+            }
+            if (!locType || !locId) {
+                locType = document.querySelector('input[name="location_type"]:checked')?.value;
+                locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            }
             if (!locType || !locId) {
                 document.getElementById('distributor_id').innerHTML = '<option value="">Pilih lokasi terlebih dahulu</option>';
                 document.getElementById('distributor_id').disabled = true;
@@ -743,8 +761,17 @@
         };
 
         window.loadPurchaseProducts = async function() {
-            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
-            const locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            let locType = document.querySelector('#purchase-form input[name="location_type"][type="hidden"]')?.value;
+            let locId = null;
+            if (locType === 'warehouse') {
+                locId = document.querySelector('#purchase-form input[name="warehouse_id"][type="hidden"]')?.value;
+            } else if (locType === 'branch') {
+                locId = document.querySelector('#purchase-form input[name="branch_id"][type="hidden"]')?.value;
+            }
+            if (!locType || !locId) {
+                locType = document.querySelector('input[name="location_type"]:checked')?.value;
+                locId = locType === 'warehouse' ? document.getElementById('warehouse_id')?.value : (locType === 'branch' ? document.getElementById('branch_id')?.value : null);
+            }
             if (!locType || !locId) {
                 products = [];
                 repopulateProductDropdowns();

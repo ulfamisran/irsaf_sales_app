@@ -42,13 +42,21 @@ class SaleController extends Controller
         $summary = $this->computeSalesSummary($request, $user, $query);
 
         $sales = $query->paginate(20)->withQueryString();
-        $branches = $user->isSuperAdminOrAdminPusat()
-            ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $branches = collect();
+        $warehouses = collect();
+        if ($user->isSuperAdminOrAdminPusat()) {
+            $branches = Branch::orderBy('name')->get(['id', 'name']);
+            $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            $branches = Branch::whereKey($user->branch_id)->get(['id', 'name']);
+        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+            $warehouses = Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']);
+        }
 
         return view('sales.index', [
             'sales' => $sales,
             'branches' => $branches,
+            'warehouses' => $warehouses,
             'canFilterLocation' => $ctx['canFilterLocation'],
             'filterLocked' => $ctx['filterLocked'],
             'locationLabel' => $ctx['locationLabel'],
@@ -65,7 +73,7 @@ class SaleController extends Controller
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
         $summary = $this->computeSalesSummary($request, $user, $exportQuery);
-        $sales = (clone $exportQuery)->with(['payments', 'tradeIns'])->get();
+        $sales = (clone $exportQuery)->with(['payments', 'tradeIns', 'branch', 'warehouse'])->get();
         $filterMeta = $this->salesExportFilterMeta($request, $ctx, $sales);
 
         $filename = 'rekap-penjualan-' . now()->format('Ymd-His') . '.xlsx';
@@ -83,7 +91,7 @@ class SaleController extends Controller
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
         $summary = $this->computeSalesSummary($request, $user, $exportQuery);
-        $sales = (clone $exportQuery)->with(['payments', 'tradeIns'])->get();
+        $sales = (clone $exportQuery)->with(['payments', 'tradeIns', 'branch', 'warehouse'])->get();
         $filterMeta = $this->salesExportFilterMeta($request, $ctx, $sales);
 
         $pdf = Pdf::loadView('sales.export-pdf', array_merge($summary, compact('sales', 'filterMeta')))
@@ -95,17 +103,48 @@ class SaleController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
+        $isPusat = $user->isSuperAdminOrAdminPusat();
+        $isWarehouseUser = $user->hasRole(Role::ADMIN_GUDANG) && ! $isPusat;
+        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $isPusat;
+
+        if (! $isPusat && ! $isWarehouseUser && ! ($isBranchStaff && $user->branch_id)) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
-        $branches = $user->isSuperAdminOrAdminPusat()
+        $branches = $isPusat
             ? Branch::orderBy('name')->get()
-            : Branch::whereKey($user->branch_id)->get();
+            : ($isBranchStaff ? Branch::whereKey($user->branch_id)->get() : collect());
 
-        if ($user->isSuperAdminOrAdminPusat()) {
-            // Super admin must choose branch first; products will be loaded via AJAX.
+        $warehouses = $isPusat
+            ? Warehouse::orderBy('name')->get()
+            : ($isWarehouseUser ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
+
+        if ($isPusat) {
             $products = collect();
+        } elseif ($isWarehouseUser) {
+            $warehouseId = (int) $user->warehouse_id;
+            $productIds = Stock::query()
+                ->where('location_type', Stock::LOCATION_WAREHOUSE)
+                ->where('location_id', $warehouseId)
+                ->where('quantity', '>', 0)
+                ->pluck('product_id')
+                ->merge(
+                    ProductUnit::query()
+                        ->where('location_type', Stock::LOCATION_WAREHOUSE)
+                        ->where('location_id', $warehouseId)
+                        ->where('status', ProductUnit::STATUS_IN_STOCK)
+                        ->distinct()
+                        ->pluck('product_id')
+                )
+                ->unique()
+                ->values();
+
+            $products = Product::with('category')
+                ->whereIn('id', $productIds)
+                ->orderBy('brand')
+                ->orderBy('series')
+                ->orderBy('sku')
+                ->get();
         } else {
             $branchId = (int) $user->branch_id;
             $productIds = Stock::query()
@@ -144,32 +183,67 @@ class SaleController extends Controller
             ];
         })->values();
 
-        $branchIdForData = $user->isSuperAdminOrAdminPusat() ? null : (int) $user->branch_id;
+        $branchIdForData = $isPusat ? null : ($isBranchStaff ? (int) $user->branch_id : null);
+        $warehouseIdForData = $isPusat ? null : ($isWarehouseUser ? (int) $user->warehouse_id : null);
+
         $customers = $branchIdForData
             ? Customer::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
-            : collect();
+            : ($warehouseIdForData
+                ? Customer::query()->where('warehouse_id', $warehouseIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
+                : collect());
         $paymentMethods = $branchIdForData
             ? PaymentMethod::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
-            : collect();
+            : ($warehouseIdForData
+                ? PaymentMethod::query()->where('warehouse_id', $warehouseIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
+                : collect());
 
         $categories = Category::orderBy('name')->get(['id', 'name', 'code']);
 
-        return view('sales.create', compact('branches', 'products', 'productsForJs', 'customers', 'paymentMethods', 'categories'));
+        $canPickSaleLocationType = $isPusat;
+        $lockedSaleLocationType = $isWarehouseUser ? 'warehouse' : ($isBranchStaff ? 'branch' : null);
+
+        return view('sales.create', compact(
+            'branches',
+            'warehouses',
+            'products',
+            'productsForJs',
+            'customers',
+            'paymentMethods',
+            'categories',
+            'canPickSaleLocationType',
+            'lockedSaleLocationType'
+        ));
     }
 
     public function store(SaleRequest $request): RedirectResponse
     {
         try {
             $user = $request->user();
-            $branchId = $user->isSuperAdminOrAdminPusat()
-                ? (int) $request->branch_id
-                : (int) $user->branch_id;
-
-            if (! $branchId) {
-                abort(403, __('Branch is required.'));
+            $branchId = null;
+            $warehouseId = null;
+            if ($user->isSuperAdminOrAdminPusat()) {
+                if ($request->input('sale_location_type') === 'warehouse') {
+                    $warehouseId = (int) $request->input('warehouse_id');
+                } else {
+                    $branchId = (int) $request->input('branch_id');
+                }
+            } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+                $warehouseId = (int) $user->warehouse_id;
+            } else {
+                $branchId = (int) $user->branch_id;
             }
 
-            $customerId = $this->resolveCustomerId($request);
+            if ($branchId === null && $warehouseId === null) {
+                abort(403, __('Location is required.'));
+            }
+            if ($user->hasRole(Role::ADMIN_GUDANG) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
+                abort(403, __('Unauthorized.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+
+            $customerId = $this->resolveCustomerId($request, $branchId, $warehouseId);
             $discount = (float) ($request->input('discount_amount') ?? 0);
             $tax = (float) ($request->input('tax_amount') ?? 0);
             $description = $request->input('description');
@@ -183,6 +257,7 @@ class SaleController extends Controller
             if ($status === Sale::STATUS_RELEASED) {
                 $sale = $this->saleService->createReleasedSale(
                     $branchId,
+                    $warehouseId,
                     $request->items,
                     $request->sale_date,
                     $payments,
@@ -197,6 +272,7 @@ class SaleController extends Controller
             } else {
                 $sale = $this->saleService->createDraftSale(
                     $branchId,
+                    $warehouseId,
                     $request->items,
                     $request->sale_date,
                     $customerId,
@@ -222,13 +298,13 @@ class SaleController extends Controller
 
     public function show(Sale $sale): View
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
-        $sale->load(['branch', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
+        $this->authorizeSaleForUser($sale);
+
+        $sale->load(['branch', 'warehouse', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->when($sale->isWarehouseSale(), fn ($q) => $q->where('warehouse_id', $sale->warehouse_id))
+            ->when(! $sale->isWarehouseSale(), fn ($q) => $q->where('branch_id', $sale->branch_id))
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -243,9 +319,6 @@ class SaleController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
         if ($sale->status !== Sale::STATUS_OPEN) {
             abort(403, __('Penjualan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
         }
@@ -256,16 +329,17 @@ class SaleController extends Controller
             ? Branch::orderBy('name')->get()
             : Branch::whereKey($user->branch_id)->get();
 
-        $branchId = (int) $sale->branch_id;
+        $locType = $sale->stockLocationType();
+        $locId = $sale->stockLocationId();
         $productIds = Stock::query()
-            ->where('location_type', Stock::LOCATION_BRANCH)
-            ->where('location_id', $branchId)
+            ->where('location_type', $locType)
+            ->where('location_id', $locId)
             ->where('quantity', '>', 0)
             ->pluck('product_id')
             ->merge(
                 ProductUnit::query()
-                    ->where('location_type', Stock::LOCATION_BRANCH)
-                    ->where('location_id', $branchId)
+                    ->where('location_type', $locType)
+                    ->where('location_id', $locId)
                     ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
                     ->distinct()
                     ->pluck('product_id')
@@ -291,14 +365,24 @@ class SaleController extends Controller
             ];
         })->values();
 
-        $customers = Customer::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->limit(500)
-            ->get(['id', 'name', 'phone']);
+        $customers = $sale->isWarehouseSale()
+            ? Customer::query()
+                ->where('warehouse_id', $sale->warehouse_id)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->limit(500)
+                ->get(['id', 'name', 'phone'])
+            : Customer::query()
+                ->where('branch_id', $sale->branch_id)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->limit(500)
+                ->get(['id', 'name', 'phone']);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
+            ->when($sale->isWarehouseSale(), fn ($q) => $q->where('warehouse_id', $sale->warehouse_id))
+            ->when(! $sale->isWarehouseSale(), fn ($q) => $q->where('branch_id', $sale->branch_id))
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -315,15 +399,16 @@ class SaleController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
         if ($sale->status !== Sale::STATUS_OPEN) {
             return back()->with('error', __('Sale sudah release dan tidak bisa diubah.'));
         }
 
         try {
-            $customerId = $this->resolveCustomerId($request);
+            $customerId = $this->resolveCustomerId(
+                $request,
+                $sale->branch_id ? (int) $sale->branch_id : null,
+                $sale->warehouse_id ? (int) $sale->warehouse_id : null
+            );
             $discount = (float) ($request->input('discount_amount') ?? 0);
             $tax = (float) ($request->input('tax_amount') ?? 0);
             $description = $request->input('description');
@@ -365,9 +450,7 @@ class SaleController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeSaleForUser($sale);
         if (! in_array($sale->status, [Sale::STATUS_OPEN, Sale::STATUS_RELEASED], true)) {
             return back()->with('error', __('Penjualan tidak dapat dibatalkan.'));
         }
@@ -399,9 +482,7 @@ class SaleController extends Controller
     public function release(Request $request, Sale $sale): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeSaleForUser($sale);
         if ($sale->status !== Sale::STATUS_OPEN) {
             return back()->with('error', __('Sale sudah release.'));
         }
@@ -431,9 +512,7 @@ class SaleController extends Controller
     public function storePayment(Request $request, Sale $sale): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeSaleForUser($sale);
 
         $validated = $request->validate([
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
@@ -463,18 +542,32 @@ class SaleController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
             'branch_id' => ['nullable', 'exists:branches,id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
         ]);
 
         $user = $request->user();
-        $branchId = $user->isSuperAdminOrAdminPusat()
-            ? (int) ($validated['branch_id'] ?? 0)
-            : (int) $user->branch_id;
+        $branchId = null;
+        $warehouseId = null;
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if (! empty($validated['warehouse_id'])) {
+                $warehouseId = (int) $validated['warehouse_id'];
+            } else {
+                $branchId = (int) ($validated['branch_id'] ?? 0);
+            }
+        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+            $warehouseId = (int) $user->warehouse_id;
+        } else {
+            $branchId = (int) $user->branch_id;
+        }
+
+        $locType = $warehouseId ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+        $locId = $warehouseId ?: $branchId;
 
         $isSerialTracked = ProductUnit::query()
             ->where('product_id', (int) $validated['product_id'])
             ->exists();
 
-        if (! $branchId) {
+        if (! $locId) {
             return response()->json([
                 'serial_numbers' => [],
                 'units' => [],
@@ -484,8 +577,8 @@ class SaleController extends Controller
 
         $units = ProductUnit::query()
             ->where('product_id', (int) $validated['product_id'])
-            ->where('location_type', Stock::LOCATION_BRANCH)
-            ->where('location_id', $branchId)
+            ->where('location_type', $locType)
+            ->where('location_id', $locId)
             ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
             ->orderBy('serial_number')
             ->limit(500)
@@ -508,27 +601,41 @@ class SaleController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'branch_id' => ['required', 'exists:branches,id'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
         ]);
 
         $user = $request->user();
-        $branchId = $user->isSuperAdminOrAdminPusat()
-            ? (int) $validated['branch_id']
-            : (int) $user->branch_id;
+        $branchId = null;
+        $warehouseId = null;
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if (! empty($validated['warehouse_id'])) {
+                $warehouseId = (int) $validated['warehouse_id'];
+            } else {
+                $branchId = (int) ($validated['branch_id'] ?? 0);
+            }
+        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+            $warehouseId = (int) $user->warehouse_id;
+        } else {
+            $branchId = (int) $user->branch_id;
+        }
 
-        if (! $branchId) {
+        $locType = $warehouseId ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+        $locId = $warehouseId ?: $branchId;
+
+        if (! $locId) {
             return response()->json(['products' => []]);
         }
 
         $productIds = Stock::query()
-            ->where('location_type', Stock::LOCATION_BRANCH)
-            ->where('location_id', $branchId)
+            ->where('location_type', $locType)
+            ->where('location_id', $locId)
             ->where('quantity', '>', 0)
             ->pluck('product_id')
             ->merge(
                 ProductUnit::query()
-                    ->where('location_type', Stock::LOCATION_BRANCH)
-                    ->where('location_id', $branchId)
+                    ->where('location_type', $locType)
+                    ->where('location_id', $locId)
                     ->where('status', ProductUnit::STATUS_IN_STOCK)
                     ->distinct()
                     ->pluck('product_id')
@@ -644,12 +751,9 @@ class SaleController extends Controller
 
     public function invoice(Sale $sale): View
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $sale->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeSaleForUser($sale);
 
-        $sale->load(['branch', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
+        $sale->load(['branch', 'warehouse', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
 
         return view('sales.invoice', compact('sale'));
     }
@@ -660,7 +764,7 @@ class SaleController extends Controller
     private function buildSalesListQuery(Request $request): array
     {
         $user = $request->user();
-        $query = Sale::with(['branch', 'user', 'customer', 'saleDetails', 'payments.paymentMethod'])
+        $query = Sale::with(['branch', 'warehouse', 'user', 'customer', 'saleDetails', 'payments.paymentMethod'])
             ->orderByDesc('sale_date')
             ->orderByDesc('id');
 
@@ -670,12 +774,12 @@ class SaleController extends Controller
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->whereRaw('1 = 0');
+                $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
                 $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
@@ -684,8 +788,10 @@ class SaleController extends Controller
             }
         } else {
             $canFilterLocation = true;
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            } elseif ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id)->whereNull('warehouse_id');
             }
         }
         if ($request->filled('date_from')) {
@@ -744,10 +850,19 @@ class SaleController extends Controller
             ? 0.0
             : (float) DB::table('sale_trade_ins')->whereIn('sale_id', $releasedIds)->sum('trade_in_value');
 
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
-            ? (int) $user->branch_id
-            : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+        $pmBranchId = null;
+        $pmWarehouseId = null;
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            $pmBranchId = (int) $user->branch_id;
+        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+            $pmWarehouseId = (int) $user->warehouse_id;
+        } elseif ($user->isSuperAdminOrAdminPusat()) {
+            if ($request->filled('warehouse_id')) {
+                $pmWarehouseId = (int) $request->warehouse_id;
+            } elseif ($request->filled('branch_id')) {
+                $pmBranchId = (int) $request->branch_id;
+            }
+        }
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($pmBranchId, $pmWarehouseId)
@@ -779,9 +894,12 @@ class SaleController extends Controller
         $branchLine = __('Semua');
         if (! empty($ctx['filterLocked']) && $ctx['locationLabel']) {
             $branchLine = $ctx['locationLabel'];
+        } elseif ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id')) {
+            $w = Warehouse::find($request->warehouse_id);
+            $branchLine = __('Gudang') . ': ' . ($w ? (string) $w->name : (string) $request->warehouse_id);
         } elseif ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id')) {
             $b = Branch::find($request->branch_id);
-            $branchLine = $b ? (string) $b->name : (string) $request->branch_id;
+            $branchLine = __('Cabang') . ': ' . ($b ? (string) $b->name : (string) $request->branch_id);
         }
 
         $dateFrom = $request->filled('date_from') ? (string) $request->date_from : null;
@@ -806,7 +924,7 @@ class SaleController extends Controller
         ];
     }
 
-    private function resolveCustomerId(Request $request): ?int
+    private function resolveCustomerId(Request $request, ?int $branchId, ?int $warehouseId): ?int
     {
         if ($request->filled('customer_id')) {
             return (int) $request->input('customer_id');
@@ -817,21 +935,47 @@ class SaleController extends Controller
             return null;
         }
 
-        $user = $request->user();
-        $branchId = $user->isSuperAdminOrAdminPusat()
-            ? (int) $request->branch_id
-            : (int) $user->branch_id;
-
-        $customer = Customer::create([
-            'name' => $name,
-            'phone' => $request->input('customer_new_phone'),
-            'address' => $request->input('customer_new_address'),
-            'is_active' => true,
-            'placement_type' => $branchId ? 'cabang' : null,
-            'branch_id' => $branchId ?: null,
-        ]);
+        if ($warehouseId) {
+            $customer = Customer::create([
+                'name' => $name,
+                'phone' => $request->input('customer_new_phone'),
+                'address' => $request->input('customer_new_address'),
+                'is_active' => true,
+                'placement_type' => Customer::PLACEMENT_GUDANG,
+                'warehouse_id' => $warehouseId,
+                'branch_id' => null,
+            ]);
+        } else {
+            $customer = Customer::create([
+                'name' => $name,
+                'phone' => $request->input('customer_new_phone'),
+                'address' => $request->input('customer_new_address'),
+                'is_active' => true,
+                'placement_type' => $branchId ? Customer::PLACEMENT_CABANG : null,
+                'branch_id' => $branchId ?: null,
+                'warehouse_id' => null,
+            ]);
+        }
 
         return (int) $customer->id;
+    }
+
+    private function authorizeSaleForUser(Sale $sale): void
+    {
+        $user = auth()->user();
+        if (! $user) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($user->isSuperAdminOrAdminPusat()) {
+            return;
+        }
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
+            return;
+        }
+        if ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
+            return;
+        }
+        abort(403, __('Unauthorized.'));
     }
 }
 

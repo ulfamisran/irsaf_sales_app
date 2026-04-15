@@ -16,7 +16,13 @@
         <td>{{ $paymentStatus }}</td>
         <td>{{ $sale->customer?->name ?? '-' }}</td>
         <td>{{ $sale->user?->name ?? '-' }}</td>
-        <td>{{ $sale->branch?->name ?? '-' }}</td>
+        <td>
+            @if ($sale->warehouse_id)
+                {{ __('Gudang') }}: {{ $sale->warehouse?->name ?? '-' }}
+            @else
+                {{ __('Cabang') }}: {{ $sale->branch?->name ?? '-' }}
+            @endif
+        </td>
     </tr>
 @empty
     <tr>

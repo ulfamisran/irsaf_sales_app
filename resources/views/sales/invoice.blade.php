@@ -396,11 +396,19 @@
                         @endif
                     </div>
                     <div>
-                        <div class="inv-co-name">{{ $sale->branch?->name ?? config('app.name', 'IRSAF') }}</div>
-                        @if ($sale->branch?->address)
-                            <div class="inv-co-line">{{ $sale->branch->address }}</div>
+                        @if ($sale->warehouse_id)
+                            <div class="inv-co-name">{{ $sale->warehouse?->name ?? config('app.name', 'IRSAF') }}</div>
+                            @if ($sale->warehouse?->address)
+                                <div class="inv-co-line">{{ $sale->warehouse->address }}</div>
+                            @endif
+                            <div class="inv-co-line">{{ __('Telepon') }}: -</div>
+                        @else
+                            <div class="inv-co-name">{{ $sale->branch?->name ?? config('app.name', 'IRSAF') }}</div>
+                            @if ($sale->branch?->address)
+                                <div class="inv-co-line">{{ $sale->branch->address }}</div>
+                            @endif
+                            <div class="inv-co-line">{{ __('Telepon') }}: {{ $sale->branch?->phone ?? '-' }}</div>
                         @endif
-                        <div class="inv-co-line">{{ __('Telepon') }}: {{ $sale->branch?->phone ?? '-' }}</div>
                     </div>
                 </div>
 
@@ -518,11 +526,19 @@
                             @endif
                         </div>
                         <div>
-                            <div class="inv-co-name">{{ $sale->branch?->name ?? config('app.name', 'IRSAF') }}</div>
-                            @if ($sale->branch?->address)
-                                <div class="inv-co-line">{{ $sale->branch->address }}</div>
+                            @if ($sale->warehouse_id)
+                                <div class="inv-co-name">{{ $sale->warehouse?->name ?? config('app.name', 'IRSAF') }}</div>
+                                @if ($sale->warehouse?->address)
+                                    <div class="inv-co-line">{{ $sale->warehouse->address }}</div>
+                                @endif
+                                <div class="inv-co-line">{{ __('Telepon') }}: -</div>
+                            @else
+                                <div class="inv-co-name">{{ $sale->branch?->name ?? config('app.name', 'IRSAF') }}</div>
+                                @if ($sale->branch?->address)
+                                    <div class="inv-co-line">{{ $sale->branch->address }}</div>
+                                @endif
+                                <div class="inv-co-line">{{ __('Telepon') }}: {{ $sale->branch?->phone ?? '-' }}</div>
                             @endif
-                            <div class="inv-co-line">{{ __('Telepon') }}: {{ $sale->branch?->phone ?? '-' }}</div>
                         </div>
                     </div>
 

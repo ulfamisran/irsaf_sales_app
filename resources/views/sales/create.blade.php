@@ -18,21 +18,65 @@
                         <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    @if($branches->count() === 1)
-                                        <x-locked-location label="{{ __('Branch') }}" :value="__('Cabang') . ': ' . $branches->first()->name" />
-                                        <input type="hidden" id="branch_id" name="branch_id" value="{{ $branches->first()->id }}">
+                                <div class="space-y-3">
+                                    @if (!empty($canPickSaleLocationType) && $canPickSaleLocationType)
+                                        <x-input-label :value="__('Tipe lokasi')" />
+                                        <div class="flex flex-wrap gap-4 mt-1">
+                                            <label class="inline-flex items-center gap-2 cursor-pointer">
+                                                <input type="radio" name="sale_location_type" value="branch" class="sale-loc-type-radio rounded-full border-gray-300 text-indigo-600" {{ old('sale_location_type', 'branch') === 'branch' ? 'checked' : '' }}>
+                                                <span class="text-sm text-gray-700">{{ __('Cabang') }}</span>
+                                            </label>
+                                            <label class="inline-flex items-center gap-2 cursor-pointer">
+                                                <input type="radio" name="sale_location_type" value="warehouse" class="sale-loc-type-radio rounded-full border-gray-300 text-indigo-600" {{ old('sale_location_type') === 'warehouse' ? 'checked' : '' }}>
+                                                <span class="text-sm text-gray-700">{{ __('Gudang') }}</span>
+                                            </label>
+                                        </div>
+                                        <x-input-error :messages="$errors->get('sale_location_type')" class="mt-1" />
+                                        <div id="wrap-branch-select" class="{{ old('sale_location_type', 'branch') === 'warehouse' ? 'hidden' : '' }}">
+                                            <x-input-label for="branch_id" :value="__('Cabang')" />
+                                            <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                <option value="">{{ __('Pilih cabang') }}</option>
+                                                @foreach ($branches as $branch)
+                                                    <option value="{{ $branch->id }}" {{ (string) old('branch_id') === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-input-error :messages="$errors->get('branch_id')" class="mt-1" />
+                                        </div>
+                                        <div id="wrap-warehouse-select" class="{{ old('sale_location_type', 'branch') === 'warehouse' ? '' : 'hidden' }}">
+                                            <x-input-label for="warehouse_id" :value="__('Gudang')" />
+                                            <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                <option value="">{{ __('Pilih gudang') }}</option>
+                                                @foreach ($warehouses as $w)
+                                                    <option value="{{ $w->id }}" {{ (string) old('warehouse_id') === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-input-error :messages="$errors->get('warehouse_id')" class="mt-1" />
+                                        </div>
+                                    @elseif (!empty($lockedSaleLocationType) && $lockedSaleLocationType === 'warehouse')
+                                        <x-locked-location label="{{ __('Lokasi') }}" :value="__('Gudang') . ': ' . ($warehouses->first()->name ?? '')" />
+                                        <input type="hidden" name="sale_location_type" value="warehouse">
+                                        <input type="hidden" id="warehouse_id" name="warehouse_id" value="{{ $warehouses->first()->id }}">
+                                        <input type="hidden" id="branch_id" name="branch_id" value="">
                                     @else
-                                        <x-input-label for="branch_id" :value="__('Branch')" />
-                                        <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                            <option value="">{{ __('Select Branch') }}</option>
-                                            @foreach ($branches as $branch)
-                                                <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
-                                            @endforeach
-                                        </select>
+                                        @if($branches->count() === 1)
+                                            <x-locked-location label="{{ __('Branch') }}" :value="__('Cabang') . ': ' . $branches->first()->name" />
+                                            <input type="hidden" name="sale_location_type" value="branch">
+                                            <input type="hidden" id="branch_id" name="branch_id" value="{{ $branches->first()->id }}">
+                                            <input type="hidden" id="warehouse_id" name="warehouse_id" value="">
+                                        @else
+                                            <input type="hidden" name="sale_location_type" value="branch">
+                                            <x-input-label for="branch_id" :value="__('Branch')" />
+                                            <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                                <option value="">{{ __('Select Branch') }}</option>
+                                                @foreach ($branches as $branch)
+                                                    <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input type="hidden" id="warehouse_id" name="warehouse_id" value="">
+                                        @endif
+                                        <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
                                     @endif
                                     <p id="products_status" class="mt-1 text-xs text-slate-500"></p>
-                                    <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
                                 </div>
                                 <div>
                                     <x-input-label for="sale_date" :value="__('Sale Date')" />
@@ -92,7 +136,7 @@
                                         </div>
                                         <div>
                                             <h3 class="text-sm font-semibold text-slate-800">{{ __('Produk Penjualan') }}</h3>
-                                            <p class="text-xs text-slate-500">{{ __('Produk akan tampil sesuai stok cabang yang dipilih.') }}</p>
+                                            <p class="text-xs text-slate-500">{{ __('Produk akan tampil sesuai stok lokasi (cabang atau gudang) yang dipilih.') }}</p>
                                         </div>
                                     </div>
                                     <button type="button" id="add-item" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 shadow-sm transition">
@@ -298,6 +342,7 @@
                 'hapusItem' => __('Hapus'),
                 'produkLabel' => __('Produk'),
                 'pilihCabangDulu' => __('Pilih cabang dulu'),
+                'pilihLokasiDulu' => __('Pilih cabang atau gudang terlebih dahulu'),
                 'pilihPelanggan' => __('Pilih Pelanggan (atau isi pelanggan baru)'),
             ];
         @endphp
@@ -540,9 +585,24 @@
             });
         }
 
+        function getSaleLocationType() {
+            const r = document.querySelector('input[name="sale_location_type"]:checked');
+            if (r) return r.value;
+            const hid = document.querySelector('input[name="sale_location_type"][type="hidden"]');
+            return hid ? hid.value : 'branch';
+        }
+
+        function getSaleLocationIdForFetch() {
+            const t = getSaleLocationType();
+            if (t === 'warehouse') {
+                return document.getElementById('warehouse_id')?.value || '';
+            }
+            return document.getElementById('branch_id')?.value || '';
+        }
+
         async function loadProductsForBranch() {
-            const branchId = document.getElementById('branch_id')?.value;
-            if (!branchId) {
+            const locId = getSaleLocationIdForFetch();
+            if (!locId) {
                 products = [];
                 updateAllProductSelectors();
                 setProductsStatus('');
@@ -552,7 +612,11 @@
             try {
                 setProductsStatus('Memuat produk...');
                 const url = new URL(availableProductsUrl, window.location.origin);
-                url.searchParams.set('branch_id', branchId);
+                if (getSaleLocationType() === 'warehouse') {
+                    url.searchParams.set('warehouse_id', locId);
+                } else {
+                    url.searchParams.set('branch_id', locId);
+                }
                 const res = await fetch(url.toString(), {
                     headers: { 'Accept': 'application/json' }
                 });
@@ -624,13 +688,13 @@
         }
 
         async function loadSerialsForRow(row) {
-            const branchId = document.getElementById('branch_id')?.value;
+            const locId = getSaleLocationIdForFetch();
             const productIdInput = row.querySelector('.product-id-input');
             const serialSelect = row.querySelector('.serial-select');
             if (!serialSelect) return;
 
             const productId = productIdInput?.value;
-            if (!branchId || !productId) {
+            if (!locId || !productId) {
                 rowSerials.set(row, []);
                 rowUnits.set(row, []);
                 serialSelect.innerHTML = '';
@@ -640,7 +704,11 @@
 
             try {
                 const url = new URL(availableSerialsUrl, window.location.origin);
-                url.searchParams.set('branch_id', branchId);
+                if (getSaleLocationType() === 'warehouse') {
+                    url.searchParams.set('warehouse_id', locId);
+                } else {
+                    url.searchParams.set('branch_id', locId);
+                }
                 url.searchParams.set('product_id', productId);
                 const res = await fetch(url.toString(), {
                     headers: { 'Accept': 'application/json' }
@@ -702,18 +770,19 @@
         }
 
         async function loadFormDataForBranch() {
-            const branchId = document.getElementById('branch_id')?.value;
-            if (!branchId) {
+            const locId = getSaleLocationIdForFetch();
+            if (!locId) {
                 paymentMethods = [];
                 const custSel = document.getElementById('customer_id');
-                if (custSel) { custSel.innerHTML = '<option value="">' + i18n.pilihCabangDulu + '</option>'; }
+                if (custSel) { custSel.innerHTML = '<option value="">' + (i18n.pilihLokasiDulu || i18n.pilihCabangDulu) + '</option>'; }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
                 return;
             }
             try {
                 const url = new URL(formDataUrl, window.location.origin);
-                url.searchParams.set('location_type', 'branch');
-                url.searchParams.set('location_id', branchId);
+                const t = getSaleLocationType();
+                url.searchParams.set('location_type', t === 'warehouse' ? 'warehouse' : 'branch');
+                url.searchParams.set('location_id', locId);
                 const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
                 if (!res.ok) throw new Error('Fetch failed');
                 const data = await res.json();
@@ -738,6 +807,25 @@
             await loadProductsForBranch();
             await loadFormDataForBranch();
             document.querySelectorAll('.sale-item').forEach(row => loadSerialsForRow(row));
+        });
+        document.getElementById('warehouse_id')?.addEventListener('change', async function() {
+            await loadProductsForBranch();
+            await loadFormDataForBranch();
+            document.querySelectorAll('.sale-item').forEach(row => loadSerialsForRow(row));
+        });
+        document.querySelectorAll('.sale-loc-type-radio').forEach(function (el) {
+            el.addEventListener('change', async function() {
+                const v = this.value;
+                document.getElementById('wrap-branch-select')?.classList.toggle('hidden', v !== 'branch');
+                document.getElementById('wrap-warehouse-select')?.classList.toggle('hidden', v !== 'warehouse');
+                const bSel = document.getElementById('branch_id');
+                const wSel = document.getElementById('warehouse_id');
+                if (v === 'branch' && wSel) wSel.value = '';
+                if (v === 'warehouse' && bSel) bSel.value = '';
+                await loadProductsForBranch();
+                await loadFormDataForBranch();
+                document.querySelectorAll('.sale-item').forEach(row => loadSerialsForRow(row));
+            });
         });
 
         document.getElementById('sale-items')?.addEventListener('change', function(e) {

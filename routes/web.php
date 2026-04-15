@@ -277,7 +277,7 @@ Route::middleware('auth')->group(function () {
         ->name('purchases.cancel');
     Route::resource('purchases', PurchaseController::class)
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
-        ->only(['index', 'create', 'store', 'show']);
+        ->only(['index', 'create', 'store', 'show', 'edit', 'update']);
 
     Route::get('data-by-location/distributors', [\App\Http\Controllers\DataByLocationController::class, 'distributors'])
         ->name('data-by-location.distributors');
@@ -285,37 +285,37 @@ Route::middleware('auth')->group(function () {
         ->name('data-by-location.form-data');
 
     Route::get('sales/available-serials', [SaleController::class, 'availableSerials'])
-        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.available-serials');
     Route::get('sales/available-products', [SaleController::class, 'availableProducts'])
-        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.available-products');
     Route::post('sales/check-reusable-trade-in-serials', [SaleController::class, 'checkReusableTradeInSerials'])
-        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.check-reusable-trade-in-serials');
     Route::get('sales/trade-in-search-serial', [SaleController::class, 'searchTradeInSerial'])
-        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.trade-in-search-serial');
     Route::get('sales/export', [SaleController::class, 'export'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.export');
     Route::get('sales/export-pdf', [SaleController::class, 'exportPdf'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.export-pdf');
     Route::get('sales/{sale}/invoice', [SaleController::class, 'invoice'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('sales.invoice');
     Route::post('sales/{sale}/release', [SaleController::class, 'release'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('sales.release');
     Route::post('sales/{sale}/payment', [SaleController::class, 'storePayment'])
-        ->middleware('role:admin_cabang,kasir,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.store-payment');
     Route::post('sales/{sale}/cancel', [SaleController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('sales.cancel');
     Route::resource('sales', SaleController::class)
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->only(['index', 'create', 'store', 'show']);
     Route::resource('sales', SaleController::class)
         ->middleware('role:super_admin,admin_pusat')

@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Models\Purchase;
 use App\Models\Service;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class PurchaseRequest extends FormRequest
@@ -31,6 +32,10 @@ class PurchaseRequest extends FormRequest
             }
         }
         $this->merge(['payments' => $payments]);
+
+        if ($this->isMethod('PUT') || $this->isMethod('PATCH')) {
+            $this->merge(['payments' => []]);
+        }
     }
 
     private function parseRupiah(mixed $value): ?float
@@ -106,8 +111,16 @@ class PurchaseRequest extends FormRequest
 
     public function rules(): array
     {
+        $purchase = $this->route('purchase');
+        $purchaseId = $purchase instanceof Purchase ? $purchase->id : null;
+
         return [
-            'invoice_number' => ['nullable', 'string', 'max:100', 'unique:purchases,invoice_number'],
+            'invoice_number' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('purchases', 'invoice_number')->ignore($purchaseId),
+            ],
             'jenis_pembelian' => [
                 'required',
                 'string',

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Branch;
+use App\Models\Warehouse;
 use App\Models\CashFlow;
 use App\Models\ExpenseCategory;
 use App\Models\IncomeCategory;
@@ -33,7 +34,8 @@ class SaleService
      * @param  array<int, array{sku: string, serial_number: string, brand: string, series?: string, processor?: string, ram?: string, storage?: string, color?: string, specs?: string, category_id: int, trade_in_value: float}>  $tradeIns  Tukar tambah (laptop bekas)
      */
     public function createDraftSale(
-        int $branchId,
+        ?int $branchId,
+        ?int $warehouseId,
         array $items,
         string $saleDate,
         ?int $customerId = null,
@@ -45,14 +47,24 @@ class SaleService
         array $tradeIns = [],
         bool $allowSoldSerialReuse = false
     ): Sale {
+        if (($branchId === null) === ($warehouseId === null)) {
+            throw new InvalidArgumentException(__('Pilih cabang atau gudang untuk penjualan.'));
+        }
         if (empty($items)) {
             throw new InvalidArgumentException(__('Sale must have at least one item.'));
         }
 
-        $branch = Branch::findOrFail($branchId);
+        $locType = $branchId !== null ? Stock::LOCATION_BRANCH : Stock::LOCATION_WAREHOUSE;
+        $locId = $branchId !== null ? $branchId : (int) $warehouseId;
 
-        return DB::transaction(function () use ($branch, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse) {
-            [$details, $subTotal] = $this->buildDetails($items, (int) $branch->id);
+        if ($branchId !== null) {
+            Branch::findOrFail($branchId);
+        } else {
+            Warehouse::findOrFail((int) $warehouseId);
+        }
+
+        return DB::transaction(function () use ($branchId, $warehouseId, $locType, $locId, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse) {
+            [$details, $subTotal] = $this->buildDetails($items, $locType, $locId);
 
             $discountAmount = max(0, round($discountAmount, 2));
             $taxAmount = max(0, round($taxAmount, 2));
@@ -81,7 +93,8 @@ class SaleService
             $invoiceNumber = $this->generateInvoiceNumber();
             $sale = Sale::create([
                 'invoice_number' => $invoiceNumber,
-                'branch_id' => $branch->id,
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouseId,
                 'customer_id' => $customerId,
                 'user_id' => $userId ?? auth()->id(),
                 'total' => $grandTotal,
@@ -138,8 +151,8 @@ class SaleService
                     $product = Product::findOrFail($productId);
                     $this->stockMutationService->reserveUnits(
                         $product,
-                        Stock::LOCATION_BRANCH,
-                        (int) $branch->id,
+                        $locType,
+                        $locId,
                         $serialNumbers
                     );
                 }
@@ -169,7 +182,8 @@ class SaleService
      * @param  array<int, array{payment_method_id: int, amount: float, notes?: string|null}>  $payments
      */
     public function createReleasedSale(
-        int $branchId,
+        ?int $branchId,
+        ?int $warehouseId,
         array $items,
         string $saleDate,
         array $payments,
@@ -181,7 +195,7 @@ class SaleService
         array $tradeIns = [],
         bool $allowSoldSerialReuse = false
     ): Sale {
-        $sale = $this->createDraftSale($branchId, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse);
+        $sale = $this->createDraftSale($branchId, $warehouseId, $items, $saleDate, $customerId, $discountAmount, $taxAmount, $description, $userId, $payments, $tradeIns, $allowSoldSerialReuse);
 
         return $this->releaseSale($sale, $payments, $saleDate, $userId, $allowSoldSerialReuse);
     }
@@ -212,7 +226,7 @@ class SaleService
             // Release old reservations first (keep -> in_stock)
             $this->unreserveSaleUnits($sale, strict: false);
 
-            [$details, $subTotal] = $this->buildDetails($items, (int) $sale->branch_id);
+            [$details, $subTotal] = $this->buildDetails($items, $sale->stockLocationType(), $sale->stockLocationId());
 
             $discountAmount = max(0, round($discountAmount, 2));
             $taxAmount = max(0, round($taxAmount, 2));
@@ -290,8 +304,8 @@ class SaleService
                     $product = Product::findOrFail($productId);
                     $this->stockMutationService->reserveUnits(
                         $product,
-                        Stock::LOCATION_BRANCH,
-                        (int) $sale->branch_id,
+                        $sale->stockLocationType(),
+                        $sale->stockLocationId(),
                         $serialNumbers
                     );
                 }
@@ -327,9 +341,16 @@ class SaleService
             throw new InvalidArgumentException(__('Sale is already released.'));
         }
 
-        $branch = Branch::findOrFail($sale->branch_id);
+        if (! $sale->isWarehouseSale()) {
+            Branch::findOrFail((int) $sale->branch_id);
+        } else {
+            Warehouse::findOrFail((int) $sale->warehouse_id);
+        }
 
-        return DB::transaction(function () use ($sale, $branch, $payments, $saleDate, $userId, $allowSoldSerialReuse) {
+        $locType = $sale->stockLocationType();
+        $locId = $sale->stockLocationId();
+
+        return DB::transaction(function () use ($sale, $locType, $locId, $payments, $saleDate, $userId, $allowSoldSerialReuse) {
             $details = SaleDetail::where('sale_id', $sale->id)->get();
             if ($details->isEmpty()) {
                 throw new InvalidArgumentException(__('Invalid sale items.'));
@@ -371,23 +392,23 @@ class SaleService
                     // This keeps sellUnits() strict (only sells in_stock) and prevents other sales from selling kept units.
                     $this->stockMutationService->unreserveUnits(
                         $product,
-                        Stock::LOCATION_BRANCH,
-                        $branch->id,
+                        $locType,
+                        $locId,
                         $serialNumbers,
                         strict: true
                     );
                     $this->stockMutationService->sellUnits(
                         $product,
-                        Stock::LOCATION_BRANCH,
-                        $branch->id,
+                        $locType,
+                        $locId,
                         $serialNumbers,
                         Carbon::parse($saleDate)
                     );
                 } else {
                     $this->stockMutationService->reduceStock(
                         $product,
-                        Stock::LOCATION_BRANCH,
-                        $branch->id,
+                        $locType,
+                        $locId,
                         (int) $detail->quantity
                     );
                 }
@@ -415,7 +436,8 @@ class SaleService
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => $branch->id,
+                    'branch_id' => $sale->branch_id,
+                    'warehouse_id' => $sale->warehouse_id,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $sp->amount,
                     'description' => __('Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
@@ -467,8 +489,8 @@ class SaleService
                     'purchase_price' => $hpp,
                     'selling_price' => $hpp,
                     'is_active' => $isActive,
-                    'location_type' => Stock::LOCATION_BRANCH,
-                    'location_id' => (int) $branch->id,
+                    'location_type' => $locType,
+                    'location_id' => $locId,
                 ];
 
                 if ($existingSoldUnit) {
@@ -486,8 +508,8 @@ class SaleService
                         'user_id' => $userId ?? auth()->id(),
                         'harga_hpp' => $hpp,
                         'harga_jual' => $sellingPrice,
-                        'location_type' => Stock::LOCATION_BRANCH,
-                        'location_id' => (int) $branch->id,
+                        'location_type' => $locType,
+                        'location_id' => $locId,
                         'status' => $unitStatus,
                         'received_date' => $saleDate,
                         'sold_at' => null,
@@ -497,14 +519,14 @@ class SaleService
                     Stock::updateOrCreate(
                         [
                             'product_id' => $existingProduct->id,
-                            'location_type' => Stock::LOCATION_BRANCH,
-                            'location_id' => (int) $branch->id,
+                            'location_type' => $locType,
+                            'location_id' => $locId,
                         ],
                         ['quantity' => 0]
                     );
                 } else {
                     // Buat produk baru dari laptop tukar (SKU, brand, series, specs, kategori dari input; HPP = nilai tukar)
-                    // Lokasi mengikuti cabang penjualan
+                    // Lokasi mengikuti lokasi penjualan (cabang / gudang)
                     $sku = $this->ensureUniqueTradeInSku($tradeIn->sku);
                     $newProduct = Product::create(array_merge($productPayload, ['sku' => $sku]));
                     $tradeIn->update(['product_id' => $newProduct->id]);
@@ -514,16 +536,16 @@ class SaleService
                         'product_id' => $newProduct->id,
                         'user_id' => $userId,
                         'serial_number' => $tradeIn->serial_number,
-                        'location_type' => Stock::LOCATION_BRANCH,
-                        'location_id' => (int) $branch->id,
+                        'location_type' => $locType,
+                        'location_id' => $locId,
                         'status' => $unitStatus,
                         'received_date' => $saleDate,
                     ]);
                     Stock::updateOrCreate(
                         [
                             'product_id' => $newProduct->id,
-                            'location_type' => Stock::LOCATION_BRANCH,
-                            'location_id' => (int) $branch->id,
+                            'location_type' => $locType,
+                            'location_id' => $locId,
                         ],
                         ['quantity' => 0]
                     );
@@ -587,6 +609,7 @@ class SaleService
 
             CashFlow::create([
                 'branch_id' => $sale->branch_id,
+                'warehouse_id' => $sale->warehouse_id,
                 'type' => CashFlow::TYPE_IN,
                 'amount' => $amount,
                 'description' => __('Sale') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
@@ -750,6 +773,9 @@ class SaleService
         }
 
         return DB::transaction(function () use ($sale, $userId, $reason) {
+            $locType = $sale->stockLocationType();
+            $locId = $sale->stockLocationId();
+
             if ($sale->status === Sale::STATUS_OPEN) {
                 try {
                     $this->unreserveSaleUnits($sale, strict: false);
@@ -770,20 +796,20 @@ class SaleService
                     $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
                     if ($isSerialTracked && ! empty($serialNumbers)) {
                         ProductUnit::where('product_id', $productId)
-                            ->where('location_type', Stock::LOCATION_BRANCH)
-                            ->where('location_id', (int) $sale->branch_id)
+                            ->where('location_type', $locType)
+                            ->where('location_id', $locId)
                             ->whereIn('serial_number', $serialNumbers)
                             ->update([
                                 'status' => ProductUnit::STATUS_IN_STOCK,
                                 'sold_at' => null,
                             ]);
-                        $this->recalculateBranchStock($productId, (int) $sale->branch_id);
+                        $this->recalculateLocationStock($productId, $locType, $locId);
                     } else {
                         $stock = Stock::firstOrCreate(
                             [
                                 'product_id' => $productId,
-                                'location_type' => Stock::LOCATION_BRANCH,
-                                'location_id' => (int) $sale->branch_id,
+                                'location_type' => $locType,
+                                'location_id' => $locId,
                             ],
                             ['quantity' => 0]
                         );
@@ -806,6 +832,7 @@ class SaleService
                 $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
                 CashFlow::create([
                     'branch_id' => $sale->branch_id,
+                    'warehouse_id' => $sale->warehouse_id,
                     'type' => CashFlow::TYPE_OUT,
                     'amount' => $sp->amount,
                     'description' => __('Pengembalian dana pembatalan penjualan') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
@@ -830,8 +857,8 @@ class SaleService
                     ->when($ti->serial_number, fn ($q) => $q->where('serial_number', $ti->serial_number))
                     ->update(['status' => ProductUnit::STATUS_CANCEL]);
                 Stock::where('product_id', $ti->product_id)
-                    ->where('location_type', Stock::LOCATION_BRANCH)
-                    ->where('location_id', (int) $sale->branch_id)
+                    ->where('location_type', $locType)
+                    ->where('location_id', $locId)
                     ->update(['quantity' => 0]);
             }
 
@@ -847,22 +874,22 @@ class SaleService
         });
     }
 
-    private function recalculateBranchStock(int $productId, int $branchId): void
+    private function recalculateLocationStock(int $productId, string $locationType, int $locationId): void
     {
         $isSerialTracked = ProductUnit::where('product_id', $productId)->exists();
         if (! $isSerialTracked) {
             return;
         }
         $qty = ProductUnit::where('product_id', $productId)
-            ->where('location_type', Stock::LOCATION_BRANCH)
-            ->where('location_id', $branchId)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
             ->where('status', ProductUnit::STATUS_IN_STOCK)
             ->count();
         Stock::updateOrCreate(
             [
                 'product_id' => $productId,
-                'location_type' => Stock::LOCATION_BRANCH,
-                'location_id' => $branchId,
+                'location_type' => $locationType,
+                'location_id' => $locationId,
             ],
             ['quantity' => $qty]
         );
@@ -905,8 +932,8 @@ class SaleService
 
             $this->stockMutationService->unreserveUnits(
                 $product,
-                Stock::LOCATION_BRANCH,
-                (int) $sale->branch_id,
+                $sale->stockLocationType(),
+                $sale->stockLocationId(),
                 $serialNumbers,
                 $strict
             );
@@ -933,7 +960,7 @@ class SaleService
      * @param  array<int, array{product_id: int, quantity: int, price: float, serial_numbers?: array<int,string>}>  $items
      * @return array{0: array<int, array{product_id:int, quantity:int, price:float, hpp?: float, serial_numbers: array<int,string>}>, 1: float}
      */
-    private function buildDetails(array $items, int $branchId = 0): array
+    private function buildDetails(array $items, string $locationType, int $locationId = 0): array
     {
         $subTotal = 0.0;
         $details = [];
@@ -953,11 +980,11 @@ class SaleService
             $productId = (int) $item['product_id'];
 
             // Jika ada serial numbers, ambil HPP dari ProductUnit. Harga jual SELALU dari input user.
-            if (! empty($serialNumbers) && $branchId > 0) {
+            if (! empty($serialNumbers) && $locationId > 0) {
                 $units = ProductUnit::query()
                     ->where('product_id', $productId)
-                    ->where('location_type', Stock::LOCATION_BRANCH)
-                    ->where('location_id', $branchId)
+                    ->where('location_type', $locationType)
+                    ->where('location_id', $locationId)
                     ->whereIn('serial_number', $serialNumbers)
                     ->get(['serial_number', 'harga_hpp']);
 

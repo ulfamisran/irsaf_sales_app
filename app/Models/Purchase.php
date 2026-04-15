@@ -68,6 +68,27 @@ class Purchase extends Model
         return $this->status === self::STATUS_CANCELLED;
     }
 
+    /**
+     * Whether the purchase header and line items may be edited (no payments, not distribution-linked, etc.).
+     */
+    public function canBeEdited(): bool
+    {
+        if ($this->isCancelled()) {
+            return false;
+        }
+        if ($this->isDistribusiUnit()) {
+            return false;
+        }
+        if ($this->stock_mutation_id) {
+            return false;
+        }
+        if ((float) $this->total_paid > 0.02) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function isPaidOff(): bool
     {
         $total = (float) $this->total;

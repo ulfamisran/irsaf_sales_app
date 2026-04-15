@@ -18,6 +18,7 @@ class Sale extends Model
     protected $fillable = [
         'invoice_number',
         'branch_id',
+        'warehouse_id',
         'customer_id',
         'user_id',
         'total',
@@ -69,6 +70,26 @@ class Sale extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    public function isWarehouseSale(): bool
+    {
+        return $this->warehouse_id !== null;
+    }
+
+    public function stockLocationType(): string
+    {
+        return $this->isWarehouseSale() ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+    }
+
+    public function stockLocationId(): int
+    {
+        return $this->isWarehouseSale() ? (int) $this->warehouse_id : (int) $this->branch_id;
     }
 
     /**

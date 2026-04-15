@@ -13,7 +13,7 @@
 </head>
 <body>
     <p><strong>PENJUALAN DARI {{ $filterMeta['dateFrom'] ?? '-' }} - {{ $filterMeta['dateTo'] ?? '-' }}</strong></p>
-    <p><strong>CABANG: {{ $filterMeta['branchLine'] ?? '-' }}</strong></p>
+    <p><strong>{{ __('Lokasi') }}: {{ $filterMeta['branchLine'] ?? '-' }}</strong></p>
     <table>
         <thead>
             <tr>
@@ -24,7 +24,7 @@
                 <th>{{ __('Status Bayar') }}</th>
                 <th>{{ __('Nama Customer') }}</th>
                 <th>{{ __('User') }}</th>
-                <th>{{ __('Cabang') }}</th>
+                <th>{{ __('Lokasi') }}</th>
             </tr>
         </thead>
         <tbody>

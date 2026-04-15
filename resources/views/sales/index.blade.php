@@ -51,6 +51,15 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="min-w-[180px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                        <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach (($warehouses ?? collect()) as $w)
+                                <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     @elseif($filterLocked ?? false)
                     <div class="min-w-[180px]">
                         <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
@@ -133,7 +142,7 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pelanggan') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
@@ -148,7 +157,13 @@
                         @forelse ($sales as $sale)
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3">{{ $sale->invoice_number }}</td>
-                                <td class="px-4 py-3">{{ $sale->branch?->name }}</td>
+                                <td class="px-4 py-3">
+                                    @if ($sale->warehouse_id)
+                                        {{ __('Gudang') }}: {{ $sale->warehouse?->name ?? '-' }}
+                                    @else
+                                        {{ __('Cabang') }}: {{ $sale->branch?->name ?? '-' }}
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ $sale->customer?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $sale->sale_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">
