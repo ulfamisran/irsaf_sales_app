@@ -303,6 +303,9 @@ class PurchaseService
             $product = Product::findOrFail($detail['product_id']);
             $product->update(['is_active' => true]);
             $serialNumbers = $detail['serial_numbers'] ?? [];
+            $unitPrice = round((float) ($detail['unit_price'] ?? 0), 2);
+            $sellingPrice = round((float) ($product->selling_price ?? 0), 2);
+
             $this->stockMutationService->addStock(
                 $product,
                 $locationType,
@@ -311,8 +314,8 @@ class PurchaseService
                 $userId,
                 ! empty($serialNumbers) ? $serialNumbers : null,
                 $purchaseDate,
-                null,
-                null,
+                $unitPrice,
+                $sellingPrice,
                 $allowSoldSerialReuse
             );
 
@@ -356,7 +359,7 @@ class PurchaseService
                     ->get();
 
                 ProductUnit::whereIn('id', $units->pluck('id'))->update([
-                    'status' => ProductUnit::STATUS_CANCEL,
+                    'status' => ProductUnit::STATUS_NOT_IN_STOCK,
                 ]);
 
                 $this->stockMutationService->recalculateStockQuantityIfExists($product->id, $locationType, $locationId);
@@ -456,7 +459,7 @@ class PurchaseService
     }
 
     /**
-     * Cancel a purchase: mark units as cancel, deactivate products, refund payments via Cash In.
+     * Cancel a purchase: mark units as not_in_stock, deactivate products, refund payments via Cash In.
      */
     public function cancelPurchase(Purchase $purchase, ?int $userId = null): void
     {
@@ -487,7 +490,7 @@ class PurchaseService
                         ->get();
 
                     ProductUnit::whereIn('id', $units->pluck('id'))->update([
-                        'status' => ProductUnit::STATUS_CANCEL,
+                        'status' => ProductUnit::STATUS_NOT_IN_STOCK,
                     ]);
 
                     $this->stockMutationService->recalculateStockQuantityIfExists($product->id, $locationType, $locationId);

@@ -666,6 +666,11 @@ class PurchaseController extends Controller
         foreach ($existingUnits as $unit) {
             if ($unit->status === ProductUnit::STATUS_SOLD) {
                 $soldSerials[] = $unit->serial_number;
+            } elseif (in_array($unit->status, [
+                ProductUnit::STATUS_NOT_IN_STOCK,
+                ProductUnit::STATUS_CANCEL,
+            ], true)) {
+                continue;
             } else {
                 $blockedSerials[] = $unit->serial_number;
             }
@@ -690,6 +695,12 @@ class PurchaseController extends Controller
         $q = trim($validated['q']);
         $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q);
 
+        $reuseStatuses = [
+            ProductUnit::STATUS_SOLD,
+            ProductUnit::STATUS_NOT_IN_STOCK,
+            ProductUnit::STATUS_CANCEL,
+        ];
+
         $units = ProductUnit::query()
             ->with([
                 'product:id,category_id,sku,brand,series,processor,ram,storage,color,specs,purchase_price',
@@ -697,7 +708,15 @@ class PurchaseController extends Controller
                 'branch:id,name',
             ])
             ->where('serial_number', 'like', '%'.$escaped.'%')
-            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [ProductUnit::STATUS_SOLD])
+            ->whereIn('status', $reuseStatuses)
+            ->orderByRaw(
+                'CASE WHEN status = ? THEN 0 WHEN status IN (?, ?) THEN 1 ELSE 2 END',
+                [
+                    ProductUnit::STATUS_SOLD,
+                    ProductUnit::STATUS_NOT_IN_STOCK,
+                    ProductUnit::STATUS_CANCEL,
+                ]
+            )
             ->limit(20)
             ->get();
 

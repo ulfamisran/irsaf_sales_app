@@ -284,6 +284,7 @@ class IncomingGoodsController extends Controller
                 ProductUnit::STATUS_IN_RENT => 'Disewa',
                 ProductUnit::STATUS_INACTIVE => 'Nonaktif',
                 ProductUnit::STATUS_CANCEL => 'Dibatalkan',
+                ProductUnit::STATUS_NOT_IN_STOCK => 'Tidak di stok',
             ];
             foreach ($productUnits as $u) {
                 if ($u->location_type === Stock::LOCATION_WAREHOUSE) {

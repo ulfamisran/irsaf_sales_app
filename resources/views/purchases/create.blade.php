@@ -856,7 +856,7 @@
                         await Swal.fire({
                             icon: 'error',
                             title: 'Serial sudah dipakai',
-                            text: 'Serial berikut tidak bisa dipakai ulang karena bukan status SOLD: ' + blocked.join(', '),
+                            text: 'Serial berikut tidak bisa dipakai ulang (masih aktif / dipesan, dll.): ' + blocked.join(', '),
                         });
                         return;
                     }

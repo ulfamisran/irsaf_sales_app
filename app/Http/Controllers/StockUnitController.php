@@ -112,6 +112,7 @@ class StockUnitController extends Controller
             ProductUnit::STATUS_IN_RENT => __('In Rent'),
             ProductUnit::STATUS_INACTIVE => __('Inactive'),
             ProductUnit::STATUS_CANCEL => __('Cancel'),
+            ProductUnit::STATUS_NOT_IN_STOCK => __('Not in stock'),
         ];
 
         $inStockCounts = (clone $countBase)
@@ -271,6 +272,7 @@ class StockUnitController extends Controller
             ProductUnit::STATUS_IN_RENT => __('In Rent'),
             ProductUnit::STATUS_INACTIVE => __('Inactive'),
             ProductUnit::STATUS_CANCEL => __('Cancel'),
+            ProductUnit::STATUS_NOT_IN_STOCK => __('Not in stock'),
         ];
 
         $inStockCounts = (clone $countBase)
@@ -372,6 +374,9 @@ class StockUnitController extends Controller
             ProductUnit::STATUS_KEEP => __('Reserved'),
             ProductUnit::STATUS_SOLD => __('Sold'),
             ProductUnit::STATUS_IN_RENT => __('In Rent'),
+            ProductUnit::STATUS_INACTIVE => __('Inactive'),
+            ProductUnit::STATUS_CANCEL => __('Cancel'),
+            ProductUnit::STATUS_NOT_IN_STOCK => __('Not in stock'),
         ];
 
         $inStockCounts = (clone $countBase)

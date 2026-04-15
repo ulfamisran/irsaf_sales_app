@@ -29,6 +29,7 @@ class StockMutation extends Model
         'mutation_date',
         'notes',
         'serial_numbers',
+        'distribution_unit_snapshot',
         'user_id',
         'status',
         'cancel_date',
@@ -43,6 +44,7 @@ class StockMutation extends Model
             'biaya_distribusi_per_unit' => 'decimal:2',
             'mutation_date' => 'date',
             'cancel_date' => 'date',
+            'distribution_unit_snapshot' => 'array',
         ];
     }
 

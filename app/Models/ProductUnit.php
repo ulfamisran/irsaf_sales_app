@@ -24,6 +24,10 @@ class ProductUnit extends Model
     public const STATUS_IN_RENT = 'in_rent';
     public const STATUS_INACTIVE = 'inactive';
     public const STATUS_CANCEL = 'cancel';
+    /**
+     * Unit tidak dihitung sebagai stok tersedia (mis. setelah pembelian dibatalkan).
+     */
+    public const STATUS_NOT_IN_STOCK = 'not_in_stock';
 
     protected $fillable = [
         'product_id',

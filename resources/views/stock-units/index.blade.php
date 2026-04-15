@@ -206,7 +206,11 @@
                                     <td class="px-4 py-3 text-sm text-slate-700 text-right">{{ number_format($u->harga_hpp ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-4 py-3 text-sm text-slate-700 text-right">{{ number_format($u->harga_jual ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-4 py-3 text-sm text-slate-700">
-                                        <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800' }}">
+                                        <span class="px-2 py-1 rounded-lg text-xs font-medium @class([
+                                            'bg-emerald-100 text-emerald-800' => $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK,
+                                            'bg-amber-100 text-amber-900' => $u->status === \App\Models\ProductUnit::STATUS_NOT_IN_STOCK,
+                                            'bg-slate-100 text-slate-800' => ! in_array($u->status, [\App\Models\ProductUnit::STATUS_IN_STOCK, \App\Models\ProductUnit::STATUS_NOT_IN_STOCK], true),
+                                        ])">
                                             {{ $statusOptions[$u->status] ?? $u->status }}
                                         </span>
                                     </td>
