@@ -324,11 +324,19 @@
                         @endif
                     </div>
                     <div>
-                        <div class="inv-co-name">{{ $service->branch?->name ?? config('app.name', 'IRSAF') }}</div>
-                        @if ($service->branch?->address)
-                            <div class="inv-co-line">{{ $service->branch->address }}</div>
+                        @if(($service->location_type ?? 'branch') === 'warehouse')
+                            <div class="inv-co-name">{{ $service->warehouse?->name ?? config('app.name', 'IRSAF') }}</div>
+                            @if ($service->warehouse?->address)
+                                <div class="inv-co-line">{{ $service->warehouse->address }}</div>
+                            @endif
+                            <div class="inv-co-line">{{ __('Telepon') }}: {{ $service->warehouse?->phone ?? '-' }}</div>
+                        @else
+                            <div class="inv-co-name">{{ $service->branch?->name ?? config('app.name', 'IRSAF') }}</div>
+                            @if ($service->branch?->address)
+                                <div class="inv-co-line">{{ $service->branch->address }}</div>
+                            @endif
+                            <div class="inv-co-line">{{ __('Telepon') }}: {{ $service->branch?->phone ?? '-' }}</div>
                         @endif
-                        <div class="inv-co-line">{{ __('Telepon') }}: {{ $service->branch?->phone ?? '-' }}</div>
                     </div>
                 </div>
 

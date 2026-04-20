@@ -50,7 +50,16 @@
                         </div>
                     @endif
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <div><p class="text-sm text-gray-500">{{ __('Cabang') }}</p><p class="font-medium">{{ $service->branch?->name }}</p></div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Lokasi') }}</p>
+                            <p class="font-medium">
+                                @if(($service->location_type ?? 'branch') === 'warehouse')
+                                    <span class="text-xs text-amber-700">{{ __('Gudang') }}</span> {{ $service->warehouse?->name ?? '-' }}
+                                @else
+                                    <span class="text-xs text-indigo-700">{{ __('Cabang') }}</span> {{ $service->branch?->name ?? '-' }}
+                                @endif
+                            </p>
+                        </div>
                         <div><p class="text-sm text-gray-500">{{ __('Status') }}</p>
                             <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $service->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($service->status === 'cancel' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800') }}">
                                 {{ $service->status === 'cancel' ? __('Dibatalkan') : ($service->status === 'completed' ? __('Selesai') : __('Open')) }}

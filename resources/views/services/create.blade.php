@@ -29,21 +29,42 @@
                                     </label>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    @if($branches->count() === 1)
-                                        <x-locked-location label="{{ __('Cabang') }}" :value="__('Cabang') . ': ' . $branches->first()->name" />
-                                        <input type="hidden" id="branch_id" name="branch_id" value="{{ $branches->first()->id }}">
+                                    <x-input-label for="location_type" :value="__('Tipe Lokasi')" />
+                                    @php
+                                        $canChooseLocation = auth()->user()->isSuperAdmin();
+                                        $locType = old('location_type', $defaultLocationType ?? 'branch');
+                                    @endphp
+                                    @if($canChooseLocation)
+                                        <select id="location_type" name="location_type" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="branch" {{ $locType == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                                            <option value="warehouse" {{ $locType == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                        </select>
                                     @else
-                                        <x-input-label for="branch_id" :value="__('Cabang')" />
-                                        <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                            <option value="">{{ __('Pilih Cabang') }}</option>
-                                            @foreach ($branches as $branch)
-                                                <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
-                                            @endforeach
+                                        <input type="hidden" id="location_type" name="location_type" value="{{ $locType }}">
+                                        <x-text-input class="block mt-1 w-full bg-slate-100" type="text" :value="$locType === 'warehouse' ? __('Gudang') : __('Cabang')" disabled />
+                                    @endif
+                                </div>
+                                <div>
+                                    <x-input-label for="location_id" :value="__('Lokasi')" />
+                                    @php
+                                        $lockedBranch = !auth()->user()->isSuperAdmin() && ($branches->count() === 1) && $locType === 'branch';
+                                        $lockedWarehouse = !auth()->user()->isSuperAdmin() && ($warehouses->count() === 1) && $locType === 'warehouse';
+                                    @endphp
+                                    @if($lockedBranch)
+                                        <x-locked-location :value="__('Cabang') . ': ' . $branches->first()->name" />
+                                        <input type="hidden" id="branch_id" name="branch_id" value="{{ $branches->first()->id }}">
+                                    @elseif($lockedWarehouse)
+                                        <x-locked-location :value="__('Gudang') . ': ' . $warehouses->first()->name" />
+                                        <input type="hidden" id="warehouse_id" name="warehouse_id" value="{{ $warehouses->first()->id }}">
+                                    @else
+                                        <select id="location_id" name="{{ $locType === 'warehouse' ? 'warehouse_id' : 'branch_id' }}" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                            <option value="">{{ __('Pilih Lokasi') }}</option>
                                         </select>
                                     @endif
                                     <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
                                 </div>
                                 <div>
                                     <x-input-label for="entry_date" :value="__('Tanggal Masuk')" />
@@ -165,22 +186,43 @@
         let paymentIndex = 0;
         const formDataUrl = @json(route('data-by-location.form-data', [], false));
         const appBase = @json(request()->getBaseUrl());
+        const branchesList = @json(($branches ?? collect())->map(fn($b) => ['id' => $b->id, 'name' => $b->name])->values());
+        const warehousesList = @json(($warehouses ?? collect())->map(fn($w) => ['id' => $w->id, 'name' => $w->name])->values());
+        const defaultLocationType = @json($defaultLocationType ?? 'branch');
+        const defaultLocationId = @json($defaultLocationId ?? null);
 
-        async function loadFormDataForBranch() {
-            const branchId = document.getElementById('branch_id')?.value;
-            if (!branchId) {
+        function updateLocationSelect() {
+            const locTypeSel = document.getElementById('location_type');
+            const locIdSel = document.getElementById('location_id');
+            if (!locIdSel || !locTypeSel) return;
+            const type = locTypeSel.value;
+            locIdSel.name = type === 'warehouse' ? 'warehouse_id' : 'branch_id';
+            const options = type === 'warehouse' ? warehousesList : branchesList;
+            locIdSel.innerHTML = '<option value="">' + @json(__('Pilih Lokasi')) + '</option>' +
+                options.map(o => '<option value="' + o.id + '">' + o.name + '</option>').join('');
+            if (defaultLocationId && type === defaultLocationType) {
+                locIdSel.value = String(defaultLocationId);
+            }
+        }
+
+        async function loadFormDataForLocation() {
+            const locationType = document.getElementById('location_type')?.value || 'branch';
+            const locationId = document.getElementById('location_id')?.value
+                || document.getElementById('branch_id')?.value
+                || document.getElementById('warehouse_id')?.value;
+            if (!locationId) {
                 paymentMethods = [];
                 saldoMapBranch = {};
                 const custSel = document.getElementById('customer_id');
-                if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih cabang dulu')) + '</option>';
+                if (custSel) custSel.innerHTML = '<option value="">' + @json(__('Pilih lokasi dulu')) + '</option>';
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih metode</option>'; });
                 document.querySelectorAll('#material-rows select[name*="[product_id]"]').forEach(sel => { sel.innerHTML = '<option value="">Pilih produk in-stock</option>'; });
                 return;
             }
             try {
                 const url = new URL(appBase + formDataUrl, window.location.origin);
-                url.searchParams.set('location_type', 'branch');
-                url.searchParams.set('location_id', branchId);
+                url.searchParams.set('location_type', locationType);
+                url.searchParams.set('location_id', locationId);
                 const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
                 if (!res.ok) throw new Error('Fetch failed');
                 const data = await res.json();
@@ -192,7 +234,7 @@
                     label: p.label || '',
                     stock_qty: Number(p.stock_qty || 0),
                 }));
-                saldoMapBranch[branchId] = data.saldo_per_pm || {};
+                saldoMapBranch[locationId] = data.saldo_per_pm || {};
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
@@ -205,11 +247,23 @@
                     if (oldVal && paymentMethods.some(m => m.id == oldVal)) sel.value = oldVal;
                 });
                 if (typeof refreshMaterialProductOptions === 'function') refreshMaterialProductOptions();
-            } catch (e) { console.error('loadFormDataForBranch failed', e); }
+            } catch (e) { console.error('loadFormDataForLocation failed', e); }
         }
 
-        document.getElementById('branch_id')?.addEventListener('change', loadFormDataForBranch);
-        if (document.getElementById('branch_id')?.value) loadFormDataForBranch();
+        document.getElementById('location_type')?.addEventListener('change', function() {
+            updateLocationSelect();
+            loadFormDataForLocation();
+        });
+        document.getElementById('location_id')?.addEventListener('change', loadFormDataForLocation);
+        document.getElementById('branch_id')?.addEventListener('change', loadFormDataForLocation);
+        document.getElementById('warehouse_id')?.addEventListener('change', loadFormDataForLocation);
+
+        if (document.getElementById('location_id')) {
+            updateLocationSelect();
+            loadFormDataForLocation();
+        } else if (document.getElementById('branch_id')?.value || document.getElementById('warehouse_id')?.value) {
+            loadFormDataForLocation();
+        }
 
         function toggleReleaseSection() {
             const isRelease = document.getElementById('status_release')?.checked;
@@ -235,9 +289,9 @@
             return '<option value="">Pilih metode</option>' + paymentMethods.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
         }
         function currentBranchId() {
-            const branchSelect = document.getElementById('branch_id');
+            const branchSelect = document.getElementById('branch_id') || document.getElementById('location_id');
             if (branchSelect && branchSelect.value) return String(branchSelect.value);
-            if (branchSelect && branchSelect.options.length === 1) return String(branchSelect.options[0].value);
+            if (branchSelect && branchSelect.options && branchSelect.options.length === 1) return String(branchSelect.options[0].value);
             return '';
         }
         function materialCategoryOptionsHtml(selectedCategoryId = '') {
@@ -417,7 +471,9 @@
         }
         document.getElementById('add-material')?.addEventListener('click', () => addMaterialRow());
         refreshPaymentSum();
+        document.getElementById('location_id')?.addEventListener('change', refreshMaterialProductOptions);
         document.getElementById('branch_id')?.addEventListener('change', refreshMaterialProductOptions);
+        document.getElementById('warehouse_id')?.addEventListener('change', refreshMaterialProductOptions);
         refreshMaterialProductOptions();
 
         const customerSelect = document.getElementById('customer_id');

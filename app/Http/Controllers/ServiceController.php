@@ -39,7 +39,7 @@ class ServiceController extends Controller
     {
         $user = $request->user();
 
-        $query = Service::with(['branch', 'user', 'customer'])
+        $query = Service::with(['branch', 'warehouse', 'user', 'customer'])
             ->orderByDesc('entry_date')
             ->orderByDesc('id');
 
@@ -54,7 +54,7 @@ class ServiceController extends Controller
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->whereRaw('1 = 0');
+                $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
                 $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
@@ -63,8 +63,12 @@ class ServiceController extends Controller
             }
         } else {
             $canFilterLocation = true;
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
+            if ($request->filled('location_type')) {
+                if ($request->location_type === 'warehouse' && $request->filled('warehouse_id')) {
+                    $query->where('warehouse_id', $request->warehouse_id);
+                } elseif ($request->location_type === 'branch' && $request->filled('branch_id')) {
+                    $query->where('branch_id', $request->branch_id);
+                }
             }
         }
         if ($request->filled('date_from')) {
@@ -116,17 +120,16 @@ class ServiceController extends Controller
             ->groupBy('service_payments.payment_method_id')
             ->pluck('total', 'service_payments.payment_method_id');
         $services = $query->paginate(20)->withQueryString();
-        $branches = $user->isSuperAdminOrAdminPusat()
-            ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
-        return view('services.index', compact('services', 'branches', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
+        return view('services.index', compact('services', 'branches', 'warehouses', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalService', 'totalMaterialExpense', 'totalServiceNet', 'paymentMethods', 'paymentMethodTotals'));
     }
 
     public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
-        $query = Service::with(['branch', 'user', 'customer', 'payments', 'serviceMaterials'])
+        $query = Service::with(['branch', 'warehouse', 'user', 'customer', 'payments', 'serviceMaterials'])
             ->orderByDesc('entry_date')
             ->orderByDesc('id');
         $branchLine = __('Semua');
@@ -135,15 +138,21 @@ class ServiceController extends Controller
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->whereRaw('1 = 0');
+                $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
-                $b = Branch::find($request->branch_id);
-                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            if ($request->filled('location_type')) {
+                if ($request->location_type === 'warehouse' && $request->filled('warehouse_id')) {
+                    $query->where('warehouse_id', $request->warehouse_id);
+                    $w = Warehouse::find($request->warehouse_id);
+                    $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+                } elseif ($request->location_type === 'branch' && $request->filled('branch_id')) {
+                    $query->where('branch_id', $request->branch_id);
+                    $b = Branch::find($request->branch_id);
+                    $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+                }
             }
         }
         if ($request->filled('date_from')) {
@@ -164,9 +173,14 @@ class ServiceController extends Controller
             });
         }
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-            $b = Branch::find($user->branch_id);
-            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $b = Branch::find($user->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $w = Warehouse::find($user->warehouse_id);
+                $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+            }
         }
 
         $services = $query->where('status', '!=', Service::STATUS_CANCEL)->get();
@@ -186,7 +200,7 @@ class ServiceController extends Controller
     public function exportPdf(Request $request)
     {
         $user = $request->user();
-        $query = Service::with(['branch', 'user', 'customer', 'payments', 'serviceMaterials'])
+        $query = Service::with(['branch', 'warehouse', 'user', 'customer', 'payments', 'serviceMaterials'])
             ->orderByDesc('entry_date')
             ->orderByDesc('id');
         $branchLine = __('Semua');
@@ -195,15 +209,21 @@ class ServiceController extends Controller
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
-                $query->whereRaw('1 = 0');
+                $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
-            if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->branch_id);
-                $b = Branch::find($request->branch_id);
-                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            if ($request->filled('location_type')) {
+                if ($request->location_type === 'warehouse' && $request->filled('warehouse_id')) {
+                    $query->where('warehouse_id', $request->warehouse_id);
+                    $w = Warehouse::find($request->warehouse_id);
+                    $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+                } elseif ($request->location_type === 'branch' && $request->filled('branch_id')) {
+                    $query->where('branch_id', $request->branch_id);
+                    $b = Branch::find($request->branch_id);
+                    $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+                }
             }
         }
         if ($request->filled('date_from')) {
@@ -224,9 +244,14 @@ class ServiceController extends Controller
             });
         }
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
-            $b = Branch::find($user->branch_id);
-            $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $b = Branch::find($user->branch_id);
+                $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $w = Warehouse::find($user->warehouse_id);
+                $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
+            }
         }
 
         $services = $query->where('status', '!=', Service::STATUS_CANCEL)->get();
@@ -245,21 +270,39 @@ class ServiceController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
+        if (! $user->isSuperAdmin() && ! $user->branch_id && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
         $branches = $user->isSuperAdmin()
             ? Branch::orderBy('name')->get()
-            : Branch::whereKey($user->branch_id)->get();
+            : ($user->branch_id ? Branch::whereKey($user->branch_id)->get() : collect());
+        $warehouses = $user->isSuperAdmin()
+            ? Warehouse::orderBy('name')->get()
+            : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
 
-        $branchIdForData = $user->isSuperAdmin() ? null : (int) $user->branch_id;
+        $defaultLocationType = 'branch';
+        $defaultLocationId = null;
+        if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            $defaultLocationType = 'warehouse';
+            $defaultLocationId = $user->warehouse_id;
+        } elseif ($user->branch_id) {
+            $defaultLocationType = 'branch';
+            $defaultLocationId = $user->branch_id;
+        }
+
+        $branchIdForData = $defaultLocationType === 'branch' ? $defaultLocationId : null;
+        $warehouseIdForData = $defaultLocationType === 'warehouse' ? $defaultLocationId : null;
         $customers = $branchIdForData
             ? Customer::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
-            : collect();
-        $paymentMethods = $branchIdForData
-            ? PaymentMethod::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening'])
-            : collect();
+            : ($warehouseIdForData
+                ? Customer::query()->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
+                : collect());
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchIdForData, $warehouseIdForData)
+            ->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $materialProducts = $branchIdForData
             ? $this->getInStockProductsForBranch($branchIdForData)
             : collect();
@@ -267,19 +310,31 @@ class ServiceController extends Controller
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
 
-        return view('services.create', compact('branches', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
+        return view('services.create', compact('branches', 'warehouses', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts', 'defaultLocationType', 'defaultLocationId'));
     }
 
     public function store(ServiceRequest $request): RedirectResponse
     {
         try {
             $user = $request->user();
-            $branchId = $user->isSuperAdmin()
-                ? (int) $request->branch_id
-                : (int) $user->branch_id;
+            $locationType = $request->input('location_type', 'branch');
+            $branchId = null;
+            $warehouseId = null;
 
-            if (! $branchId) {
-                abort(403, __('Branch is required.'));
+            if ($locationType === 'warehouse') {
+                $warehouseId = $user->isSuperAdmin()
+                    ? (int) $request->warehouse_id
+                    : (int) $user->warehouse_id;
+                if (! $warehouseId) {
+                    abort(403, __('Warehouse is required.'));
+                }
+            } else {
+                $branchId = $user->isSuperAdmin()
+                    ? (int) $request->branch_id
+                    : (int) $user->branch_id;
+                if (! $branchId) {
+                    abort(403, __('Branch is required.'));
+                }
             }
 
             $customerId = $this->resolveCustomerId($request);
@@ -302,7 +357,9 @@ class ServiceController extends Controller
                 $request->description,
                 $user->id,
                 $materialsTotal,
-                $status
+                $status,
+                $locationType,
+                $warehouseId
             );
 
             if ($isRelease && is_array($materialsInput) && ! empty($materialsInput)) {
@@ -319,15 +376,21 @@ class ServiceController extends Controller
     public function show(Service $service): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($service->location_type === 'warehouse') {
+                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
+        $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
-            ->forLocation($service->branch_id, null)
+            ->forLocation($service->branch_id, $service->warehouse_id)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
@@ -347,8 +410,14 @@ class ServiceController extends Controller
         if (! $canEdit) {
             abort(403, __('Unauthorized.'));
         }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($service->location_type === 'warehouse') {
+                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
         }
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
@@ -356,7 +425,10 @@ class ServiceController extends Controller
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
-            : Branch::whereKey($user->branch_id)->get();
+            : ($user->branch_id ? Branch::whereKey($user->branch_id)->get() : collect());
+        $warehouses = $user->isSuperAdminOrAdminPusat()
+            ? Warehouse::orderBy('name')->get()
+            : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
 
         $customers = Customer::query()
             ->where('is_active', true)
@@ -366,19 +438,21 @@ class ServiceController extends Controller
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
-            ->forLocation($service->branch_id, null)
+            ->forLocation($service->branch_id, $service->warehouse_id)
             ->orderBy('jenis_pembayaran')
             ->orderBy('nama_bank')
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
-        $materialProducts = $this->getInStockProductsForBranch((int) $service->branch_id);
+        $materialProducts = $service->branch_id
+            ? $this->getInStockProductsForBranch((int) $service->branch_id)
+            : collect();
 
         $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
 
-        return view('services.edit', compact('service', 'branches', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
+        return view('services.edit', compact('service', 'branches', 'warehouses', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
     }
 
     public function update(ServiceRequest $request, Service $service): RedirectResponse
@@ -607,11 +681,17 @@ class ServiceController extends Controller
     public function invoice(Service $service): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($service->location_type === 'warehouse') {
+                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
+                    abort(403, __('Unauthorized.'));
+                }
+            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
         }
 
-        $service->load(['branch', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
+        $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         return view('services.invoice', compact('service'));
     }
@@ -829,8 +909,8 @@ class ServiceController extends Controller
         }
 
         CashFlow::create([
-            'branch_id' => $service->branch_id,
-            'warehouse_id' => null,
+            'branch_id' => $service->branch_id ?: null,
+            'warehouse_id' => $service->warehouse_id ?: null,
             'type' => CashFlow::TYPE_OUT,
             'amount' => $amount,
             'description' => 'Pembelian Sparepart User (SERVICE) - ' . $service->invoice_number . ' - ' . $material->name,

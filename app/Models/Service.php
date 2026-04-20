@@ -22,9 +22,14 @@ class Service extends Model
     public const PAYMENT_BELUM_LUNAS = 'belum_lunas';
     public const PAYMENT_LUNAS = 'lunas';
 
+    public const LOCATION_BRANCH = 'branch';
+    public const LOCATION_WAREHOUSE = 'warehouse';
+
     protected $fillable = [
         'invoice_number',
         'branch_id',
+        'location_type',
+        'warehouse_id',
         'user_id',
         'customer_id',
         'laptop_type',
@@ -59,6 +64,11 @@ class Service extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
     }
 
     public function user(): BelongsTo

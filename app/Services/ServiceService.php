@@ -28,7 +28,7 @@ class ServiceService
      * Status release: wajib pembayaran lengkap.
      */
     public function create(
-        int $branchId,
+        ?int $branchId,
         ?int $customerId,
         string $laptopType,
         ?string $laptopDetail,
@@ -40,7 +40,9 @@ class ServiceService
         ?string $description = null,
         ?int $userId = null,
         float $materialsTotalPrice = 0.0,
-        string $status = 'open'
+        string $status = 'open',
+        string $locationType = 'branch',
+        ?int $warehouseId = null
     ): Service {
         $isRelease = $status === 'release';
 
@@ -68,11 +70,15 @@ class ServiceService
             );
         }
 
-        $branch = Branch::findOrFail($branchId);
+        $branch = $branchId ? Branch::find($branchId) : null;
+        if ($locationType === 'branch' && ! $branch) {
+            throw new InvalidArgumentException(__('Cabang tidak ditemukan.'));
+        }
         $targetStatus = $isRelease ? Service::STATUS_COMPLETED : Service::STATUS_OPEN;
 
         return DB::transaction(function () use (
             $branch,
+            $branchId,
             $customerId,
             $laptopType,
             $laptopDetail,
@@ -85,14 +91,18 @@ class ServiceService
             $totalPrice,
             $description,
             $userId,
-            $targetStatus
+            $targetStatus,
+            $locationType,
+            $warehouseId
         ) {
             $invoiceNumber = $this->generateInvoiceNumber();
             $isPaidOff = $targetStatus === Service::STATUS_COMPLETED && $paymentSum >= $totalPrice - 0.02;
 
             $service = Service::create([
                 'invoice_number' => $invoiceNumber,
-                'branch_id' => $branch->id,
+                'location_type' => $locationType,
+                'branch_id' => $branchId ?: null,
+                'warehouse_id' => $warehouseId ?: null,
                 'user_id' => $userId ?? auth()->id(),
                 'customer_id' => $customerId,
                 'laptop_type' => $laptopType,
@@ -128,7 +138,8 @@ class ServiceService
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => $branch->id,
+                    'branch_id' => $branchId ?: null,
+                    'warehouse_id' => $warehouseId ?: null,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $sp->amount,
                     'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
@@ -190,7 +201,7 @@ class ServiceService
             throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi total service.'));
         }
 
-        $branch = Branch::findOrFail($service->branch_id);
+        $branch = $service->branch_id ? Branch::find($service->branch_id) : null;
         $isPaidOff = $markAsReleased && $paymentSum >= $totalPrice - 0.02;
 
         return DB::transaction(function () use (
@@ -255,7 +266,8 @@ class ServiceService
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => $branch->id,
+                    'branch_id' => $service->branch_id ?: null,
+                    'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $sp->amount,
                     'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
@@ -300,7 +312,6 @@ class ServiceService
             throw new InvalidArgumentException(__('Nominal pembayaran minimal Rp 0,01.'));
         }
 
-        $branch = Branch::findOrFail($service->branch_id);
         $totalPrice = (float) $service->total_service_price;
         $currentPaid = (float) $service->total_paid;
         $totalPaid = $currentPaid + $newSum;
@@ -313,7 +324,6 @@ class ServiceService
 
         return DB::transaction(function () use (
             $service,
-            $branch,
             $payments,
             $newSum,
             $totalPaid,
@@ -347,7 +357,8 @@ class ServiceService
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
                 CashFlow::create([
-                    'branch_id' => $branch->id,
+                    'branch_id' => $service->branch_id ?: null,
+                    'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $amt,
                     'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
@@ -476,7 +487,8 @@ class ServiceService
                 $pmId = (int) ($src->payment_method_id ?? 0);
                 $pmLabel = $src->label ?? __('Payment');
                 CashFlow::create([
-                    'branch_id' => $service->branch_id,
+                    'branch_id' => $service->branch_id ?: null,
+                    'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_OUT,
                     'amount' => $amt,
                     'description' => __('Pengembalian dana pembatalan service') . ' ' . $service->invoice_number . ' - ' . $pmLabel,
@@ -511,7 +523,8 @@ class ServiceService
                     continue;
                 }
                 CashFlow::create([
-                    'branch_id' => $service->branch_id,
+                    'branch_id' => $service->branch_id ?: null,
+                    'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_IN,
                     'amount' => $amount,
                     'description' => __('Pembatalan Service') . ' - ' . __('Retur Pembelian material') . ' ' . $service->invoice_number . ' - ' . ($mat->name ?? '-'),

@@ -516,26 +516,26 @@ class FinanceController extends Controller
             [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
         }
 
-        // Branch IN from sales + service: semua pemasukan tanpa status, dikurangi yang cancel
-        // (sale_payments/service_payments dari transaksi cancel sudah dihapus saat cancel)
         $salePayments = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
             ->join('payment_methods', 'sale_payments.payment_method_id', '=', 'payment_methods.id')
             ->where('sales.status', '!=', Sale::STATUS_CANCEL)
-            ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+            ->when($branchId && ! $warehouseId, fn ($q) => $q->where('sales.branch_id', $branchId)->whereNull('sales.warehouse_id'))
+            ->when($warehouseId, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('sales.branch_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(sale_payments.amount) as total')
-            ->groupBy('sales.branch_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->selectRaw('sales.branch_id, sales.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(sale_payments.amount) as total')
+            ->groupBy('sales.branch_id', 'sales.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
             ->get();
 
         $servicePayments = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
             ->join('payment_methods', 'service_payments.payment_method_id', '=', 'payment_methods.id')
             ->where('services.status', '!=', Service::STATUS_CANCEL)
-            ->when($branchId, fn ($q) => $q->where('services.branch_id', $branchId))
+            ->when($branchId && ! $warehouseId, fn ($q) => $q->where('services.branch_id', $branchId)->whereNull('services.warehouse_id'))
+            ->when($warehouseId, fn ($q) => $q->where('services.warehouse_id', $warehouseId))
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('services.branch_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(service_payments.amount) as total')
-            ->groupBy('services.branch_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->selectRaw('services.branch_id, services.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(service_payments.amount) as total')
+            ->groupBy('services.branch_id', 'services.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
             ->get();
 
         // CashFlow IN/OUT (manual + rental + retur pembelian material saat batal service), grouped by branch_id/warehouse_id and payment method
@@ -629,25 +629,43 @@ class FinanceController extends Controller
         }
 
         foreach ($salePayments as $row) {
-            $bid = $row->branch_id;
             $key = $keyFromRow($row);
             $allKeys[$key] = true;
-            if (! isset($branchTotals[$bid])) {
-                $branchTotals[$bid] = [];
+            if ($row->warehouse_id) {
+                $wid = $row->warehouse_id;
+                if (! isset($warehouseTotals[$wid])) {
+                    $warehouseTotals[$wid] = [];
+                }
+                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + (float) $row->total;
+                $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
+            } else {
+                $bid = $row->branch_id;
+                if (! isset($branchTotals[$bid])) {
+                    $branchTotals[$bid] = [];
+                }
+                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
+                $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
             }
-            $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
-            $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
         }
 
         foreach ($servicePayments as $row) {
-            $bid = $row->branch_id;
             $key = $keyFromRow($row);
             $allKeys[$key] = true;
-            if (! isset($branchTotals[$bid])) {
-                $branchTotals[$bid] = [];
+            if ($row->warehouse_id) {
+                $wid = $row->warehouse_id;
+                if (! isset($warehouseTotals[$wid])) {
+                    $warehouseTotals[$wid] = [];
+                }
+                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + (float) $row->total;
+                $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
+            } else {
+                $bid = $row->branch_id;
+                if (! isset($branchTotals[$bid])) {
+                    $branchTotals[$bid] = [];
+                }
+                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
+                $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
             }
-            $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
-            $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
         }
 
         foreach ($cashFlowInByPm as $row) {
@@ -941,44 +959,50 @@ class FinanceController extends Controller
 
         $transactions = collect();
 
-        if (! $warehouseId) {
-            $salePaymentsQuery = DB::table('sale_payments')
-                ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                ->where('sales.status', '!=', Sale::STATUS_CANCEL)
-                ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
-                ->whereIn('sale_payments.payment_method_id', $paymentMethodIds)
-                ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
-            $salePaymentsDetail = $salePaymentsQuery->selectRaw('sales.sale_date as transaction_date, sales.invoice_number, sale_payments.amount')->get();
+        $salePaymentsQuery = DB::table('sale_payments')
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->whereIn('sale_payments.payment_method_id', $paymentMethodIds)
+            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
+        if ($warehouseId) {
+            $salePaymentsQuery->where('sales.warehouse_id', $warehouseId);
+        } elseif ($branchId) {
+            $salePaymentsQuery->where('sales.branch_id', $branchId)->whereNull('sales.warehouse_id');
+        }
+        $salePaymentsDetail = $salePaymentsQuery->selectRaw('sales.sale_date as transaction_date, sales.invoice_number, sale_payments.amount')->get();
 
-            foreach ($salePaymentsDetail as $row) {
-                $transactions->push((object) [
-                    'transaction_date' => $row->transaction_date,
-                    'reference' => $row->invoice_number,
-                    'description' => 'Penjualan ' . $row->invoice_number,
-                    'amount' => (float) $row->amount,
-                    'type' => 'IN',
-                    'source' => 'Penjualan',
-                ]);
-            }
+        foreach ($salePaymentsDetail as $row) {
+            $transactions->push((object) [
+                'transaction_date' => $row->transaction_date,
+                'reference' => $row->invoice_number,
+                'description' => 'Penjualan ' . $row->invoice_number,
+                'amount' => (float) $row->amount,
+                'type' => 'IN',
+                'source' => 'Penjualan',
+            ]);
+        }
 
-            $servicePaymentsQuery = DB::table('service_payments')
-                ->join('services', 'service_payments.service_id', '=', 'services.id')
-                ->where('services.status', '!=', Service::STATUS_CANCEL)
-                ->when($branchId, fn ($q) => $q->where('services.branch_id', $branchId))
-                ->whereIn('service_payments.payment_method_id', $paymentMethodIds)
-                ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]));
-            $servicePaymentsDetail = $servicePaymentsQuery->selectRaw('COALESCE(services.exit_date, services.entry_date) as transaction_date, services.invoice_number, service_payments.amount')->get();
+        $servicePaymentsQuery = DB::table('service_payments')
+            ->join('services', 'service_payments.service_id', '=', 'services.id')
+            ->where('services.status', '!=', Service::STATUS_CANCEL)
+            ->whereIn('service_payments.payment_method_id', $paymentMethodIds)
+            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]));
+        if ($warehouseId) {
+            $servicePaymentsQuery->where('services.warehouse_id', $warehouseId);
+        } elseif ($branchId) {
+            $servicePaymentsQuery->where('services.branch_id', $branchId)->whereNull('services.warehouse_id');
+        }
+        $servicePaymentsDetail = $servicePaymentsQuery->selectRaw('COALESCE(services.exit_date, services.entry_date) as transaction_date, services.invoice_number, service_payments.amount')->get();
 
-            foreach ($servicePaymentsDetail as $row) {
-                $transactions->push((object) [
-                    'transaction_date' => $row->transaction_date,
-                    'reference' => $row->invoice_number,
-                    'description' => 'Service Laptop ' . $row->invoice_number,
-                    'amount' => (float) $row->amount,
-                    'type' => 'IN',
-                    'source' => 'Service',
-                ]);
-            }
+        foreach ($servicePaymentsDetail as $row) {
+            $transactions->push((object) [
+                'transaction_date' => $row->transaction_date,
+                'reference' => $row->invoice_number,
+                'description' => 'Service Laptop ' . $row->invoice_number,
+                'amount' => (float) $row->amount,
+                'type' => 'IN',
+                'source' => 'Service',
+            ]);
         }
 
         $cashFlowQuery = CashFlow::with('expenseCategory')

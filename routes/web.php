@@ -353,13 +353,13 @@ Route::middleware('auth')->group(function () {
         ->only(['edit', 'update']);
 
     Route::get('services/{service}/invoice', [ServiceController::class, 'invoice'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('services.invoice');
     Route::get('services/export', [ServiceController::class, 'export'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('services.export');
     Route::get('services/export-pdf', [ServiceController::class, 'exportPdf'])
-        ->middleware('role:admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('services.export-pdf');
     Route::post('services/{service}/add-payment', [ServiceController::class, 'addPayment'])
         ->middleware('role:admin_cabang,kasir')
@@ -380,10 +380,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:super_admin,admin_pusat')
         ->name('services.cancel');
     Route::resource('services', ServiceController::class)
-        ->middleware('role:admin_cabang,kasir')
-        ->only(['index', 'create', 'store', 'show']);
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
+        ->only(['index', 'create', 'store']);
     Route::resource('services', ServiceController::class)
-        ->middleware('role:super_admin,admin_pusat,admin_cabang,kasir')
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
+        ->only(['show']);
+    Route::resource('services', ServiceController::class)
+        ->middleware('role:super_admin,admin_pusat,admin_cabang,kasir,admin_gudang')
         ->only(['edit', 'update']);
 
     Route::get('debts', [DebtController::class, 'index'])

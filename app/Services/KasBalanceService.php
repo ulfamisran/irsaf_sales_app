@@ -79,8 +79,7 @@ class KasBalanceService
 
     /**
      * Hitung saldo per payment_method_id.
-     * Untuk branch: sale_payments + service_payments (seluruh transaksi non-cancel) + cash_flows IN - cash_flows OUT.
-     * Untuk warehouse: cash_flows saja (tidak ada sale/service di gudang).
+     * sale_payments + service_payments (seluruh transaksi non-cancel) + cash_flows IN - cash_flows OUT.
      * Konsisten dengan Monitoring Kas.
      *
      * @return array<int, float> [payment_method_id => saldo]
@@ -89,35 +88,35 @@ class KasBalanceService
     {
         $totals = [];
 
-        if ($locationType === 'branch') {
-            $salePayments = DB::table('sale_payments')
-                ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                ->where('sales.status', '!=', Sale::STATUS_CANCEL)
-                ->where('sales.branch_id', $locationId)
-                ->selectRaw('payment_method_id, SUM(amount) as total')
-                ->groupBy('payment_method_id')
-                ->get();
+        $salePayments = DB::table('sale_payments')
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
+            ->when($locationType === 'branch', fn ($q) => $q->where('sales.branch_id', $locationId)->whereNull('sales.warehouse_id'))
+            ->when($locationType === 'warehouse', fn ($q) => $q->where('sales.warehouse_id', $locationId))
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
+            ->get();
 
-            foreach ($salePayments as $row) {
-                $pmId = (int) $row->payment_method_id;
-                if ($pmId > 0) {
-                    $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
-                }
+        foreach ($salePayments as $row) {
+            $pmId = (int) $row->payment_method_id;
+            if ($pmId > 0) {
+                $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
             }
+        }
 
-            $servicePayments = DB::table('service_payments')
-                ->join('services', 'service_payments.service_id', '=', 'services.id')
-                ->where('services.status', '!=', Service::STATUS_CANCEL)
-                ->where('services.branch_id', $locationId)
-                ->selectRaw('payment_method_id, SUM(amount) as total')
-                ->groupBy('payment_method_id')
-                ->get();
+        $servicePayments = DB::table('service_payments')
+            ->join('services', 'service_payments.service_id', '=', 'services.id')
+            ->where('services.status', '!=', Service::STATUS_CANCEL)
+            ->when($locationType === 'branch', fn ($q) => $q->where('services.branch_id', $locationId)->whereNull('services.warehouse_id'))
+            ->when($locationType === 'warehouse', fn ($q) => $q->where('services.warehouse_id', $locationId))
+            ->selectRaw('payment_method_id, SUM(amount) as total')
+            ->groupBy('payment_method_id')
+            ->get();
 
-            foreach ($servicePayments as $row) {
-                $pmId = (int) $row->payment_method_id;
-                if ($pmId > 0) {
-                    $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
-                }
+        foreach ($servicePayments as $row) {
+            $pmId = (int) $row->payment_method_id;
+            if ($pmId > 0) {
+                $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
             }
         }
 

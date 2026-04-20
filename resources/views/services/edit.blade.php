@@ -18,6 +18,8 @@
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="branch_id" value="{{ $service->branch_id }}">
+                        <input type="hidden" name="warehouse_id" value="{{ $service->warehouse_id }}">
+                        <input type="hidden" name="location_type" value="{{ $service->location_type ?? 'branch' }}">
                         <div class="space-y-4">
                             <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
                                 <label class="inline-flex items-center cursor-pointer">
@@ -25,10 +27,18 @@
                                     <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Ubah ke Release (wajib input material dan pembayaran)') }}</span>
                                 </label>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <x-input-label for="branch_display" :value="__('Cabang')" />
-                                    <x-text-input id="branch_display" class="block mt-1 w-full bg-slate-100" type="text" :value="$service->branch?->name" disabled />
+                                    <x-input-label :value="__('Tipe Lokasi')" />
+                                    <x-text-input class="block mt-1 w-full bg-slate-100" type="text" :value="($service->location_type ?? 'branch') === 'warehouse' ? __('Gudang') : __('Cabang')" disabled />
+                                </div>
+                                <div>
+                                    <x-input-label :value="__('Lokasi')" />
+                                    @if(($service->location_type ?? 'branch') === 'warehouse')
+                                        <x-text-input class="block mt-1 w-full bg-slate-100" type="text" :value="$service->warehouse?->name ?? '-'" disabled />
+                                    @else
+                                        <x-text-input class="block mt-1 w-full bg-slate-100" type="text" :value="$service->branch?->name ?? '-'" disabled />
+                                    @endif
                                 </div>
                                 <div>
                                     <x-input-label for="entry_date" :value="__('Tanggal Masuk')" />

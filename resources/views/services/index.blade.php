@@ -42,12 +42,29 @@
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     @if($canFilterLocation ?? false)
-                    <div class="min-w-[180px]">
+                    <div class="min-w-[140px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Jenis Lokasi') }}</label>
+                        <select name="location_type" id="filter_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="branch" {{ request('location_type') == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                            <option value="warehouse" {{ request('location_type') == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[180px] filter-branch" style="{{ request('location_type') !== 'branch' ? 'display:none' : '' }}">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
                         <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
+                            <option value="">{{ __('Semua Cabang') }}</option>
                             @foreach ($branches as $b)
                                 <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="min-w-[180px] filter-warehouse" style="{{ request('location_type') !== 'warehouse' ? 'display:none' : '' }}">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
+                        <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua Gudang') }}</option>
+                            @foreach ($warehouses as $w)
+                                <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -140,7 +157,7 @@
                     <thead>
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Invoice') }}</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pelanggan') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Laptop') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tgl Masuk') }}</th>
@@ -154,7 +171,13 @@
                         @forelse ($services as $svc)
                             <tr class="hover:bg-slate-50/50">
                                 <td class="px-4 py-3">{{ $svc->invoice_number }}</td>
-                                <td class="px-4 py-3">{{ $svc->branch?->name }}</td>
+                                <td class="px-4 py-3">
+                                    @if($svc->location_type === 'warehouse')
+                                        <span class="text-xs text-amber-700 font-medium">{{ __('Gudang') }}</span> {{ $svc->warehouse?->name }}
+                                    @else
+                                        <span class="text-xs text-indigo-700 font-medium">{{ __('Cabang') }}</span> {{ $svc->branch?->name }}
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ $svc->customer?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ Str::limit($svc->laptop_type, 25) }}</td>
                                 <td class="px-4 py-3">{{ $svc->entry_date->format('d/m/Y') }}</td>
@@ -197,4 +220,23 @@
             </div>
         </div>
     </div>
+
+    @if ($canFilterLocation ?? false)
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const locType = document.getElementById('filter_location_type');
+            const brBlock = document.querySelector('.filter-branch');
+            const whBlock = document.querySelector('.filter-warehouse');
+            function toggle() {
+                const v = locType?.value;
+                if (brBlock) brBlock.style.display = v === 'branch' ? '' : 'none';
+                if (whBlock) whBlock.style.display = v === 'warehouse' ? '' : 'none';
+            }
+            locType?.addEventListener('change', toggle);
+            toggle();
+        });
+    </script>
+    @endpush
+    @endif
 </x-app-layout>
