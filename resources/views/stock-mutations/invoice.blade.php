@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ __('Invoice') }} {{ $stockMutation->invoice_number ?? ('DIST-#'.$stockMutation->id) }}</title>
+    <title>{{ __('Invoice') }} {{ $distribution->invoice_number }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
         @media print {
@@ -241,10 +241,10 @@
 </head>
 <body class="bg-slate-100">
     @php
-        $invoiceCancelled = $invoiceCancelled ?? false;
-        $invNo = $stockMutation->invoice_number ?? ('DIST-#' . $stockMutation->id);
-        $totalBiaya = $allMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
-        $totalPaid = (float) $cashFlows->sum('amount');
+        $invoiceCancelled = $distribution->isCancelled();
+        $invNo = $distribution->invoice_number;
+        $totalBiaya = (float) $distribution->total;
+        $totalPaid = (float) $distribution->total_paid;
         $isPaid = $totalBiaya <= 0 || ($totalPaid + 0.02 >= $totalBiaya);
         if ($invoiceCancelled) {
             $statusText = 'DIBATALKAN';
@@ -272,19 +272,15 @@
         }
         $terbilang = trim(irsaf_terbilang_dist((int) round($totalBiaya)));
 
-        $fromLabel = $stockMutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
-        $toLabel = $stockMutation->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
-        $fromName = $fromLocation?->name ?? ('#' . $stockMutation->from_location_id);
-        $toName = $toLocation?->name ?? ('#' . $stockMutation->to_location_id);
+        $fromLabel = $distribution->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
+        $toLabel = $distribution->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
+        $fromName = $fromLocation?->name ?? ('#' . $distribution->from_location_id);
+        $toName = $toLocation?->name ?? ('#' . $distribution->to_location_id);
 
         $companyName = config('app.name', 'IRSAF');
         $companyAddress = null;
         $companyPhone = null;
-        if ($stockMutation->from_location_type === \App\Models\Stock::LOCATION_BRANCH && $fromLocation) {
-            $companyName = $fromLocation->name;
-            $companyAddress = $fromLocation->address ?? null;
-            $companyPhone = $fromLocation->phone ?? null;
-        } elseif ($stockMutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE && $fromLocation) {
+        if ($fromLocation) {
             $companyName = $fromLocation->name;
             $companyAddress = $fromLocation->address ?? null;
             $companyPhone = $fromLocation->phone ?? null;
@@ -299,21 +295,20 @@
             $logoUrl = asset('images/invoice-logo.png');
         }
 
-        $trxAt = $stockMutation->mutation_date ?? $stockMutation->created_at ?? now();
-        $firstMutInv = $allMutations->first();
+        $trxAt = $distribution->distribution_date ?? $distribution->created_at ?? now();
     @endphp
     @if ($invoiceCancelled)
         <div class="no-print max-w-4xl mx-auto px-4 pt-4">
             <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm text-center space-y-1">
                 <p class="font-semibold">{{ __('Invoice distribusi ini telah dibatalkan.') }}</p>
-                @if ($firstMutInv?->cancel_date)
-                    <p class="text-xs">{{ __('Tanggal pembatalan') }}: {{ $firstMutInv->cancel_date->translatedFormat('d F Y') }}</p>
+                @if ($distribution->cancel_date)
+                    <p class="text-xs">{{ __('Tanggal pembatalan') }}: {{ $distribution->cancel_date->translatedFormat('d F Y') }}</p>
                 @endif
-                @if ($firstMutInv?->cancelUser)
-                    <p class="text-xs">{{ __('Oleh') }}: {{ $firstMutInv->cancelUser->name }}</p>
+                @if ($distribution->cancelUser)
+                    <p class="text-xs">{{ __('Oleh') }}: {{ $distribution->cancelUser->name }}</p>
                 @endif
-                @if ($firstMutInv?->cancel_reason)
-                    <p class="text-xs text-left mt-2 pt-2 border-t border-amber-200/80"><span class="font-medium">{{ __('Alasan') }}:</span> {{ $firstMutInv->cancel_reason }}</p>
+                @if ($distribution->cancel_reason)
+                    <p class="text-xs text-left mt-2 pt-2 border-t border-amber-200/80"><span class="font-medium">{{ __('Alasan') }}:</span> {{ $distribution->cancel_reason }}</p>
                 @endif
             </div>
         </div>
@@ -346,7 +341,7 @@
                 <div class="inv-meta">
                     <div class="title">INVOICE DISTRIBUSI</div>
                     <div class="invno">{{ $invNo }}</div>
-                    <div class="row"><span>Tanggal:</span> {{ $stockMutation->mutation_date->translatedFormat('d F Y') }}</div>
+                    <div class="row"><span>Tanggal:</span> {{ $distribution->distribution_date->translatedFormat('d F Y') }}</div>
                     <div class="row"><span>Status Bayar:</span> <strong>{{ $statusText }}</strong></div>
                     <div class="row"><span>Termin:</span> -</div>
                     <div class="row"><span>Jatuh Tempo:</span> -</div>
@@ -366,7 +361,7 @@
                     </tr>
                     <tr>
                         <td class="lbl">Produk</td><td class="colon">:</td>
-                        <td class="val">{{ $allMutations->count() }} produk</td>
+                        <td class="val">{{ $distribution->details->count() }} produk</td>
                     </tr>
                 </table>
                 <div class="trx">
@@ -388,28 +383,28 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($allMutations as $idx => $mut)
+                    @foreach ($distribution->details as $idx => $detail)
                         @php
-                            $lineTotal = (float) ($mut->biaya_distribusi_per_unit ?? 0) * (int) $mut->quantity;
-                            $serialText = trim((string) ($mut->serial_numbers ?? ''));
+                            $lineTotal = (float) ($detail->biaya_distribusi_per_unit ?? 0) * (int) $detail->quantity;
+                            $serialText = trim((string) ($detail->serial_numbers ?? ''));
                         @endphp
                         <tr>
                             <td class="center">{{ $idx + 1 }}</td>
                             <td class="inv-desc">
                                 <div class="sku">
-                                    {{ $mut->product?->sku ?? '-' }}
-                                    {{ $mut->product?->brand ? $mut->product->brand : '' }}
-                                    {{ $mut->product?->series ? $mut->product->series : '' }}
+                                    {{ $detail->product?->sku ?? '-' }}
+                                    {{ $detail->product?->brand ? $detail->product->brand : '' }}
+                                    {{ $detail->product?->series ? $detail->product->series : '' }}
                                 </div>
                                 @if ($serialText !== '')
                                     <div class="muted">{{ $serialText }}</div>
                                 @endif
-                                @if ($mut->notes && $idx === 0)
-                                    <div>{{ $mut->notes }}</div>
+                                @if ($distribution->notes && $idx === 0)
+                                    <div>{{ $distribution->notes }}</div>
                                 @endif
                             </td>
-                            <td class="num">{{ number_format((float) $mut->quantity, 2, ',', '.') }}</td>
-                            <td class="num">{{ number_format((float) ($mut->biaya_distribusi_per_unit ?? 0), 0, ',', '.') }}</td>
+                            <td class="num">{{ number_format((float) $detail->quantity, 2, ',', '.') }}</td>
+                            <td class="num">{{ number_format((float) ($detail->biaya_distribusi_per_unit ?? 0), 0, ',', '.') }}</td>
                             <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
                             <td class="num">0</td>
                             <td class="num">{{ number_format($lineTotal, 0, ',', '.') }}</td>
@@ -457,17 +452,17 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @php $payIdx = 0; $payDate = $stockMutation->mutation_date ?? $stockMutation->created_at ?? now(); @endphp
-                        @foreach ($cashFlows as $cf)
+                        @php $payIdx = 0; @endphp
+                        @foreach ($distribution->payments as $payment)
                             @php
-                                $method = $cf->paymentMethod ? strtoupper($cf->paymentMethod->display_label) : '-';
-                                $pDate = $cf->transaction_date ?? $cf->created_at ?? $payDate;
+                                $method = $payment->paymentMethod ? strtoupper($payment->paymentMethod->display_label) : '-';
+                                $pDate = $payment->created_at ?? $distribution->distribution_date ?? now();
                             @endphp
                             <tr>
                                 <td class="center">{{ ++$payIdx }}</td>
                                 <td class="center">{{ $pDate->translatedFormat('d F Y') }}</td>
                                 <td>{{ $method }}</td>
-                                <td class="num">{{ number_format((float) $cf->amount, 0, ',', '.') }}</td>
+                                <td class="num">{{ number_format((float) $payment->amount, 0, ',', '.') }}</td>
                             </tr>
                         @endforeach
                         @if ($payIdx === 0)
@@ -493,7 +488,7 @@
                 </div>
                 <div class="col right">
                     Hormat Kami,
-                    <div class="name">{{ $stockMutation->user?->name ?? '-' }}</div>
+                    <div class="name">{{ $distribution->user?->name ?? '-' }}</div>
                 </div>
             </div>
         </div>

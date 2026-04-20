@@ -12,7 +12,7 @@ use App\Models\Rental;
 use App\Models\Sale;
 use App\Models\Service;
 use App\Models\Stock;
-use App\Models\StockMutation;
+
 use App\Models\Warehouse;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -210,25 +210,23 @@ class FinanceController extends Controller
 
         $totalDistributionIncome = (float) $incomeDistributionQuery->sum('amount');
 
-        // HPP Distribusi: dari data stock_mutations (hpp_per_unit * quantity) di lokasi asal
-        $distributionHppQuery = DB::table('stock_mutations')
-            ->where('biaya_distribusi_per_unit', '>', 0)
-            ->where(function ($q) {
-                $q->whereNull('status')
-                    ->orWhere('status', '!=', StockMutation::STATUS_CANCELLED);
-            })
-            ->whereBetween('mutation_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+        // HPP Distribusi: dari data distribution_details via distributions
+        $distributionHppQuery = DB::table('distribution_details')
+            ->join('distributions', 'distribution_details.distribution_id', '=', 'distributions.id')
+            ->where('distribution_details.biaya_distribusi_per_unit', '>', 0)
+            ->where('distributions.status', '!=', 'cancelled')
+            ->whereBetween('distributions.distribution_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
 
         if ($branchId) {
-            $distributionHppQuery->where('from_location_type', Stock::LOCATION_BRANCH)
-                ->where('from_location_id', $branchId);
+            $distributionHppQuery->where('distributions.from_location_type', Stock::LOCATION_BRANCH)
+                ->where('distributions.from_location_id', $branchId);
         }
         if ($warehouseId) {
-            $distributionHppQuery->where('from_location_type', Stock::LOCATION_WAREHOUSE)
-                ->where('from_location_id', $warehouseId);
+            $distributionHppQuery->where('distributions.from_location_type', Stock::LOCATION_WAREHOUSE)
+                ->where('distributions.from_location_id', $warehouseId);
         }
 
-        $totalDistributionHpp = (float) $distributionHppQuery->selectRaw('COALESCE(SUM(hpp_per_unit * quantity), 0) as total')->value('total');
+        $totalDistributionHpp = (float) $distributionHppQuery->selectRaw('COALESCE(SUM(distribution_details.hpp_per_unit * distribution_details.quantity), 0) as total')->value('total');
         $totalDistributionProfit = $totalDistributionIncome - $totalDistributionHpp;
 
         // Pemasukan Lainnya (exclude distribusi): filter tanggal
@@ -1246,16 +1244,14 @@ class FinanceController extends Controller
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->sum('amount');
 
-            $distributionHpp = (float) DB::table('stock_mutations')
-                ->where('biaya_distribusi_per_unit', '>', 0)
-                ->where(function ($q) {
-                    $q->whereNull('status')
-                        ->orWhere('status', '!=', StockMutation::STATUS_CANCELLED);
-                })
-                ->whereBetween('mutation_date', [$dateFromStr, $dateToStr])
-                ->when($isBranch, fn ($q) => $q->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId))
-                ->when(! $isBranch, fn ($q) => $q->where('from_location_type', Stock::LOCATION_WAREHOUSE)->where('from_location_id', $warehouseId))
-                ->selectRaw('COALESCE(SUM(hpp_per_unit * quantity), 0) as total')
+            $distributionHpp = (float) DB::table('distribution_details')
+                ->join('distributions', 'distribution_details.distribution_id', '=', 'distributions.id')
+                ->where('distribution_details.biaya_distribusi_per_unit', '>', 0)
+                ->where('distributions.status', '!=', 'cancelled')
+                ->whereBetween('distributions.distribution_date', [$dateFromStr, $dateToStr])
+                ->when($isBranch, fn ($q) => $q->where('distributions.from_location_type', Stock::LOCATION_BRANCH)->where('distributions.from_location_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('distributions.from_location_type', Stock::LOCATION_WAREHOUSE)->where('distributions.from_location_id', $warehouseId))
+                ->selectRaw('COALESCE(SUM(distribution_details.hpp_per_unit * distribution_details.quantity), 0) as total')
                 ->value('total');
             $totalPemasukan += ($cfIn - $distributionHpp);
 

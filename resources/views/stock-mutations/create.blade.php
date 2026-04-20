@@ -252,8 +252,10 @@
                 this.el = el;
                 this.products = [];
                 this.currentSerials = [];
+                this.serialHppMap = {};
                 this.lastSerialKey = '';
                 this.oldSerials = new Set();
+                this.hppManuallySet = false;
 
                 if (data.serial_numbers && Array.isArray(data.serial_numbers)) {
                     data.serial_numbers.forEach(s => this.oldSerials.add(String(s).trim()));
@@ -263,6 +265,10 @@
                 this.listen();
 
                 if (data.quantity) this.qtyEl.value = data.quantity;
+                if (data.hpp_per_unit !== undefined && data.hpp_per_unit !== null && data.hpp_per_unit !== '') {
+                    this.hppEl.value = data.hpp_per_unit;
+                    this.hppManuallySet = true;
+                }
                 if (data.biaya_distribusi_per_unit) this.biayaEl.value = data.biaya_distribusi_per_unit;
 
                 this.loadProducts().then(() => {
@@ -294,6 +300,7 @@
                 this.serialsMeta = this.el.querySelector('[data-field="serials_meta"]');
                 this.serialsList = this.el.querySelector('[data-field="serials_list"]');
                 this.qtyEl = this.el.querySelector('[data-field="quantity"]');
+                this.hppEl = this.el.querySelector('[data-field="hpp_per_unit"]');
                 this.biayaEl = this.el.querySelector('[data-field="biaya_distribusi_per_unit"]');
                 this.subtotalEl = this.el.querySelector('[data-field="item_subtotal"]');
                 this.formulaEl = this.el.querySelector('[data-field="item_formula"]');
@@ -335,6 +342,7 @@
                 });
 
                 this.qtyEl?.addEventListener('input', () => { this.updateSubtotal(); updateGrandTotal(); });
+                this.hppEl?.addEventListener('input', () => { this.hppManuallySet = true; });
                 this.biayaEl?.addEventListener('input', () => { this.updateSubtotal(); updateGrandTotal(); });
             }
 
@@ -356,13 +364,28 @@
             }
 
             updateQtyFromSelection() {
-                const checked = this.serialsList?.querySelectorAll('input[type="checkbox"]:checked').length || 0;
+                const checkedEls = this.serialsList?.querySelectorAll('input[type="checkbox"]:checked') || [];
+                const checked = checkedEls.length;
                 if (checked > 0) {
                     if (this.qtyEl) { this.qtyEl.value = checked; this.qtyEl.setAttribute('readonly', 'readonly'); }
                 } else {
                     if (this.qtyEl) { this.qtyEl.removeAttribute('readonly'); }
                 }
                 if (this.serialsMeta) this.serialsMeta.textContent = checked > 0 ? `${checked} dipilih` : '';
+
+                if (!this.hppManuallySet && this.hppEl && checked > 0) {
+                    let totalHpp = 0;
+                    checkedEls.forEach(cb => {
+                        const sn = cb.value;
+                        totalHpp += parseFloat(this.serialHppMap[sn] || 0);
+                    });
+                    const avgHpp = Math.round(totalHpp / checked);
+                    this.hppEl.value = avgHpp;
+                    this.hppEl.placeholder = 'Avg HPP: Rp ' + avgHpp.toLocaleString('id-ID');
+                } else if (!this.hppManuallySet && this.hppEl && checked === 0) {
+                    this.hppEl.placeholder = 'Otomatis dari serial';
+                }
+
                 this.updateSubtotal();
                 updateGrandTotal();
             }
@@ -371,12 +394,15 @@
                 if (this.productIdInput) this.productIdInput.value = '';
                 if (this.productLabel) { this.productLabel.textContent = 'Pilih Produk'; this.productLabel.className = 'text-slate-500'; }
                 this.currentSerials = [];
+                this.serialHppMap = {};
                 this.lastSerialKey = '';
+                this.hppManuallySet = false;
                 if (this.serialsList) this.serialsList.innerHTML = '';
                 setVisible(this.serialsList, false);
                 setVisible(this.serialsTools, false);
                 if (this.serialsHelp) this.serialsHelp.textContent = 'Pilih produk & lokasi asal untuk menampilkan serial.';
                 if (this.qtyEl) { this.qtyEl.value = ''; this.qtyEl.removeAttribute('readonly'); }
+                if (this.hppEl) { this.hppEl.value = ''; this.hppEl.placeholder = 'Otomatis dari serial'; }
                 this.updateSubtotal();
             }
 
@@ -518,6 +544,7 @@
 
             renderSerials(serials, meta = {}) {
                 this.currentSerials = serials || [];
+                if (meta.serial_hpp) this.serialHppMap = meta.serial_hpp;
                 if (!this.serialsList) return;
                 this.serialsList.innerHTML = '';
                 if (this.currentSerials.length === 0) {
@@ -623,10 +650,13 @@
                 `<div data-field="serials_meta" class="text-xs text-gray-600 md:ml-auto"></div>` +
                 `</div></div>` +
                 `<div data-field="serials_list" class="mt-2 hidden max-h-48 overflow-auto rounded-md border border-gray-200 p-2 space-y-1 bg-white"></div></div>` +
-                `<div class="grid grid-cols-1 md:grid-cols-3 gap-3">` +
+                `<div class="grid grid-cols-1 md:grid-cols-4 gap-3">` +
                 `<div><label class="block text-xs font-medium text-slate-700 mb-0.5">Jumlah</label>` +
                 `<input type="number" name="items[${idx}][quantity]" data-field="quantity" min="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="0">` +
                 `<p class="text-xs text-gray-500 mt-0.5">Otomatis jika pakai serial.</p></div>` +
+                `<div><label class="block text-xs font-medium text-slate-700 mb-0.5">HPP/Unit (Rp)</label>` +
+                `<input type="number" name="items[${idx}][hpp_per_unit]" data-field="hpp_per_unit" min="0" step="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Otomatis dari serial">` +
+                `<p class="text-xs text-gray-500 mt-0.5">Kosongkan = otomatis dari unit.</p></div>` +
                 `<div><label class="block text-xs font-medium text-slate-700 mb-0.5">Biaya Distribusi/Unit (Rp)</label>` +
                 `<input type="number" name="items[${idx}][biaya_distribusi_per_unit]" data-field="biaya_distribusi_per_unit" min="0" step="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="0"></div>` +
                 `<div class="flex items-end"><div class="rounded-md bg-white border border-slate-200 p-2 w-full">` +

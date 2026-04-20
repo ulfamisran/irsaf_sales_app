@@ -41,7 +41,8 @@ class StockMutationService
         ?array $serialNumbers = null,
         float $biayaDistribusiPerUnit = 0,
         array $distributionPayments = [],
-        ?string $invoiceNumber = null
+        ?string $invoiceNumber = null,
+        ?int $distributionId = null
     ): StockMutation {
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
 
@@ -58,7 +59,8 @@ class StockMutationService
                 $userId,
                 $biayaDistribusiPerUnit,
                 $distributionPayments,
-                $invoiceNumber
+                $invoiceNumber,
+                $distributionId
             );
         }
 
@@ -88,7 +90,8 @@ class StockMutationService
             $notes,
             $userId,
             $serialNumbers,
-            $invoiceNumber
+            $invoiceNumber,
+            $distributionId
         ) {
             // If this product/location already uses serial-numbered units, force serial mutation.
             $hasUnitsAtFrom = ProductUnit::where('product_id', $product->id)
@@ -127,6 +130,7 @@ class StockMutationService
             $toStock->increment('quantity', $quantity);
 
             return StockMutation::create([
+                'distribution_id' => $distributionId,
                 'invoice_number' => $invoiceNumber ?? $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
@@ -460,7 +464,8 @@ class StockMutationService
         ?int $userId = null,
         float $biayaDistribusiPerUnit = 0,
         array $distributionPayments = [],
-        ?string $invoiceNumber = null
+        ?string $invoiceNumber = null,
+        ?int $distributionId = null
     ): StockMutation {
         if ($fromLocationType === $toLocationType && $fromLocationId === $toLocationId) {
             throw new InvalidArgumentException(__('Source and destination cannot be the same.'));
@@ -485,7 +490,8 @@ class StockMutationService
             $userId,
             $biayaDistribusiPerUnit,
             $distributionPayments,
-            $invoiceNumber
+            $invoiceNumber,
+            $distributionId
         ) {
             $units = ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $fromLocationType)
@@ -535,6 +541,7 @@ class StockMutationService
             }
 
             $stockMutation = StockMutation::create([
+                'distribution_id' => $distributionId,
                 'invoice_number' => $invoiceNumber ?? $this->generateDistributionInvoiceNumber(),
                 'product_id' => $product->id,
                 'from_location_type' => $fromLocationType,
@@ -805,7 +812,270 @@ class StockMutationService
     }
 
     /**
+     * Cancel a distribution and all its related stock mutations, purchases, and cash flows.
+     *
+     * @throws InvalidArgumentException
+     */
+    public function cancelDistribution(\App\Models\Distribution $distribution, int $userId, string $reason): void
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new InvalidArgumentException(__('Alasan pembatalan wajib diisi.'));
+        }
+
+        if ($distribution->isCancelled()) {
+            throw new InvalidArgumentException(__('Distribusi ini sudah dibatalkan.'));
+        }
+
+        DB::transaction(function () use ($distribution, $userId, $reason) {
+            $mutations = StockMutation::where('distribution_id', $distribution->id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $mutationIds = $mutations->pluck('id')->all();
+            $refundDate = now()->toDateString();
+
+            $reversalCategory = ExpenseCategory::firstOrCreate(
+                ['code' => 'REVERSAL'],
+                [
+                    'name' => 'Reversal',
+                    'description' => 'Pengembalian dana pembatalan transaksi',
+                    'is_active' => true,
+                ]
+            );
+
+            $returCategory = IncomeCategory::firstOrCreate(
+                ['code' => 'RTR'],
+                [
+                    'name' => 'Retur Pembelian',
+                    'description' => 'Pengembalian dana dari pembatalan/retur pembelian',
+                    'is_active' => true,
+                ]
+            );
+
+            foreach ($mutations as $mutation) {
+                $serialText = trim((string) ($mutation->serial_numbers ?? ''));
+                if ($serialText !== '') {
+                    $parts = preg_split('/[\r\n,]+/', $serialText) ?: [];
+                    $serialNumbers = [];
+                    foreach ($parts as $p) {
+                        $p = trim((string) $p);
+                        if ($p !== '') {
+                            $serialNumbers[] = $p;
+                        }
+                    }
+                    $serialNumbers = array_values(array_unique($serialNumbers));
+                    if (count($serialNumbers) !== (int) $mutation->quantity) {
+                        throw new InvalidArgumentException(
+                            __('Jumlah serial pada distribusi #:id tidak cocok dengan qty.', ['id' => $mutation->id])
+                        );
+                    }
+
+                    $product = Product::find($mutation->product_id);
+                    if (! $product) {
+                        throw new InvalidArgumentException(__('Produk tidak ditemukan.'));
+                    }
+
+                    $units = ProductUnit::where('product_id', $mutation->product_id)
+                        ->where('location_type', $mutation->to_location_type)
+                        ->where('location_id', $mutation->to_location_id)
+                        ->whereIn('serial_number', $serialNumbers)
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($units->count() !== count($serialNumbers)) {
+                        throw new InvalidArgumentException(
+                            __('Unit tidak lengkap di lokasi tujuan atau sudah tidak tersedia. Pastikan unit belum terjual.')
+                        );
+                    }
+
+                    $snapshotRows = $mutation->distribution_unit_snapshot;
+                    $snapshotBySerial = [];
+                    if (is_array($snapshotRows) && $snapshotRows !== []) {
+                        foreach ($snapshotRows as $row) {
+                            $sn = strtoupper(trim((string) ($row['serial_number'] ?? '')));
+                            if ($sn !== '') {
+                                $snapshotBySerial[$sn] = $row;
+                            }
+                        }
+                    }
+
+                    $biaya = round((float) ($mutation->biaya_distribusi_per_unit ?? 0), 2);
+
+                    foreach ($units as $unit) {
+                        if ($unit->status !== ProductUnit::STATUS_IN_STOCK) {
+                            throw new InvalidArgumentException(
+                                __('Unit :sn tidak dapat dibatalkan (bukan status stok tersedia).', ['sn' => $unit->serial_number])
+                            );
+                        }
+
+                        if ($snapshotBySerial !== []) {
+                            $serialKey = strtoupper(trim((string) $unit->serial_number));
+                            if (! isset($snapshotBySerial[$serialKey])) {
+                                throw new InvalidArgumentException(
+                                    __('Data snapshot HPP distribusi tidak lengkap untuk serial :sn.', ['sn' => $unit->serial_number])
+                                );
+                            }
+                            $prev = $snapshotBySerial[$serialKey];
+                            $restoreHpp = round((float) ($prev['harga_hpp'] ?? 0), 2);
+                            $restoreJual = round((float) ($prev['harga_jual'] ?? 0), 2);
+
+                            ProductUnit::whereKey($unit->id)->update([
+                                'location_type' => $mutation->from_location_type,
+                                'location_id' => $mutation->from_location_id,
+                                'harga_hpp' => max(0, $restoreHpp),
+                                'harga_jual' => max(0, $restoreJual),
+                            ]);
+                        } else {
+                            $newHpp = round((float) $unit->harga_hpp - $biaya, 2);
+                            $newJual = round((float) $unit->harga_jual - $biaya, 2);
+
+                            ProductUnit::whereKey($unit->id)->update([
+                                'location_type' => $mutation->from_location_type,
+                                'location_id' => $mutation->from_location_id,
+                                'harga_hpp' => max(0, $newHpp),
+                                'harga_jual' => max(0, $newJual),
+                            ]);
+                        }
+                    }
+
+                    $this->recalculateStockQuantity($mutation->product_id, $mutation->from_location_type, $mutation->from_location_id);
+                    $this->recalculateStockQuantity($mutation->product_id, $mutation->to_location_type, $mutation->to_location_id);
+                } else {
+                    $qty = (int) $mutation->quantity;
+                    $toStock = Stock::firstOrCreate(
+                        [
+                            'product_id' => $mutation->product_id,
+                            'location_type' => $mutation->to_location_type,
+                            'location_id' => $mutation->to_location_id,
+                        ],
+                        ['quantity' => 0]
+                    );
+                    if ($toStock->quantity < $qty) {
+                        throw new InvalidArgumentException(__('Stok di lokasi tujuan tidak mencukupi untuk membatalkan distribusi.'));
+                    }
+                    $toStock->decrement('quantity', $qty);
+                    $fromStock = Stock::firstOrCreate(
+                        [
+                            'product_id' => $mutation->product_id,
+                            'location_type' => $mutation->from_location_type,
+                            'location_id' => $mutation->from_location_id,
+                        ],
+                        ['quantity' => 0]
+                    );
+                    $fromStock->increment('quantity', $qty);
+                }
+            }
+
+            $fromBranchId = $distribution->from_location_type === Stock::LOCATION_BRANCH ? (int) $distribution->from_location_id : null;
+            $fromWarehouseId = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE ? (int) $distribution->from_location_id : null;
+
+            $distributionIns = CashFlow::query()
+                ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+                ->where('reference_id', $distribution->id)
+                ->where('type', CashFlow::TYPE_IN)
+                ->with('paymentMethod')
+                ->lockForUpdate()
+                ->get();
+
+            $purchases = Purchase::query()
+                ->whereIn('stock_mutation_id', $mutationIds)
+                ->where('jenis_pembelian', Purchase::JENIS_DISTRIBUSI_UNIT)
+                ->lockForUpdate()
+                ->get()
+                ->unique('id');
+
+            $hasOriginCashIn = $distributionIns->isNotEmpty();
+            $hasDestCashOut = $purchases->contains(function (Purchase $p) {
+                return CashFlow::query()
+                    ->where('reference_type', CashFlow::REFERENCE_PURCHASE)
+                    ->where('reference_id', $p->id)
+                    ->where('type', CashFlow::TYPE_OUT)
+                    ->exists();
+            });
+
+            $totalTrx = (float) $distribution->total;
+            $doCashReversals = $totalTrx > 0.01 && $hasOriginCashIn && $hasDestCashOut;
+
+            if ($doCashReversals) {
+                foreach ($distributionIns as $cf) {
+                    $pmLabel = $cf->paymentMethod?->display_label ?? __('Pembayaran');
+                    CashFlow::create([
+                        'branch_id' => $cf->branch_id ?? $fromBranchId,
+                        'warehouse_id' => $cf->warehouse_id ?? $fromWarehouseId,
+                        'type' => CashFlow::TYPE_OUT,
+                        'amount' => $cf->amount,
+                        'description' => __('Pengembalian pembatalan distribusi') . ' ' . $distribution->invoice_number . ' - ' . $pmLabel,
+                        'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
+                        'reference_id' => $distribution->id,
+                        'expense_category_id' => $reversalCategory->id,
+                        'payment_method_id' => $cf->payment_method_id,
+                        'transaction_date' => $refundDate,
+                        'user_id' => $userId,
+                    ]);
+                }
+            }
+
+            foreach ($purchases as $purchase) {
+                if ($purchase->status === Purchase::STATUS_CANCELLED) {
+                    continue;
+                }
+                $purchase->load(['payments.paymentMethod']);
+
+                $hasPurchaseCashOut = CashFlow::query()
+                    ->where('reference_type', CashFlow::REFERENCE_PURCHASE)
+                    ->where('reference_id', $purchase->id)
+                    ->where('type', CashFlow::TYPE_OUT)
+                    ->exists();
+
+                if ($doCashReversals && $hasPurchaseCashOut && $purchase->payments->isNotEmpty()) {
+                    foreach ($purchase->payments as $payment) {
+                        $pmLabel = $payment->paymentMethod?->display_label ?? __('Pembayaran');
+                        CashFlow::create([
+                            'branch_id' => $purchase->branch_id,
+                            'warehouse_id' => $purchase->warehouse_id,
+                            'type' => CashFlow::TYPE_IN,
+                            'amount' => $payment->amount,
+                            'description' => __('Retur pembatalan distribusi') . ' ' . $distribution->invoice_number . ' / ' . $purchase->invoice_number . ' - ' . $pmLabel,
+                            'reference_type' => CashFlow::REFERENCE_PURCHASE_RETURN,
+                            'reference_id' => $purchase->id,
+                            'income_category_id' => $returCategory->id,
+                            'payment_method_id' => $payment->payment_method_id,
+                            'transaction_date' => $refundDate,
+                            'user_id' => $userId,
+                        ]);
+                    }
+                }
+
+                PurchasePayment::where('purchase_id', $purchase->id)->delete();
+                $purchase->update([
+                    'status' => Purchase::STATUS_CANCELLED,
+                    'total_paid' => 0,
+                ]);
+            }
+
+            foreach ($mutations as $mutation) {
+                $mutation->update([
+                    'status' => StockMutation::STATUS_CANCELLED,
+                    'cancel_date' => $refundDate,
+                    'cancel_user_id' => $userId,
+                    'cancel_reason' => $reason,
+                ]);
+            }
+
+            $distribution->update([
+                'status' => \App\Models\Distribution::STATUS_CANCELLED,
+                'cancel_date' => $refundDate,
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+        });
+    }
+
+    /**
      * Batalkan satu invoice distribusi (semua baris dengan nomor invoice sama).
+     * @deprecated Use cancelDistribution() instead
      *
      * @throws InvalidArgumentException
      */

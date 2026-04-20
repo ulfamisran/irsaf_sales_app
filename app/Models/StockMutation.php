@@ -17,6 +17,7 @@ class StockMutation extends Model
     protected $table = 'stock_mutations';
 
     protected $fillable = [
+        'distribution_id',
         'invoice_number',
         'product_id',
         'from_location_type',
@@ -74,6 +75,11 @@ class StockMutation extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function distribution(): BelongsTo
+    {
+        return $this->belongsTo(Distribution::class);
     }
 
     public function distributionPaymentMethod(): BelongsTo

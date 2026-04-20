@@ -200,19 +200,19 @@ Route::middleware('auth')->group(function () {
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.store');
-    Route::get('stock-mutations/{stockMutation}/invoice', [StockMutationController::class, 'invoice'])
+    Route::get('stock-mutations/{distribution}/invoice', [StockMutationController::class, 'invoice'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.invoice');
-    Route::get('stock-mutations/{stockMutation}/add-payment', [StockMutationController::class, 'addPayment'])
+    Route::get('stock-mutations/{distribution}/add-payment', [StockMutationController::class, 'addPayment'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.add-payment');
-    Route::post('stock-mutations/{stockMutation}/add-payment', [StockMutationController::class, 'storePayment'])
+    Route::post('stock-mutations/{distribution}/add-payment', [StockMutationController::class, 'storePayment'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.store-payment');
-    Route::get('stock-mutations/{stockMutation}/cancel', [StockMutationController::class, 'showCancel'])
+    Route::get('stock-mutations/{distribution}/cancel', [StockMutationController::class, 'showCancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('stock-mutations.cancel.show');
-    Route::post('stock-mutations/{stockMutation}/cancel', [StockMutationController::class, 'cancel'])
+    Route::post('stock-mutations/{distribution}/cancel', [StockMutationController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('stock-mutations.cancel');
 

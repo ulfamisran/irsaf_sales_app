@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StockMutationRequest;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\Category;
+use App\Models\Distribution;
+use App\Models\DistributionDetail;
+use App\Models\DistributionPayment;
 use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
 use App\Models\Product;
@@ -14,7 +18,6 @@ use App\Models\Role;
 use App\Models\Stock;
 use App\Models\StockMutation;
 use App\Models\Warehouse;
-use App\Models\AuditLog;
 use App\Services\PurchaseService;
 use App\Services\StockMutationService;
 use Illuminate\Http\JsonResponse;
@@ -80,7 +83,7 @@ class StockMutationController extends Controller
             }
         }
 
-        $applyFilters = function ($query) use ($user, $request, $accessConstraint) {
+        $applyFilters = function ($query, bool $isDistribution = true) use ($user, $request, $accessConstraint) {
             if ($accessConstraint) {
                 $accessConstraint($query);
             }
@@ -98,148 +101,113 @@ class StockMutationController extends Controller
                 }
             }
             if ($request->filled('product_id')) {
-                $query->where('product_id', $request->product_id);
+                if ($isDistribution) {
+                    $query->whereHas('details', fn ($q) => $q->where('product_id', $request->product_id));
+                } else {
+                    $query->where('product_id', $request->product_id);
+                }
             }
             if ($request->filled('search')) {
                 $term = '%' . $request->search . '%';
-                $query->where(function ($q) use ($term) {
-                    $q->whereHas('product', function ($q2) use ($term) {
-                        $q2->where('sku', 'like', $term)
-                            ->orWhere('brand', 'like', $term)
-                            ->orWhere('series', 'like', $term);
-                    })->orWhere('serial_numbers', 'like', $term);
-                });
+                if ($isDistribution) {
+                    $query->where(function ($q) use ($term) {
+                        $q->where('invoice_number', 'like', $term)
+                            ->orWhereHas('details.product', function ($q2) use ($term) {
+                                $q2->where('sku', 'like', $term)
+                                    ->orWhere('brand', 'like', $term)
+                                    ->orWhere('series', 'like', $term);
+                            })
+                            ->orWhereHas('details', fn ($q2) => $q2->where('serial_numbers', 'like', $term));
+                    });
+                } else {
+                    $query->where(function ($q) use ($term) {
+                        $q->whereHas('product', function ($q2) use ($term) {
+                            $q2->where('sku', 'like', $term)
+                                ->orWhere('brand', 'like', $term)
+                                ->orWhere('series', 'like', $term);
+                        })->orWhere('serial_numbers', 'like', $term);
+                    });
+                }
             }
+            $dateField = $isDistribution ? 'distribution_date' : 'mutation_date';
             if ($request->filled('date_from')) {
-                $query->whereDate('mutation_date', '>=', $request->date_from);
+                $query->whereDate($dateField, '>=', $request->date_from);
             }
             if ($request->filled('date_to')) {
-                $query->whereDate('mutation_date', '<=', $request->date_to);
+                $query->whereDate($dateField, '<=', $request->date_to);
             }
         };
 
-        // === RIWAYAT TAB (per-product mutations) ===
-        $riwayatQuery = StockMutation::with(['product', 'user', 'purchase', 'cancelUser'])
-            ->orderByDesc('mutation_date')
+        // === INVOICE TAB (distributions) ===
+        $invoiceQuery = Distribution::with(['details.product', 'payments.paymentMethod', 'user', 'cancelUser'])
+            ->orderByDesc('distribution_date')
             ->orderByDesc('id');
-        $applyFilters($riwayatQuery);
-        $mutations = $riwayatQuery->paginate(20, ['*'], 'page')->withQueryString();
+        $applyFilters($invoiceQuery, true);
+        $distributions = $invoiceQuery->paginate(20, ['*'], 'inv_page')->withQueryString();
 
-        // === INVOICE TAB (grouped by invoice_number) ===
-        $invoiceQuery = StockMutation::query()
-            ->whereNotNull('invoice_number')
-            ->where('invoice_number', '!=', '')
-            ->select(
-                'invoice_number',
-                DB::raw('MIN(id) as first_id'),
-                DB::raw('MAX(mutation_date) as inv_date'),
-                DB::raw('COUNT(*) as product_count')
+        // === RIWAYAT TAB (per-product from distribution_details) ===
+        $riwayatQuery = DistributionDetail::with(['distribution.user', 'distribution.cancelUser', 'product'])
+            ->whereHas('distribution')
+            ->orderByDesc(
+                Distribution::select('distribution_date')
+                    ->whereColumn('distributions.id', 'distribution_details.distribution_id')
+                    ->limit(1)
             )
-            ->groupBy('invoice_number')
-            ->orderByDesc(DB::raw('MAX(mutation_date)'))
-            ->orderByDesc(DB::raw('MAX(id)'));
-        $applyFilters($invoiceQuery);
-        $invoices = $invoiceQuery->paginate(20, ['*'], 'inv_page')->withQueryString();
+            ->orderByDesc('id');
 
-        $invNumbers = $invoices->pluck('invoice_number')->filter()->unique()->values()->all();
-        $invMutations = collect();
-        $invBiaya = collect();
-        $invPaid = collect();
-
-        if (! empty($invNumbers)) {
-            $invMutations = StockMutation::with(['product', 'cancelUser'])
-                ->whereIn('invoice_number', $invNumbers)
-                ->orderBy('id')
-                ->get()
-                ->groupBy('invoice_number');
-
-            $invBiaya = $invMutations->map(
-                fn ($g) => $g->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity)
-            );
-
-            $allInvIds = $invMutations->flatten()->pluck('id')->all();
-            $invRefToInvoice = $invMutations->flatten()->pluck('invoice_number', 'id');
-            $cfByRef = ! empty($allInvIds)
-                ? CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
-                    ->where('type', CashFlow::TYPE_IN)
-                    ->whereIn('reference_id', $allInvIds)
-                    ->selectRaw('reference_id, SUM(amount) as total_paid')
-                    ->groupBy('reference_id')
-                    ->pluck('total_paid', 'reference_id')
-                : collect();
-
-            foreach ($cfByRef as $refId => $paid) {
-                $invNo = $invRefToInvoice[$refId] ?? null;
-                if ($invNo) {
-                    $invPaid[$invNo] = ($invPaid[$invNo] ?? 0) + (float) $paid;
-                }
-            }
+        if ($accessConstraint || $request->filled('location_type') || $request->filled('date_from') || $request->filled('date_to')) {
+            $riwayatQuery->whereHas('distribution', function ($q) use ($applyFilters) {
+                $applyFilters($q, true);
+            });
         }
-
-        // === RIWAYAT payment status ===
-        $riwayatItems = $mutations->getCollection();
-        $riwayatInvNumbers = $riwayatItems->pluck('invoice_number')->filter()->unique()->values()->all();
-        $invoiceBiaya = collect();
-        $invoicePaid = collect();
-
-        if (! empty($riwayatInvNumbers)) {
-            $groupMutations = StockMutation::whereIn('invoice_number', $riwayatInvNumbers)
-                ->get(['id', 'invoice_number', 'quantity', 'biaya_distribusi_per_unit']);
-
-            $invoiceBiaya = $groupMutations->groupBy('invoice_number')->map(
-                fn ($g) => $g->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity)
-            );
-
-            $allGroupIds = $groupMutations->pluck('id')->all();
-            $refToInvoice = $groupMutations->pluck('invoice_number', 'id');
-            $cfByRef2 = ! empty($allGroupIds)
-                ? CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
-                    ->where('type', CashFlow::TYPE_IN)
-                    ->whereIn('reference_id', $allGroupIds)
-                    ->selectRaw('reference_id, SUM(amount) as total_paid')
-                    ->groupBy('reference_id')
-                    ->pluck('total_paid', 'reference_id')
-                : collect();
-
-            foreach ($cfByRef2 as $refId => $paid) {
-                $invNo = $refToInvoice[$refId] ?? null;
-                if ($invNo) {
-                    $invoicePaid[$invNo] = ($invoicePaid[$invNo] ?? 0) + (float) $paid;
-                }
-            }
+        if ($request->filled('product_id')) {
+            $riwayatQuery->where('product_id', $request->product_id);
         }
+        if ($request->filled('search')) {
+            $term = '%' . $request->search . '%';
+            $riwayatQuery->where(function ($q) use ($term) {
+                $q->where('serial_numbers', 'like', $term)
+                    ->orWhereHas('product', function ($q2) use ($term) {
+                        $q2->where('sku', 'like', $term)
+                            ->orWhere('brand', 'like', $term)
+                            ->orWhere('series', 'like', $term);
+                    });
+            });
+        }
+        $riwayatDetails = $riwayatQuery->paginate(20, ['*'], 'page')->withQueryString();
 
-        // === Location name lookups (for both tabs) ===
-        $allItems = $riwayatItems->merge($invMutations->flatten());
-        $warehouseIds = $allItems->flatMap(function ($m) {
+        // === Location name lookups ===
+        $allDistributions = $distributions->getCollection();
+        $riwayatDistributions = $riwayatDetails->getCollection()->map(fn ($d) => $d->distribution)->filter()->unique('id');
+        $allDists = $allDistributions->merge($riwayatDistributions);
+
+        $warehouseIds = $allDists->flatMap(function ($d) {
             $ids = [];
-            if ($m->from_location_type === Stock::LOCATION_WAREHOUSE) {
-                $ids[] = (int) $m->from_location_id;
+            if ($d->from_location_type === Stock::LOCATION_WAREHOUSE) {
+                $ids[] = (int) $d->from_location_id;
             }
-            if ($m->to_location_type === Stock::LOCATION_WAREHOUSE) {
-                $ids[] = (int) $m->to_location_id;
+            if ($d->to_location_type === Stock::LOCATION_WAREHOUSE) {
+                $ids[] = (int) $d->to_location_id;
             }
-
             return $ids;
         })->filter()->unique()->values();
 
-        $branchIds = $allItems->flatMap(function ($m) {
+        $branchIds = $allDists->flatMap(function ($d) {
             $ids = [];
-            if ($m->from_location_type === Stock::LOCATION_BRANCH) {
-                $ids[] = (int) $m->from_location_id;
+            if ($d->from_location_type === Stock::LOCATION_BRANCH) {
+                $ids[] = (int) $d->from_location_id;
             }
-            if ($m->to_location_type === Stock::LOCATION_BRANCH) {
-                $ids[] = (int) $m->to_location_id;
+            if ($d->to_location_type === Stock::LOCATION_BRANCH) {
+                $ids[] = (int) $d->to_location_id;
             }
-
             return $ids;
         })->filter()->unique()->values();
 
         $warehousesById = $warehouseIds->isNotEmpty()
-            ? Warehouse::query()->whereIn('id', $warehouseIds)->pluck('name', 'id')
+            ? Warehouse::whereIn('id', $warehouseIds)->pluck('name', 'id')
             : collect();
         $branchesById = $branchIds->isNotEmpty()
-            ? Branch::query()->whereIn('id', $branchIds)->pluck('name', 'id')
+            ? Branch::whereIn('id', $branchIds)->pluck('name', 'id')
             : collect();
 
         $products = Product::withCount([
@@ -253,11 +221,8 @@ class StockMutationController extends Controller
 
         return view('stock-mutations.index', compact(
             'activeTab',
-            'mutations',
-            'invoices',
-            'invMutations',
-            'invBiaya',
-            'invPaid',
+            'distributions',
+            'riwayatDetails',
             'products',
             'warehousesById',
             'branchesById',
@@ -268,57 +233,34 @@ class StockMutationController extends Controller
             'locationType',
             'locationId',
             'locationLabel',
-            'invoiceBiaya',
-            'invoicePaid',
             'canCancelDistribution'
         ));
     }
 
-    public function invoice(StockMutation $stockMutation): View
+    public function invoice(Distribution $distribution): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->branch_id) {
-                $involved = ($stockMutation->from_location_type === Stock::LOCATION_BRANCH && (int) $stockMutation->from_location_id === (int) $user->branch_id)
-                    || ($stockMutation->to_location_type === Stock::LOCATION_BRANCH && (int) $stockMutation->to_location_id === (int) $user->branch_id);
-                if (! $involved) {
-                    abort(403, __('Unauthorized.'));
-                }
-            }
-            if ($user->warehouse_id) {
-                $involved = ($stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE && (int) $stockMutation->from_location_id === (int) $user->warehouse_id)
-                    || ($stockMutation->to_location_type === Stock::LOCATION_WAREHOUSE && (int) $stockMutation->to_location_id === (int) $user->warehouse_id);
-                if (! $involved) {
-                    abort(403, __('Unauthorized.'));
-                }
-            }
-        }
+        $this->authorizeDistributionAccess($distribution, $user);
 
-        return view('stock-mutations.invoice', $this->distributionInvoiceViewData($stockMutation));
+        return view('stock-mutations.invoice', $this->distributionInvoiceViewData($distribution));
     }
 
-    public function showCancel(StockMutation $stockMutation): View|RedirectResponse
+    public function showCancel(Distribution $distribution): View|RedirectResponse
     {
         $user = auth()->user();
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
 
-        if (trim((string) ($stockMutation->invoice_number ?? '')) === '') {
-            return redirect()->route('stock-mutations.index')
-                ->with('error', __('Distribusi tanpa nomor invoice tidak dapat dibatalkan lewat halaman ini.'));
-        }
-
-        $data = $this->distributionInvoiceViewData($stockMutation);
-        if ($data['invoiceCancelled']) {
+        if ($distribution->isCancelled()) {
             return redirect()->route('stock-mutations.index')
                 ->with('info', __('Distribusi ini sudah dibatalkan.'));
         }
 
-        return view('stock-mutations.cancel', $data);
+        return view('stock-mutations.cancel', $this->distributionInvoiceViewData($distribution));
     }
 
-    public function cancel(Request $request, StockMutation $stockMutation): RedirectResponse
+    public function cancel(Request $request, Distribution $distribution): RedirectResponse
     {
         $user = $request->user();
         if (! $user->isSuperAdminOrAdminPusat()) {
@@ -330,17 +272,17 @@ class StockMutationController extends Controller
         ]);
 
         try {
-            $this->stockMutationService->cancelDistributionInvoice(
-                $stockMutation,
+            $this->stockMutationService->cancelDistribution(
+                $distribution,
                 (int) $user->id,
                 $validated['cancel_reason']
             );
             AuditLog::create([
                 'user_id' => $user->id,
-                'action' => 'stock_mutation.cancel',
-                'reference_type' => 'stock_mutation',
-                'reference_id' => $stockMutation->id,
-                'description' => 'Cancel distribusi ' . ($stockMutation->invoice_number ?? '#' . $stockMutation->id) . '. Alasan: ' . $validated['cancel_reason'],
+                'action' => 'distribution.cancel',
+                'reference_type' => 'distribution',
+                'reference_id' => $distribution->id,
+                'description' => 'Cancel distribusi ' . $distribution->invoice_number . '. Alasan: ' . $validated['cancel_reason'],
             ]);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -350,84 +292,54 @@ class StockMutationController extends Controller
     }
 
     /**
-     * @return array{
-     *     stockMutation: StockMutation,
-     *     allMutations: \Illuminate\Support\Collection,
-     *     cashFlows: \Illuminate\Support\Collection,
-     *     fromLocation: Branch|Warehouse|null,
-     *     toLocation: Branch|Warehouse|null,
-     *     invoiceCancelled: bool,
-     *     totalBiaya: float,
-     *     totalPaid: float,
-     *     isLunas: bool
-     * }
+     * @return array<string, mixed>
      */
-    private function distributionInvoiceViewData(StockMutation $stockMutation): array
+    private function distributionInvoiceViewData(Distribution $distribution): array
     {
-        $allMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)
-            ->with(['product', 'user', 'purchase', 'cancelUser'])
-            ->orderBy('id')
-            ->get();
+        $distribution->load(['details.product', 'payments.paymentMethod', 'user', 'cancelUser']);
 
-        $mutationIds = $allMutations->pluck('id')->all();
-        $cashFlowsRaw = CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
-            ->whereIn('reference_id', $mutationIds)
-            ->with('paymentMethod')
-            ->orderBy('id')
-            ->get();
-        $cashFlows = $cashFlowsRaw->where('type', CashFlow::TYPE_IN)->values();
+        $fromLocation = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE
+            ? Warehouse::find($distribution->from_location_id)
+            : Branch::find($distribution->from_location_id);
+        $toLocation = $distribution->to_location_type === Stock::LOCATION_WAREHOUSE
+            ? Warehouse::find($distribution->to_location_id)
+            : Branch::find($distribution->to_location_id);
 
-        $fromLocation = $stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE
-            ? Warehouse::find($stockMutation->from_location_id)
-            : Branch::find($stockMutation->from_location_id);
-        $toLocation = $stockMutation->to_location_type === Stock::LOCATION_WAREHOUSE
-            ? Warehouse::find($stockMutation->to_location_id)
-            : Branch::find($stockMutation->to_location_id);
-
-        $invoiceCancelled = $allMutations->contains(fn ($m) => $m->isCancelled());
-        $totalBiaya = (float) $allMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
-        $totalPaid = (float) $cashFlows->sum('amount');
+        $totalBiaya = (float) $distribution->total;
+        $totalPaid = (float) $distribution->total_paid;
         $isLunas = $totalBiaya <= 0 || ($totalPaid + 0.02 >= $totalBiaya);
 
         return [
-            'stockMutation' => $stockMutation,
-            'allMutations' => $allMutations,
-            'cashFlows' => $cashFlows,
+            'distribution' => $distribution,
             'fromLocation' => $fromLocation,
             'toLocation' => $toLocation,
-            'invoiceCancelled' => $invoiceCancelled,
             'totalBiaya' => $totalBiaya,
             'totalPaid' => $totalPaid,
             'isLunas' => $isLunas,
         ];
     }
 
-    public function addPayment(StockMutation $stockMutation): View|RedirectResponse
+    public function addPayment(Distribution $distribution): View|RedirectResponse
     {
         $user = auth()->user();
-        $this->authorizeDistributionAccess($stockMutation, $user);
+        $this->authorizeDistributionAccess($distribution, $user);
 
-        $groupMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)->get();
-        if ($groupMutations->contains(fn ($m) => $m->isCancelled())) {
+        if ($distribution->isCancelled()) {
             return redirect()->route('stock-mutations.index')->with('error', __('Distribusi ini sudah dibatalkan.'));
         }
-        $totalBiaya = $groupMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
+        $totalBiaya = (float) $distribution->total;
         if ($totalBiaya <= 0) {
             return redirect()->route('stock-mutations.index')->with('info', __('Distribusi ini tidak memiliki biaya.'));
         }
 
-        $groupIds = $groupMutations->pluck('id')->all();
-        $totalPaid = (float) CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
-            ->where('type', CashFlow::TYPE_IN)
-            ->whereIn('reference_id', $groupIds)
-            ->sum('amount');
+        $totalPaid = (float) $distribution->total_paid;
         $sisa = max(0, $totalBiaya - $totalPaid);
         if ($sisa < 0.01) {
             return redirect()->route('stock-mutations.index')->with('info', __('Pembayaran sudah lunas.'));
         }
 
-        $branchId = $stockMutation->from_location_type === Stock::LOCATION_BRANCH ? (int) $stockMutation->from_location_id : null;
-        $warehouseId = $stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE ? (int) $stockMutation->from_location_id : null;
+        $branchId = $distribution->from_location_type === Stock::LOCATION_BRANCH ? (int) $distribution->from_location_id : null;
+        $warehouseId = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE ? (int) $distribution->from_location_id : null;
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -438,16 +350,15 @@ class StockMutationController extends Controller
             ->orderBy('nama_bank')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
 
-        $stockMutation->load(['product', 'user']);
-        $fromLocation = $stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE
-            ? Warehouse::find($stockMutation->from_location_id)
-            : Branch::find($stockMutation->from_location_id);
-        $toLocation = $stockMutation->to_location_type === Stock::LOCATION_WAREHOUSE
-            ? Warehouse::find($stockMutation->to_location_id)
-            : Branch::find($stockMutation->to_location_id);
+        $fromLocation = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE
+            ? Warehouse::find($distribution->from_location_id)
+            : Branch::find($distribution->from_location_id);
+        $toLocation = $distribution->to_location_type === Stock::LOCATION_WAREHOUSE
+            ? Warehouse::find($distribution->to_location_id)
+            : Branch::find($distribution->to_location_id);
 
         return view('stock-mutations.add-payment', compact(
-            'stockMutation',
+            'distribution',
             'paymentMethods',
             'totalBiaya',
             'totalPaid',
@@ -457,21 +368,16 @@ class StockMutationController extends Controller
         ));
     }
 
-    public function storePayment(Request $request, StockMutation $stockMutation): RedirectResponse
+    public function storePayment(Request $request, Distribution $distribution): RedirectResponse
     {
         $user = auth()->user();
-        $this->authorizeDistributionAccess($stockMutation, $user);
+        $this->authorizeDistributionAccess($distribution, $user);
 
-        $groupMutations = StockMutation::where('invoice_number', $stockMutation->invoice_number)->get();
-        if ($groupMutations->contains(fn ($m) => $m->isCancelled())) {
+        if ($distribution->isCancelled()) {
             return redirect()->route('stock-mutations.index')->with('error', __('Distribusi ini sudah dibatalkan.'));
         }
-        $totalBiaya = $groupMutations->sum(fn ($m) => (float) ($m->biaya_distribusi_per_unit ?? 0) * (int) $m->quantity);
-        $groupIds = $groupMutations->pluck('id')->all();
-        $totalPaid = (float) CashFlow::where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
-            ->where('type', CashFlow::TYPE_IN)
-            ->whereIn('reference_id', $groupIds)
-            ->sum('amount');
+        $totalBiaya = (float) $distribution->total;
+        $totalPaid = (float) $distribution->total_paid;
         $sisa = max(0, $totalBiaya - $totalPaid);
 
         $validated = $request->validate([
@@ -482,11 +388,11 @@ class StockMutationController extends Controller
 
         $amount = round((float) $validated['amount'], 2);
         $pmId = (int) $validated['payment_method_id'];
-        $transactionDate = $validated['transaction_date'] ?? $stockMutation->mutation_date?->toDateString() ?? now()->toDateString();
+        $transactionDate = $validated['transaction_date'] ?? $distribution->distribution_date?->toDateString() ?? now()->toDateString();
 
         $pm = PaymentMethod::find($pmId);
-        $branchId = $stockMutation->from_location_type === Stock::LOCATION_BRANCH ? (int) $stockMutation->from_location_id : null;
-        $warehouseId = $stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE ? (int) $stockMutation->from_location_id : null;
+        $branchId = $distribution->from_location_type === Stock::LOCATION_BRANCH ? (int) $distribution->from_location_id : null;
+        $warehouseId = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE ? (int) $distribution->from_location_id : null;
         $validPm = ($branchId && (int) ($pm->branch_id ?? 0) === $branchId)
             || ($warehouseId && (int) ($pm->warehouse_id ?? 0) === $warehouseId);
         if (! $validPm) {
@@ -502,58 +408,63 @@ class StockMutationController extends Controller
             ]
         );
 
-        CashFlow::create([
-            'branch_id' => $branchId,
-            'warehouse_id' => $warehouseId,
-            'type' => CashFlow::TYPE_IN,
-            'amount' => $amount,
-            'description' => __('Distribusi Barang') . ' #' . $stockMutation->id . ' - ' . ($pm->display_label ?? __('Pembayaran')),
-            'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
-            'reference_id' => $stockMutation->id,
-            'income_category_id' => $incomeCategory->id,
-            'payment_method_id' => $pmId,
-            'transaction_date' => $transactionDate,
-            'user_id' => $user->id,
-        ]);
+        DB::transaction(function () use ($distribution, $pmId, $amount, $transactionDate, $branchId, $warehouseId, $incomeCategory, $pm, $user) {
+            DistributionPayment::create([
+                'distribution_id' => $distribution->id,
+                'payment_method_id' => $pmId,
+                'amount' => $amount,
+            ]);
+
+            CashFlow::create([
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouseId,
+                'type' => CashFlow::TYPE_IN,
+                'amount' => $amount,
+                'description' => __('Distribusi Barang') . ' ' . $distribution->invoice_number . ' - ' . ($pm->display_label ?? __('Pembayaran')),
+                'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
+                'reference_id' => $distribution->id,
+                'income_category_id' => $incomeCategory->id,
+                'payment_method_id' => $pmId,
+                'transaction_date' => $transactionDate,
+                'user_id' => $user->id,
+            ]);
+
+            $distribution->update([
+                'total_paid' => (float) $distribution->total_paid + $amount,
+            ]);
+        });
 
         return redirect()->route('stock-mutations.index')
             ->with('success', __('Pembayaran berhasil dicatat.'));
     }
 
-    private function authorizeDistributionAccess(StockMutation $stockMutation, $user): void
+    private function authorizeDistributionAccess(Distribution $distribution, $user): void
     {
         if ($user->isSuperAdminOrAdminPusat()) {
             return;
         }
         if ($user->branch_id) {
-            $involved = ($stockMutation->from_location_type === Stock::LOCATION_BRANCH && (int) $stockMutation->from_location_id === (int) $user->branch_id)
-                || ($stockMutation->to_location_type === Stock::LOCATION_BRANCH && (int) $stockMutation->to_location_id === (int) $user->branch_id);
+            $involved = ($distribution->from_location_type === Stock::LOCATION_BRANCH && (int) $distribution->from_location_id === (int) $user->branch_id)
+                || ($distribution->to_location_type === Stock::LOCATION_BRANCH && (int) $distribution->to_location_id === (int) $user->branch_id);
             if (! $involved) {
                 abort(403, __('Unauthorized.'));
             }
             return;
         }
         if ($user->warehouse_id) {
-            $involved = ($stockMutation->from_location_type === Stock::LOCATION_WAREHOUSE && (int) $stockMutation->from_location_id === (int) $user->warehouse_id)
-                || ($stockMutation->to_location_type === Stock::LOCATION_WAREHOUSE && (int) $stockMutation->to_location_id === (int) $user->warehouse_id);
+            $involved = ($distribution->from_location_type === Stock::LOCATION_WAREHOUSE && (int) $distribution->from_location_id === (int) $user->warehouse_id)
+                || ($distribution->to_location_type === Stock::LOCATION_WAREHOUSE && (int) $distribution->to_location_id === (int) $user->warehouse_id);
             if (! $involved) {
                 abort(403, __('Unauthorized.'));
             }
         }
     }
 
-    /**
-     * Normalisasi nomor rekening untuk perbandingan (spasi dihapus).
-     */
     private function normalizeNoRekening(?string $no): string
     {
         return preg_replace('/\s+/', '', trim((string) $no));
     }
 
-    /**
-     * Pilih metode pembayaran di lokasi tujuan yang sama sumber dananya dengan lokasi asal:
-     * utamakan nomor rekening yang sama; jika asal tanpa rekening (mis. tunai), cocokkan jenis pembayaran.
-     */
     private function matchDestinationPaymentMethod(PaymentMethod $originPm, $destPaymentMethods): ?PaymentMethod
     {
         $originRek = $this->normalizeNoRekening($originPm->no_rekening ?? '');
@@ -575,9 +486,6 @@ class StockMutationController extends Controller
         });
     }
 
-    /**
-     * Auto-fill PurchasePayments on destination Purchases by matching payment methods (via nomor rekening yang sama).
-     */
     private function autoFillDestinationPurchasePayments(
         array $mutations,
         array $distributionPayments,
@@ -711,7 +619,7 @@ class StockMutationController extends Controller
         }
 
         $validated = $request->validate([
-            'from_location_type' => ['required', 'in:'.Stock::LOCATION_WAREHOUSE.','.Stock::LOCATION_BRANCH],
+            'from_location_type' => ['required', 'in:' . Stock::LOCATION_WAREHOUSE . ',' . Stock::LOCATION_BRANCH],
             'from_location_id' => ['required', 'integer', 'min:1'],
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
         ]);
@@ -769,7 +677,7 @@ class StockMutationController extends Controller
 
         $validated = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
-            'from_location_type' => ['required', 'in:'.Stock::LOCATION_WAREHOUSE.','.Stock::LOCATION_BRANCH],
+            'from_location_type' => ['required', 'in:' . Stock::LOCATION_WAREHOUSE . ',' . Stock::LOCATION_BRANCH],
             'from_location_id' => ['required', 'integer', 'min:1'],
         ]);
 
@@ -781,14 +689,14 @@ class StockMutationController extends Controller
             ->where('status', ProductUnit::STATUS_IN_STOCK);
 
         $total = (clone $query)->count();
-        $serials = $query
+        $units = $query
             ->orderBy('id')
             ->limit($limit)
-            ->pluck('serial_number')
-            ->all();
+            ->get(['serial_number', 'harga_hpp']);
 
         return response()->json([
-            'serial_numbers' => $serials,
+            'serial_numbers' => $units->pluck('serial_number')->all(),
+            'serial_hpp' => $units->pluck('harga_hpp', 'serial_number')->all(),
             'total_available' => $total,
             'truncated' => $total > $limit,
         ]);
@@ -821,10 +729,11 @@ class StockMutationController extends Controller
             }
 
             $invoiceNumber = $this->stockMutationService->generateDistributionInvoiceNumber();
-            $mutations = [];
 
             DB::beginTransaction();
 
+            $totalBiaya = 0;
+            $details = [];
             foreach ($items as $item) {
                 $product = Product::findOrFail($item['product_id']);
                 $serialNumbers = $this->normalizeSerialNumbersInput($item['serial_numbers'] ?? null);
@@ -837,22 +746,18 @@ class StockMutationController extends Controller
                     );
                 }
 
-                $mutation = $this->stockMutationService->mutate(
-                    $product,
-                    $fromLocationType,
-                    $fromLocationId,
-                    $request->to_location_type,
-                    (int) $request->to_location_id,
-                    $quantity,
-                    $request->mutation_date,
-                    $request->notes,
-                    $user->id,
-                    $serialNumbers,
-                    $biayaDistribusi,
-                    [],
-                    $invoiceNumber
-                );
-                $mutations[] = $mutation;
+                $hppPerUnit = isset($item['hpp_per_unit']) && $item['hpp_per_unit'] !== '' && $item['hpp_per_unit'] !== null
+                    ? round((float) $item['hpp_per_unit'], 2)
+                    : null;
+
+                $totalBiaya += $biayaDistribusi * $quantity;
+                $details[] = [
+                    'product' => $product,
+                    'serial_numbers' => $serialNumbers,
+                    'quantity' => $quantity,
+                    'biaya_distribusi' => $biayaDistribusi,
+                    'hpp_per_unit' => $hppPerUnit,
+                ];
             }
 
             $distributionPayments = collect($request->input('distribution_payments', []))
@@ -864,10 +769,57 @@ class StockMutationController extends Controller
                 ->values()
                 ->all();
 
-            $totalBiaya = collect($mutations)->sum(fn ($m) => (float) $m->biaya_distribusi_per_unit * (int) $m->quantity);
+            $totalPaid = collect($distributionPayments)->sum('amount');
+
+            $distribution = Distribution::create([
+                'invoice_number' => $invoiceNumber,
+                'from_location_type' => $fromLocationType,
+                'from_location_id' => $fromLocationId,
+                'to_location_type' => $request->to_location_type,
+                'to_location_id' => (int) $request->to_location_id,
+                'total' => round($totalBiaya, 2),
+                'total_paid' => round($totalPaid, 2),
+                'notes' => $request->notes,
+                'user_id' => $user->id,
+                'distribution_date' => $request->mutation_date,
+                'status' => Distribution::STATUS_ACTIVE,
+            ]);
+
+            $mutations = [];
+            foreach ($details as $detail) {
+                $mutation = $this->stockMutationService->mutate(
+                    $detail['product'],
+                    $fromLocationType,
+                    $fromLocationId,
+                    $request->to_location_type,
+                    (int) $request->to_location_id,
+                    $detail['quantity'],
+                    $request->mutation_date,
+                    $request->notes,
+                    $user->id,
+                    $detail['serial_numbers'],
+                    $detail['biaya_distribusi'],
+                    [],
+                    $invoiceNumber,
+                    $distribution->id
+                );
+                $mutations[] = $mutation;
+
+                $finalHpp = $detail['hpp_per_unit'] !== null
+                    ? $detail['hpp_per_unit']
+                    : (float) $mutation->hpp_per_unit;
+
+                DistributionDetail::create([
+                    'distribution_id' => $distribution->id,
+                    'product_id' => $detail['product']->id,
+                    'quantity' => $detail['quantity'],
+                    'biaya_distribusi_per_unit' => $detail['biaya_distribusi'],
+                    'hpp_per_unit' => $finalHpp,
+                    'serial_numbers' => ! empty($detail['serial_numbers']) ? implode("\n", $detail['serial_numbers']) : null,
+                ]);
+            }
 
             if ($totalBiaya > 0 && ! empty($distributionPayments)) {
-                $firstMutation = $mutations[0];
                 $incomeCategory = IncomeCategory::firstOrCreate(
                     ['code' => 'DIST-BRG'],
                     [
@@ -898,6 +850,12 @@ class StockMutationController extends Controller
                         }
                     }
 
+                    DistributionPayment::create([
+                        'distribution_id' => $distribution->id,
+                        'payment_method_id' => $pmId,
+                        'amount' => $amount,
+                    ]);
+
                     CashFlow::create([
                         'branch_id' => $fromBranchId,
                         'warehouse_id' => $fromWarehouseId,
@@ -905,7 +863,7 @@ class StockMutationController extends Controller
                         'amount' => $amount,
                         'description' => __('Distribusi Barang') . ' ' . $invoiceNumber . ' - ' . ($pm?->display_label ?? __('Pembayaran')),
                         'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
-                        'reference_id' => $firstMutation->id,
+                        'reference_id' => $distribution->id,
                         'income_category_id' => $incomeCategory->id,
                         'payment_method_id' => $pmId,
                         'transaction_date' => $request->mutation_date,
@@ -971,11 +929,11 @@ class StockMutationController extends Controller
                 }
                 $out[] = $sn;
             }
+
             return $this->ensureUniqueSerials($out);
         }
 
         if (is_string($input)) {
-            // Backward compatibility (old textarea input)
             return $this->parseSerialNumbers($input);
         }
 

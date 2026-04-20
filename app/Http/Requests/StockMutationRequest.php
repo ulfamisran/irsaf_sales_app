@@ -46,6 +46,7 @@ class StockMutationRequest extends FormRequest
             'items.*.serial_numbers' => ['nullable', 'array'],
             'items.*.serial_numbers.*' => ['string'],
             'items.*.biaya_distribusi_per_unit' => ['nullable', 'numeric', 'min:0'],
+            'items.*.hpp_per_unit' => ['nullable', 'numeric', 'min:0'],
             'from_location_type' => ['required', Rule::in([Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH])],
             'from_location_id' => ['required', 'integer', 'min:1'],
             'to_location_type' => ['required', Rule::in([Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH])],

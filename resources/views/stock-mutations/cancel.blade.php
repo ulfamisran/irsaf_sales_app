@@ -3,10 +3,10 @@
     <x-slot name="header">
         <div class="flex flex-wrap justify-between items-center gap-3">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">
-                {{ __('Batalkan Distribusi') }} — {{ $stockMutation->invoice_number }}
+                {{ __('Batalkan Distribusi') }} — {{ $distribution->invoice_number }}
             </h2>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('stock-mutations.invoice', $stockMutation) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                <a href="{{ route('stock-mutations.invoice', $distribution) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
                     {{ __('Invoice') }}
                 </a>
                 <x-icon-btn-back :href="route('stock-mutations.index')" :label="__('Kembali ke Distribusi')" />
@@ -32,30 +32,30 @@
         <div class="card-modern overflow-hidden mb-8">
             <div class="p-6 border-b border-gray-100">
                 <h3 class="text-lg font-semibold text-slate-800">{{ __('Detail distribusi') }}</h3>
-                <p class="text-sm text-slate-500 mt-1">{{ __('Seluruh baris dengan nomor invoice yang sama akan dibatalkan.') }}</p>
+                <p class="text-sm text-slate-500 mt-1">{{ __('Seluruh baris dalam distribusi ini akan dibatalkan.') }}</p>
             </div>
             <div class="p-6 space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div>
                         <p class="text-slate-500">{{ __('Tanggal') }}</p>
-                        <p class="font-medium text-slate-800">{{ $stockMutation->mutation_date?->format('d/m/Y') ?? '-' }}</p>
+                        <p class="font-medium text-slate-800">{{ $distribution->distribution_date?->format('d/m/Y') ?? '-' }}</p>
                     </div>
                     <div>
                         <p class="text-slate-500">{{ __('User') }}</p>
-                        <p class="font-medium text-slate-800">{{ $stockMutation->user?->name ?? '-' }}</p>
+                        <p class="font-medium text-slate-800">{{ $distribution->user?->name ?? '-' }}</p>
                     </div>
                     <div>
                         <p class="text-slate-500">{{ __('Dari') }}</p>
                         <p class="font-medium text-slate-800">
-                            {{ $stockMutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }}:
-                            {{ $fromLocation?->name ?? ('#' . $stockMutation->from_location_id) }}
+                            {{ $distribution->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }}:
+                            {{ $fromLocation?->name ?? ('#' . $distribution->from_location_id) }}
                         </p>
                     </div>
                     <div>
                         <p class="text-slate-500">{{ __('Ke') }}</p>
                         <p class="font-medium text-slate-800">
-                            {{ $stockMutation->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }}:
-                            {{ $toLocation?->name ?? ('#' . $stockMutation->to_location_id) }}
+                            {{ $distribution->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }}:
+                            {{ $toLocation?->name ?? ('#' . $distribution->to_location_id) }}
                         </p>
                     </div>
                     <div>
@@ -83,10 +83,10 @@
                     </div>
                 </div>
 
-                @if ($stockMutation->notes)
+                @if ($distribution->notes)
                     <div class="text-sm">
                         <p class="text-slate-500">{{ __('Catatan') }}</p>
-                        <p class="text-slate-800 whitespace-pre-line">{{ $stockMutation->notes }}</p>
+                        <p class="text-slate-800 whitespace-pre-line">{{ $distribution->notes }}</p>
                     </div>
                 @endif
 
@@ -110,25 +110,25 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
-                            @foreach ($allMutations as $m)
+                            @foreach ($distribution->details as $detail)
                                 <tr>
-                                    <td class="px-3 py-2 font-medium text-slate-800">{{ $m->product?->sku }} — {{ $m->product?->brand }}</td>
-                                    <td class="px-3 py-2 text-right">{{ $m->quantity }}</td>
+                                    <td class="px-3 py-2 font-medium text-slate-800">{{ $detail->product?->sku }} — {{ $detail->product?->brand }}</td>
+                                    <td class="px-3 py-2 text-right">{{ $detail->quantity }}</td>
                                     <td class="px-3 py-2 text-right">
-                                        @if (($m->biaya_distribusi_per_unit ?? 0) > 0)
-                                            {{ number_format((float) $m->biaya_distribusi_per_unit, 0, ',', '.') }}
+                                        @if (($detail->biaya_distribusi_per_unit ?? 0) > 0)
+                                            {{ number_format((float) $detail->biaya_distribusi_per_unit, 0, ',', '.') }}
                                         @else
                                             —
                                         @endif
                                     </td>
-                                    <td class="px-3 py-2 text-slate-600 font-mono text-xs whitespace-pre-line">{{ $m->serial_numbers ?: '—' }}</td>
+                                    <td class="px-3 py-2 text-slate-600 font-mono text-xs whitespace-pre-line">{{ $detail->serial_numbers ?: '—' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
 
-                @if ($cashFlows->isNotEmpty())
+                @if ($distribution->payments->isNotEmpty())
                     <div>
                         <p class="text-sm font-semibold text-slate-700 mb-2">{{ __('Pembayaran tercatat (lokasi asal)') }}</p>
                         <div class="overflow-x-auto rounded-lg border border-gray-200">
@@ -141,11 +141,11 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
-                                    @foreach ($cashFlows as $cf)
+                                    @foreach ($distribution->payments as $payment)
                                         <tr>
-                                            <td class="px-3 py-2">{{ $cf->transaction_date?->format('d/m/Y') ?? '-' }}</td>
-                                            <td class="px-3 py-2">{{ $cf->paymentMethod?->display_label ?? '-' }}</td>
-                                            <td class="px-3 py-2 text-right">Rp {{ number_format((float) $cf->amount, 0, ',', '.') }}</td>
+                                            <td class="px-3 py-2">{{ $payment->created_at?->format('d/m/Y') ?? '-' }}</td>
+                                            <td class="px-3 py-2">{{ $payment->paymentMethod?->display_label ?? '-' }}</td>
+                                            <td class="px-3 py-2 text-right">Rp {{ number_format((float) $payment->amount, 0, ',', '.') }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -159,7 +159,7 @@
         <div class="mt-8 border border-red-200 rounded-xl p-6 bg-red-50/40">
             <p class="font-semibold text-red-800 mb-2">{{ __('Batalkan transaksi distribusi') }}</p>
             <p class="text-sm text-red-900/80 mb-4">{{ __('Tindakan ini tidak dapat diurungkan. Pastikan kondisi stok dan kas sudah sesuai.') }}</p>
-            <form method="POST" action="{{ route('stock-mutations.cancel', $stockMutation) }}"
+            <form method="POST" action="{{ route('stock-mutations.cancel', $distribution) }}"
                 onsubmit="return confirm(@json(__('Batalkan seluruh distribusi untuk invoice ini?')))">
                 @csrf
                 <div class="flex flex-col gap-3 mb-4">

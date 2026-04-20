@@ -13,10 +13,10 @@
             <div class="p-4 border-b border-gray-100 bg-slate-50">
                 <h3 class="font-medium text-slate-800">{{ __('Info Distribusi') }}</h3>
                 <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-600">
-                    <div>{{ __('Produk') }}: {{ $stockMutation->product?->sku ?? '-' }} - {{ $stockMutation->product?->brand ?? '' }}</div>
-                    <div>{{ __('Tanggal') }}: {{ $stockMutation->mutation_date->format('d/m/Y') }}</div>
-                    <div>{{ __('Dari') }}: {{ $stockMutation->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }} {{ $fromLocation?->name ?? $stockMutation->from_location_id }}</div>
-                    <div>{{ __('Ke') }}: {{ $stockMutation->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }} {{ $toLocation?->name ?? $stockMutation->to_location_id }}</div>
+                    <div>{{ __('Invoice') }}: {{ $distribution->invoice_number }}</div>
+                    <div>{{ __('Tanggal') }}: {{ $distribution->distribution_date->format('d/m/Y') }}</div>
+                    <div>{{ __('Dari') }}: {{ $distribution->from_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }} {{ $fromLocation?->name ?? $distribution->from_location_id }}</div>
+                    <div>{{ __('Ke') }}: {{ $distribution->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang') }} {{ $toLocation?->name ?? $distribution->to_location_id }}</div>
                     <div>{{ __('Total Biaya') }}: {{ number_format($totalBiaya, 0, ',', '.') }}</div>
                     <div>{{ __('Sudah Bayar') }}: {{ number_format($totalPaid, 0, ',', '.') }}</div>
                     <div class="font-semibold text-red-600">{{ __('Sisa') }}: {{ number_format($sisa, 0, ',', '.') }}</div>
@@ -26,7 +26,7 @@
 
         <div class="card-modern overflow-hidden">
             <div class="p-6">
-                <form method="POST" action="{{ route('stock-mutations.store-payment', $stockMutation) }}" class="space-y-4">
+                <form method="POST" action="{{ route('stock-mutations.store-payment', $distribution) }}" class="space-y-4">
                     @csrf
 
                     <div>
@@ -43,7 +43,7 @@
 
                     <div>
                         <x-input-label for="transaction_date" :value="__('Tanggal Pembayaran')" />
-                        <x-text-input id="transaction_date" class="block mt-1 w-full" type="date" name="transaction_date" :value="old('transaction_date', $stockMutation->mutation_date?->format('Y-m-d') ?? date('Y-m-d'))" required />
+                        <x-text-input id="transaction_date" class="block mt-1 w-full" type="date" name="transaction_date" :value="old('transaction_date', $distribution->distribution_date?->format('Y-m-d') ?? date('Y-m-d'))" required />
                         <x-input-error :messages="$errors->get('transaction_date')" class="mt-2" />
                     </div>
 
