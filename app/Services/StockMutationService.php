@@ -504,13 +504,17 @@ class StockMutationService
             }
 
             $distributionSnapshot = [];
+            $totalSnapshotHpp = 0.0;
             foreach ($units as $unit) {
+                $unitHpp = round((float) ($unit->harga_hpp ?? 0), 2);
+                $totalSnapshotHpp += $unitHpp;
                 $distributionSnapshot[] = [
                     'serial_number' => (string) $unit->serial_number,
-                    'harga_hpp' => round((float) ($unit->harga_hpp ?? 0), 2),
+                    'harga_hpp' => $unitHpp,
                     'harga_jual' => round((float) ($unit->harga_jual ?? 0), 2),
                 ];
             }
+            $avgHppPerUnit = $quantity > 0 ? round($totalSnapshotHpp / $quantity, 2) : 0;
 
             foreach ($units as $unit) {
                 $oldJual = round((float) ($unit->harga_jual ?? 0), 2);
@@ -539,6 +543,7 @@ class StockMutationService
                 'to_location_id' => $toLocationId,
                 'quantity' => $quantity,
                 'biaya_distribusi_per_unit' => $biayaDistribusiPerUnit,
+                'hpp_per_unit' => $avgHppPerUnit,
                 'distribution_payment_method_id' => null,
                 'mutation_date' => $mutationDate,
                 'notes' => $notes,

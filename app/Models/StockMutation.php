@@ -25,6 +25,7 @@ class StockMutation extends Model
         'to_location_id',
         'quantity',
         'biaya_distribusi_per_unit',
+        'hpp_per_unit',
         'distribution_payment_method_id',
         'mutation_date',
         'notes',
@@ -42,6 +43,7 @@ class StockMutation extends Model
         return [
             'quantity' => 'integer',
             'biaya_distribusi_per_unit' => 'decimal:2',
+            'hpp_per_unit' => 'decimal:2',
             'mutation_date' => 'date',
             'cancel_date' => 'date',
             'distribution_unit_snapshot' => 'array',

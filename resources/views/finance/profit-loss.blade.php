@@ -226,6 +226,16 @@
                                 <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('Subtotal Pemasukan Distribusi') }}</td>
                                 <td class="px-4 py-2 text-right font-medium text-emerald-600" colspan="3">{{ number_format($totalDistributionIncome ?? 0, 0, ',', '.') }}</td>
                             </tr>
+                            @if(($totalDistributionHpp ?? 0) > 0)
+                            <tr class="profit-loss-detail-row">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-medium">{{ __('HPP Distribusi') }}</td>
+                                <td class="px-4 py-2 text-right font-medium text-red-600" colspan="3">-{{ number_format($totalDistributionHpp ?? 0, 0, ',', '.') }}</td>
+                            </tr>
+                            <tr class="border-t border-slate-200 profit-loss-subtotal">
+                                <td class="px-4 py-2 pl-6 text-slate-700 font-semibold">{{ __('Laba Distribusi') }}</td>
+                                <td class="px-4 py-2 text-right font-semibold {{ ($totalDistributionProfit ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600' }}" colspan="3">{{ number_format($totalDistributionProfit ?? 0, 0, ',', '.') }}</td>
+                            </tr>
+                            @endif
 
                             {{-- 5. Pemasukan Lainnya --}}
                             <tr class="bg-indigo-50/50 border-t-2 border-slate-200">
@@ -417,9 +427,19 @@
                 <div class="card-modern p-6">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pemasukan Distribusi') }}</h3>
                     <div class="flex justify-between text-sm">
-                        <span class="text-slate-600">{{ __('Total Pemasukan Distribusi') }}</span>
+                        <span class="text-slate-600">{{ __('Pendapatan Distribusi') }}</span>
                         <span class="font-semibold text-emerald-600">+{{ number_format($totalDistributionIncome ?? 0, 0, ',', '.') }}</span>
                     </div>
+                    @if(($totalDistributionHpp ?? 0) > 0)
+                    <div class="flex justify-between text-sm mt-1">
+                        <span class="text-slate-600">{{ __('HPP Distribusi') }}</span>
+                        <span class="font-semibold text-red-600">-{{ number_format($totalDistributionHpp ?? 0, 0, ',', '.') }}</span>
+                    </div>
+                    <div class="flex justify-between text-sm mt-1 pt-1 border-t border-slate-200">
+                        <span class="text-slate-700 font-medium">{{ __('Laba Distribusi') }}</span>
+                        <span class="font-semibold {{ ($totalDistributionProfit ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ number_format($totalDistributionProfit ?? 0, 0, ',', '.') }}</span>
+                    </div>
+                    @endif
                 </div>
                 <div class="card-modern p-6">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ __('Pemasukan Lainnya') }}</h3>

@@ -12,12 +12,14 @@ use App\Models\Rental;
 use App\Models\Sale;
 use App\Models\Service;
 use App\Models\Stock;
+use App\Models\StockMutation;
 use App\Models\Warehouse;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -208,6 +210,27 @@ class FinanceController extends Controller
 
         $totalDistributionIncome = (float) $incomeDistributionQuery->sum('amount');
 
+        // HPP Distribusi: dari data stock_mutations (hpp_per_unit * quantity) di lokasi asal
+        $distributionHppQuery = DB::table('stock_mutations')
+            ->where('biaya_distribusi_per_unit', '>', 0)
+            ->where(function ($q) {
+                $q->whereNull('status')
+                    ->orWhere('status', '!=', StockMutation::STATUS_CANCELLED);
+            })
+            ->whereBetween('mutation_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+
+        if ($branchId) {
+            $distributionHppQuery->where('from_location_type', Stock::LOCATION_BRANCH)
+                ->where('from_location_id', $branchId);
+        }
+        if ($warehouseId) {
+            $distributionHppQuery->where('from_location_type', Stock::LOCATION_WAREHOUSE)
+                ->where('from_location_id', $warehouseId);
+        }
+
+        $totalDistributionHpp = (float) $distributionHppQuery->selectRaw('COALESCE(SUM(hpp_per_unit * quantity), 0) as total')->value('total');
+        $totalDistributionProfit = $totalDistributionIncome - $totalDistributionHpp;
+
         // Pemasukan Lainnya (exclude distribusi): filter tanggal
         $incomeOtherQuery = CashFlow::query()
             ->where('type', CashFlow::TYPE_IN)
@@ -231,7 +254,7 @@ class FinanceController extends Controller
         }
 
         $totalOtherIncomeOnly = (float) $incomeOtherQuery->sum('amount');
-        $totalOtherIncome = $totalDistributionIncome + $totalOtherIncomeOnly;
+        $totalOtherIncome = $totalDistributionProfit + $totalOtherIncomeOnly;
 
         // Pengeluaran: filter tanggal
         // EXCLUDE: SP-SVC (sudah di Biaya Material Service), REVERSAL (transaksi cancel tidak dihitung)
@@ -447,6 +470,8 @@ class FinanceController extends Controller
             'totalTradeIn' => $totalTradeIn,
             'totalRentalIncome' => $totalRentalIncome,
             'totalDistributionIncome' => $totalDistributionIncome ?? 0,
+            'totalDistributionHpp' => $totalDistributionHpp ?? 0,
+            'totalDistributionProfit' => $totalDistributionProfit ?? 0,
             'totalOtherIncomeOnly' => $totalOtherIncomeOnly ?? 0,
             'totalOtherIncome' => $totalOtherIncome,
             'totalDamagedGoodsExpense' => $totalDamagedGoodsExpense ?? 0,
@@ -1220,7 +1245,19 @@ class FinanceController extends Controller
                 ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->sum('amount');
-            $totalPemasukan += $cfIn;
+
+            $distributionHpp = (float) DB::table('stock_mutations')
+                ->where('biaya_distribusi_per_unit', '>', 0)
+                ->where(function ($q) {
+                    $q->whereNull('status')
+                        ->orWhere('status', '!=', StockMutation::STATUS_CANCELLED);
+                })
+                ->whereBetween('mutation_date', [$dateFromStr, $dateToStr])
+                ->when($isBranch, fn ($q) => $q->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('from_location_type', Stock::LOCATION_WAREHOUSE)->where('from_location_id', $warehouseId))
+                ->selectRaw('COALESCE(SUM(hpp_per_unit * quantity), 0) as total')
+                ->value('total');
+            $totalPemasukan += ($cfIn - $distributionHpp);
 
             $totalPengeluaran = (float) CashFlow::query()
                 ->where('type', CashFlow::TYPE_OUT)
