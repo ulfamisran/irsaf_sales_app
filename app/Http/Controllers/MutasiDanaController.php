@@ -184,15 +184,6 @@ class MutasiDanaController extends Controller
         $sourcePmId = (int) $validated['source_payment_method_id'];
         $destPmId = (int) $validated['destination_payment_method_id'];
 
-        $kasService = new KasBalanceService;
-        $saldoSource = $kasService->getSaldoForLocation($locationType, $locationId, $sourcePmId);
-
-        if ($amount > $saldoSource) {
-            return back()->withInput()->with('error', __('Saldo dana asal tidak mencukupi. Saldo tersedia: Rp :saldo', [
-                'saldo' => number_format($saldoSource, 0, ',', '.'),
-            ]));
-        }
-
         $branchId = $locationType === 'branch' ? $locationId : null;
         $warehouseId = $locationType === 'warehouse' ? $locationId : null;
 

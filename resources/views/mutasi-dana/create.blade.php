@@ -201,10 +201,6 @@
                         opt.value = pm.id;
                         const saldoText = 'Rp ' + formatRupiah(Math.floor(pm.saldo));
                         opt.textContent = pm.label + ' (Saldo: ' + saldoText + ')';
-                        if (pm.saldo <= 0) {
-                            opt.disabled = true;
-                            opt.textContent = pm.label + ' (Saldo: ' + saldoText + ' - Tidak tersedia)';
-                        }
                         sourceSelect.appendChild(opt);
                     });
 
@@ -253,7 +249,7 @@
             dateSection.classList.remove('hidden');
             descSection.classList.remove('hidden');
             submitSection.classList.remove('hidden');
-            maxAmountHint.textContent = @json(__('Maksimal')) + ': Rp ' + formatRupiah(Math.floor(currentSourceSaldo));
+            maxAmountHint.textContent = @json(__('Saldo saat ini')) + ': Rp ' + formatRupiah(Math.floor(currentSourceSaldo));
             validateForm();
         });
 
@@ -285,16 +281,14 @@
             const sourceOk = sourceSelect.value !== '';
             const destOk = destSelect.value !== '';
             const amt = parseRupiah(amountDisplay.value);
-            const amtOk = amt > 0 && amt <= currentSourceSaldo;
+            const amtOk = amt > 0;
             submitBtn.disabled = !(sourceOk && destOk && amtOk);
 
             if (amt > currentSourceSaldo && amt > 0) {
-                amountDisplay.classList.add('border-red-500');
-                maxAmountHint.classList.add('text-red-500');
+                maxAmountHint.classList.add('text-amber-600');
                 maxAmountHint.classList.remove('text-slate-500');
             } else {
-                amountDisplay.classList.remove('border-red-500');
-                maxAmountHint.classList.remove('text-red-500');
+                maxAmountHint.classList.remove('text-amber-600');
                 maxAmountHint.classList.add('text-slate-500');
             }
         }
