@@ -397,7 +397,13 @@ class ServiceController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $materialProducts = $this->getInStockProductsForBranch((int) $service->branch_id);
 
-        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm([$service->branch_id]);
+        $kasBalanceService = new KasBalanceService();
+        $saldoMapBranch = [];
+        if (($service->location_type ?? 'branch') === 'warehouse' && $service->warehouse_id) {
+            $saldoMapBranch[(int) $service->warehouse_id] = $kasBalanceService->getSaldoPerPaymentMethodForWarehouse((int) $service->warehouse_id);
+        } elseif ($service->branch_id) {
+            $saldoMapBranch[(int) $service->branch_id] = $kasBalanceService->getSaldoPerPaymentMethod((int) $service->branch_id);
+        }
 
         return view('services.show', compact('service', 'paymentMethods', 'saldoMapBranch'));
     }

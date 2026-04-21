@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ServiceRequest extends FormRequest
 {
@@ -14,6 +15,8 @@ class ServiceRequest extends FormRequest
     public function rules(): array
     {
         $isRelease = false;
+        $isStore = $this->routeIs('services.store');
+        $locationType = $this->input('location_type', 'branch');
         if ($this->routeIs('services.store')) {
             $isRelease = $this->input('status', 'open') === 'release';
         } elseif ($this->routeIs('services.update')) {
@@ -23,7 +26,17 @@ class ServiceRequest extends FormRequest
         return [
             'status' => [$this->routeIs('services.store') ? 'required' : 'nullable', 'in:open,release'],
             'mark_release' => ['nullable', 'boolean'],
-            'branch_id' => ['required', 'exists:branches,id'],
+            'location_type' => [$isStore ? 'required' : 'nullable', 'in:branch,warehouse'],
+            'branch_id' => [
+                Rule::requiredIf(fn () => $isStore && $locationType === 'branch'),
+                'nullable',
+                'exists:branches,id',
+            ],
+            'warehouse_id' => [
+                Rule::requiredIf(fn () => $isStore && $locationType === 'warehouse'),
+                'nullable',
+                'exists:warehouses,id',
+            ],
             'customer_id' => ['nullable', 'exists:customers,id'],
             'customer_new_name' => ['nullable', 'string', 'max:255', 'required_without:customer_id'],
             'customer_new_phone' => ['nullable', 'string', 'max:30'],
