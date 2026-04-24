@@ -35,7 +35,7 @@
         </div>
         <div>
             <x-input-label :value="__('Produk')" class="mb-1" />
-            <input type="hidden" name="items[{{ $idx }}][product_id]" class="product-id-input" value="{{ $pid }}" required>
+            <input type="hidden" name="items[{{ $idx }}][product_id]" class="product-id-input" value="{{ $pid }}">
             <div class="product-dropdown-wrapper relative">
                 <button type="button" class="product-select-trigger w-full flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                     <span class="product-select-label {{ $pid ? 'text-slate-800' : 'text-slate-500' }}">{{ $pid ? $labelText : 'Pilih Produk' }}</span>
@@ -54,6 +54,7 @@
     <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3 items-start">
         <div class="min-w-0 md:col-span-2">
             <x-input-label :value="__('Qty')" />
+            <p class="text-[11px] text-slate-500 -mt-0.5 mb-0.5">{{ __('Jika serial diisi, qty mengikuti jumlah baris serial (1 baris = 1 unit).') }}</p>
             <x-text-input type="number" name="items[{{ $idx }}][quantity]" min="1" value="{{ $qty }}" class="item-qty block mt-1 w-full max-w-full" required />
         </div>
         <div class="min-w-0 md:col-span-2">
@@ -62,7 +63,7 @@
         </div>
         <div class="min-w-0 md:col-span-8">
             <x-input-label :value="__('Serial (1 per baris, opsional)')" />
-            <textarea name="items[{{ $idx }}][serial_numbers_text]" class="item-serials block mt-1 w-full max-w-full min-w-0 rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002">{{ $serialsText }}</textarea>
+            <textarea name="items[{{ $idx }}][serial_numbers_text]" class="item-serials block mt-1 w-full max-w-full min-w-0 rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002" data-text-name="items[{{ $idx }}][serial_numbers_text]">{{ $serialsText }}</textarea>
         </div>
     </div>
     <div class="mt-2 flex justify-end">

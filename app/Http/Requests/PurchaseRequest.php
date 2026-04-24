@@ -72,9 +72,100 @@ class PurchaseRequest extends FormRequest
         return $digits !== '' ? (float) $digits : null;
     }
 
+    public function messages(): array
+    {
+        return [
+            'location_type.required' => __('Pilih jenis lokasi: Gudang atau Cabang.'),
+            'warehouse_id.required_if' => __('Pilih gudang tujuan pembelian.'),
+            'warehouse_id.exists' => __('Gudang yang dipilih tidak valid. Pilih gudang dari daftar yang tersedia.'),
+            'branch_id.required_if' => __('Pilih cabang tujuan pembelian.'),
+            'branch_id.exists' => __('Cabang yang dipilih tidak valid. Pilih cabang dari daftar yang tersedia.'),
+            'distributor_id.required' => __('Pilih distributor.'),
+            'distributor_id.exists' => __('Distributor yang dipilih tidak ditemukan — pastikan sudah pilih gudang/cabang, lalu pilih distributor yang sesuai.'),
+            'items.required' => __('Tambah minimal satu baris barang.'),
+            'items.min' => __('Tambah minimal satu baris barang.'),
+            'items.*.product_id.required' => __('Pilih produk di setiap baris.'),
+            'items.*.product_id.exists' => __('Produk di salah satu baris tidak ditemukan. Pilih gudang/cabang, klik "Muat Ulang Produk", lalu pilih produk ulang agar sesuai lokasi.'),
+            'items.*.quantity.required' => __('Isi jumlah (qty) untuk setiap baris barang.'),
+            'items.*.unit_price.required' => __('Isi harga beli per unit untuk setiap baris barang.'),
+            'invoice_number.unique' => __('Nomor invoice sudah terpakai. Gunakan nomor lain atau biarkan untuk nomor otomatis.'),
+        ];
+    }
+
+    private function addDuplicateSerialMessages(Validator $validator): void
+    {
+        $items = $this->input('items', []);
+        if (! is_array($items) || $items === []) {
+            return;
+        }
+
+        $inRowMessages = [];
+        $serialToLineNos = [];
+
+        foreach ($items as $idx => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $raw = $item['serial_numbers'] ?? null;
+            if (! is_array($raw)) {
+                $raw = [];
+            }
+            $serials = [];
+            foreach ($raw as $s) {
+                $t = trim((string) $s);
+                if ($t === '') {
+                    continue;
+                }
+                $serials[] = $t;
+            }
+            if ($serials === []) {
+                continue;
+            }
+
+            $lineNo = (int) $idx + 1;
+            $counts = array_count_values($serials);
+            foreach ($counts as $sn => $count) {
+                if ($count > 1) {
+                    $inRowMessages[] = __(
+                        'Serial ":sn" tercatat sebanyak :jumlah kali di baris ke-:n (hapus keterangan ganda; tiap serial hanya boleh satu kali).',
+                        ['sn' => $sn, 'jumlah' => $count, 'n' => $lineNo]
+                    );
+                }
+                if (! isset($serialToLineNos[$sn])) {
+                    $serialToLineNos[$sn] = [];
+                }
+                if (! in_array($lineNo, $serialToLineNos[$sn], true)) {
+                    $serialToLineNos[$sn][] = $lineNo;
+                }
+            }
+        }
+
+        $crossLineMessages = [];
+        foreach ($serialToLineNos as $sn => $lineNos) {
+            if (count($lineNos) <= 1) {
+                continue;
+            }
+            sort($lineNos);
+            $lineList = array_map('strval', $lineNos);
+            $crossLineMessages[] = __(
+                'Serial ":sn" muncul di baris: :list (satu serial tidak boleh dipakai di beberapa baris; pakai hanya di satu baris).',
+                ['sn' => $sn, 'list' => implode(', ', $lineList)]
+            );
+        }
+
+        $all = array_values(array_unique([...$inRowMessages, ...$crossLineMessages]));
+        if ($all === []) {
+            return;
+        }
+
+        $validator->errors()->add('items', implode(' ', $all));
+    }
+
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            $this->addDuplicateSerialMessages($validator);
+
             $jenis = (string) $this->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
             if (in_array($jenis, [
                 Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
@@ -146,7 +237,7 @@ class PurchaseRequest extends FormRequest
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
             'items.*.serial_numbers' => ['nullable', 'array'],
-            'items.*.serial_numbers.*' => ['string', 'distinct'],
+            'items.*.serial_numbers.*' => ['string'],
 
             'payments' => ['nullable', 'array'],
             'payments.*.payment_method_id' => ['nullable', 'exists:payment_methods,id'],

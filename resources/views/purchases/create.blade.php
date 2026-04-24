@@ -10,10 +10,28 @@
         </h2>
     </x-slot>
 
+    @php
+        $locationRadio = old('location_type', $defaultLocationType);
+        if (!empty($isBranchUser)) {
+            $locationRadio = 'branch';
+        } elseif (!empty($isWarehouseUser) && empty($isBranchUser)) {
+            $locationRadio = 'warehouse';
+        }
+    @endphp
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             @if (session('error'))
                 <div class="mb-4 rounded-md bg-red-50 p-4 text-red-800">{{ session('error') }}</div>
+            @endif
+            @if ($errors->any())
+                <div class="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-red-800" id="purchase-validation-summary" role="alert">
+                    <p class="font-medium">{{ __('Data tidak tersimpan. Perbaiki isian berikut:') }}</p>
+                    <ul class="list-disc pl-5 mt-2 text-sm space-y-1">
+                        @foreach ($errors->all() as $message)
+                            <li>{{ $message }}</li>
+                        @endforeach
+                    </ul>
+                </div>
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
@@ -32,7 +50,7 @@
                                 <input type="hidden" name="service_id" value="{{ $editPurchase->service_id }}">
                             @endif
                         @endif
-                        <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
+                        <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ $errors->any() ? 0 : (old('confirm_reuse_sold_serials') ? 1 : 0) }}">
                         <div class="space-y-6">
                             @if ($isEdit)
                                 <div class="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-700">
@@ -52,24 +70,27 @@
                             @endif
                             {{-- Lokasi --}}
                             @unless ($isEdit)
-                            <div x-data="{ locationType: '{{ old('location_type', $defaultLocationType) }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
+                            <div x-data="{ locationType: '{{ $locationRadio }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
                                 <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
                                 <div class="mt-2 flex gap-6">
                                     <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="location_type" value="warehouse" x-model="locationType"
-                                            {{ $isWarehouseUser && !$isBranchUser ? 'checked' : '' }}
+                                        <input type="radio" name="location_type" value="warehouse" x-model="locationType" required
+                                            @checked($locationRadio === 'warehouse')
                                             {{ $isBranchUser ? 'disabled' : '' }}
                                             class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="ml-2 text-sm font-medium text-gray-700">Gudang</span>
                                     </label>
                                     <label class="inline-flex items-center cursor-pointer">
                                         <input type="radio" name="location_type" value="branch" x-model="locationType"
-                                            {{ $isBranchUser ? 'checked' : '' }}
+                                            @checked($locationRadio === 'branch')
                                             {{ $isWarehouseUser && !$isBranchUser ? 'disabled' : '' }}
                                             class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="ml-2 text-sm font-medium text-gray-700">Cabang</span>
                                     </label>
                                 </div>
+                                <x-input-error :messages="$errors->get('location_type')" class="mt-2" />
+                                <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
                                 <div x-show="locationType === 'warehouse'" x-cloak x-transition class="mt-3">
                                     <x-input-label for="warehouse_id" :value="__('Gudang')" />
                                     <select id="warehouse_id" name="warehouse_id"
@@ -139,6 +160,7 @@
                                 <x-input-label for="invoice_number" :value="__('No. Invoice Pembelian')" />
                                 <x-text-input id="invoice_number" name="invoice_number" type="text" :value="old('invoice_number', $isEdit ? $editPurchase->invoice_number : null)" :placeholder="$isEdit ? '' : 'Opsional - kosongkan untuk auto-generate (PBL-YYYYMMDD-0001)'" />
                                 <p class="mt-1 text-xs text-slate-500">{{ $isEdit ? __('Nomor invoice saat ini. Kosongkan untuk mempertahankan nomor yang sama.') : __('Kosongkan untuk generate otomatis.') }}</p>
+                                <x-input-error :messages="$errors->get('invoice_number')" class="mt-2" />
                             </div>
 
                             {{-- Distributor --}}
@@ -150,6 +172,7 @@
                                         <option value="{{ $d->id }}" {{ (int) old('distributor_id', $isEdit ? $editPurchase->distributor_id : 0) === (int) $d->id ? 'selected' : '' }}>{{ $d->name }}</option>
                                     @endforeach
                                 </select>
+                                <x-input-error :messages="$errors->get('distributor_id')" class="mt-2" />
                             </div>
 
                             {{-- Tanggal, Termin, Jatuh Tempo --}}
@@ -212,6 +235,7 @@
                                         @include('purchases._item_row', ['idx' => 0, 'detail' => null, 'hideRemove' => true])
                                     @endif
                                 </div>
+                                <x-input-error :messages="$errors->get('items')" class="mt-2" />
                                 <button type="button" id="add-item" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium">+ Tambah Barang</button>
                             </div>
 
@@ -388,6 +412,35 @@
         }
         document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
 
+        function countNonEmptySerialLines(text) {
+            return String(text || '')
+                .split(/[\r\n]+/)
+                .map((s) => s.trim())
+                .filter(Boolean).length;
+        }
+
+        function syncQuantityFromSerialLines(row) {
+            const ta = row.querySelector('.item-serials');
+            const qtyInp = row.querySelector('.item-qty');
+            if (!ta || !qtyInp) return;
+            const n = countNonEmptySerialLines(ta.value);
+            if (n > 0) {
+                qtyInp.value = String(n);
+            }
+            updateAllTotals();
+        }
+
+        function attachItemSerialToQtySync(row) {
+            const ta = row.querySelector('.item-serials');
+            if (!ta) return;
+            if (row.dataset.itemSerialToQtySyncBound === '1') return;
+            row.dataset.itemSerialToQtySyncBound = '1';
+            const onSerialChange = () => syncQuantityFromSerialLines(row);
+            ta.addEventListener('input', onSerialChange);
+            ta.addEventListener('change', onSerialChange);
+            ta.addEventListener('paste', () => setTimeout(onSerialChange, 0));
+        }
+
         function getPurchaseLocationHint() {
             const hiddenLt = document.querySelector('#purchase-form input[name="location_type"][type="hidden"]');
             if (hiddenLt && hiddenLt.value) {
@@ -447,9 +500,8 @@
             }
             const ta = row.querySelector('.item-serials');
             if (ta) ta.value = item.serial_number || '';
-            const qtyInp = row.querySelector('.item-qty');
-            if (qtyInp) qtyInp.value = '1';
             clearPurchaseSerialDropdown(row);
+            syncQuantityFromSerialLines(row);
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
         }
 
@@ -612,6 +664,9 @@
             const tpl = document.querySelector('.purchase-item').cloneNode(true);
             tpl.querySelectorAll('input, select, textarea').forEach(el => {
                 if (el.name) el.name = el.name.replace(/items\[\d+\]/, 'items[' + itemIdx + ']');
+                if (el.getAttribute('data-text-name')) {
+                    el.setAttribute('data-text-name', el.getAttribute('data-text-name').replace(/items\[\d+\]/, 'items[' + itemIdx + ']'));
+                }
                 if (el.type !== 'hidden') el.value = '';
                 if (el.classList.contains('item-qty')) el.value = '1';
                 if (el.classList.contains('product-id-input')) el.value = '';
@@ -622,6 +677,7 @@
             tpl.querySelector('.series-filter').innerHTML = '<option value="">Semua Series</option>';
             tpl.querySelector('.product-dropdown-list').innerHTML = '';
             tpl.removeAttribute('data-purchase-serial-search-bound');
+            tpl.removeAttribute('data-item-serial-to-qty-sync-bound');
             const ps = tpl.querySelector('.purchase-serial-search');
             const pd = tpl.querySelector('.purchase-serial-dropdown');
             if (ps) ps.value = '';
@@ -636,6 +692,7 @@
             document.getElementById('purchase-items').appendChild(tpl);
             populateProductDropdown(tpl);
             attachPurchaseSerialSearch(tpl);
+            attachItemSerialToQtySync(tpl);
             attachItemTotalListeners(tpl);
             itemIdx++;
             if (document.querySelectorAll('[data-rupiah="true"]').length) initRupiahInputs();
@@ -667,6 +724,8 @@
         document.querySelectorAll('.purchase-item').forEach(row => {
             populateProductDropdown(row);
             attachPurchaseSerialSearch(row);
+            attachItemSerialToQtySync(row);
+            syncQuantityFromSerialLines(row);
             attachItemTotalListeners(row);
         });
         updateAllTotals();
@@ -685,24 +744,6 @@
             });
         }
         initRupiahInputs();
-
-        document.getElementById('purchase-form')?.addEventListener('submit', function(e) {
-            document.querySelectorAll('.item-serials').forEach(ta => {
-                const names = ta.name;
-                if (names && names.includes('serial_numbers_text')) {
-                    const baseName = names.replace('serial_numbers_text', 'serial_numbers');
-                    const lines = (ta.value || '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
-                    ta.removeAttribute('name');
-                    lines.forEach((line, i) => {
-                        const hid = document.createElement('input');
-                        hid.type = 'hidden';
-                        hid.name = baseName + '[' + i + ']';
-                        hid.value = line;
-                        ta.parentNode.appendChild(hid);
-                    });
-                }
-            });
-        });
 
         if (!isEdit) {
             const oldPayments = @json(old('payments', []));
@@ -825,13 +866,39 @@
         document.addEventListener('DOMContentLoaded', () => {
             syncPurchaseJenisServiceUi();
             setTimeout(() => window.loadPurchaseDistributors?.(), 200);
+            const errBox = document.getElementById('purchase-validation-summary');
+            if (errBox) {
+                errBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            }
         });
+
+        function applySerialHiddensFromTextareas() {
+            const form = document.getElementById('purchase-form');
+            if (!form) return;
+            form.querySelectorAll('input.purchase-injected-serial').forEach((n) => n.remove());
+            form.querySelectorAll('textarea.item-serials').forEach((ta) => {
+                const nameAttr = ta.getAttribute('data-text-name') || (ta.getAttribute('name') || '');
+                if (!nameAttr || nameAttr.indexOf('serial_numbers_text') === -1) return;
+                const baseName = nameAttr.replace('serial_numbers_text', 'serial_numbers');
+                ta.removeAttribute('name');
+                const lines = (ta.value || '').split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean);
+                lines.forEach((line, i) => {
+                    const hid = document.createElement('input');
+                    hid.type = 'hidden';
+                    hid.className = 'purchase-injected-serial';
+                    hid.name = baseName + '[' + i + ']';
+                    hid.value = line;
+                    (ta.parentNode || form).appendChild(hid);
+                });
+            });
+        }
 
         const purchaseForm = document.getElementById('purchase-form');
         const confirmReuseInput = document.getElementById('confirm_reuse_sold_serials');
         if (purchaseForm && confirmReuseInput) {
-            purchaseForm.addEventListener('submit', async function(e) {
+            purchaseForm.addEventListener('submit', async function (e) {
                 if (purchaseForm.dataset.reuseConfirmed === '1' || confirmReuseInput.value === '1') {
+                    applySerialHiddensFromTextareas();
                     return;
                 }
                 e.preventDefault();
@@ -846,8 +913,11 @@
                         body: formData,
                     });
                     if (!res.ok) {
-                        purchaseForm.dataset.reuseConfirmed = '1';
-                        purchaseForm.requestSubmit();
+                        await Swal.fire({
+                            icon: 'error',
+                            title: @json(__('Cek serial gagal')),
+                            text: @json(__('Coba simpan lagi. Jika masih gagal, refresh halaman.')),
+                        });
                         return;
                     }
                     const data = await res.json();
@@ -855,8 +925,8 @@
                     if (blocked.length > 0) {
                         await Swal.fire({
                             icon: 'error',
-                            title: 'Serial sudah dipakai',
-                            text: 'Serial berikut tidak bisa dipakai ulang (masih aktif / dipesan, dll.): ' + blocked.join(', '),
+                            title: @json(__('Serial tidak dapat dipakai')),
+                            text: @json(__('Serial berikut sudah terdaftar (masih aktif, dipesan, dll.): ')) + blocked.join(', '),
                         });
                         return;
                     }
@@ -864,11 +934,11 @@
                     if (sold.length > 0) {
                         const confirmResult = await Swal.fire({
                             icon: 'warning',
-                            title: 'Serial pernah terdaftar',
-                            html: 'Unit berikut sudah pernah ada dan statusnya <b>SOLD</b>:<br><b>' + sold.join(', ') + '</b><br><br>Lanjutkan update data unit/barang dengan data terbaru?<br><br><span class="text-sm">Lokasi unit akan disesuaikan ke <b>' + getPurchaseLocationHint() + '</b> (lokasi pembelian).</span>',
+                            title: @json(__('Serial pernah terdaftar (SOLD)')),
+                            html: @json(__('Unit berikut sudah pernah ada (SOLD). Lanjutkan? Lokasi unit akan disesuaikan ke lokasi pembelian: ')) + '<b>' + getPurchaseLocationHint() + '</b><br><br><b>' + sold.join(', ') + '</b>',
                             showCancelButton: true,
-                            confirmButtonText: 'Ya, update',
-                            cancelButtonText: 'Batal',
+                            confirmButtonText: @json(__('Ya, lanjut simpan')),
+                            cancelButtonText: @json(__('Batal')),
                         });
                         if (!confirmResult.isConfirmed) {
                             return;
@@ -877,10 +947,14 @@
                         purchaseForm.dataset.reuseConfirmed = '1';
                     }
                     purchaseForm.dataset.reuseConfirmed = '1';
+                    applySerialHiddensFromTextareas();
                     purchaseForm.requestSubmit();
                 } catch (err) {
-                    purchaseForm.dataset.reuseConfirmed = '1';
-                    purchaseForm.requestSubmit();
+                    await Swal.fire({
+                        icon: 'error',
+                        title: @json(__('Gagal memeriksa serial')),
+                        text: err && err.message ? String(err.message) : @json(__('Periksa jaringan lalu coba lagi.')),
+                    });
                 }
             });
         }
