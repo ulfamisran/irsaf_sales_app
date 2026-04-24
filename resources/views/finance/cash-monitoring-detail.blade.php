@@ -82,7 +82,16 @@
                                     </span>
                                 </td>
                                 <td class="px-2 py-2 text-slate-700">{{ $tx->source }}</td>
-                                <td class="px-2 py-2 text-slate-700">{{ $tx->description }}</td>
+                                <td class="px-2 py-2 text-slate-700">
+                                    <div class="flex items-center gap-2">
+                                        <span>{{ $tx->description }}</span>
+                                        @if (!empty($tx->is_cancel_pair))
+                                            <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                                                PAIR CANCEL
+                                            </span>
+                                        @endif
+                                    </div>
+                                </td>
                                 <td class="px-2 py-2 text-right font-medium text-emerald-600">
                                     {{ $tx->type === 'IN' ? number_format($tx->amount, 0, ',', '.') : '-' }}
                                 </td>

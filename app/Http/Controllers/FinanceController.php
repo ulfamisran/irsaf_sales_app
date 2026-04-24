@@ -1065,6 +1065,13 @@ class FinanceController extends Controller
 
             return abs((float) ($a->amount ?? 0)) <=> abs((float) ($b->amount ?? 0));
         })->values();
+
+        foreach ($transactions as $tx) {
+            $refId = (int) ($tx->reference_id ?? 0);
+            $tx->is_cancel_pair = ($tx->reference_type ?? null) === CashFlow::REFERENCE_SALE
+                && isset($cancelledSaleIdMap[$refId])
+                && in_array(($tx->type ?? ''), [CashFlow::TYPE_IN, CashFlow::TYPE_OUT], true);
+        }
         $runningBalance = 0.0;
         foreach ($transactions as $tx) {
             $runningBalance += (float) $tx->amount;
