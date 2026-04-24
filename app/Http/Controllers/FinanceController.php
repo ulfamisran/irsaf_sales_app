@@ -1017,16 +1017,59 @@ class FinanceController extends Controller
                 'amount' => $row->type === CashFlow::TYPE_OUT ? -(float) $row->amount : (float) $row->amount,
                 'type' => $row->type,
                 'source' => strtoupper($row->reference_type ?? 'cash'),
+                'reference_type' => $row->reference_type,
+                'reference_id' => $row->reference_id,
             ]);
         }
 
-        $transactions = $transactions->sortBy('transaction_date')->values();
+        $saleReferenceIds = $transactions
+            ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_SALE && ! empty($tx->reference_id))
+            ->pluck('reference_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+        $cancelledSaleIds = $saleReferenceIds->isEmpty()
+            ? []
+            : Sale::query()
+                ->whereIn('id', $saleReferenceIds)
+                ->where('status', Sale::STATUS_CANCEL)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+        $cancelledSaleIdMap = array_fill_keys($cancelledSaleIds, true);
+
+        $transactions = $transactions->sort(function ($a, $b) use ($cancelledSaleIdMap) {
+            $aDate = (string) ($a->transaction_date ?? '');
+            $bDate = (string) ($b->transaction_date ?? '');
+            if ($aDate !== $bDate) {
+                return strcmp($aDate, $bDate);
+            }
+
+            $aRefId = (int) ($a->reference_id ?? 0);
+            $bRefId = (int) ($b->reference_id ?? 0);
+            $aIsCancelledSale = ($a->reference_type ?? null) === CashFlow::REFERENCE_SALE && isset($cancelledSaleIdMap[$aRefId]);
+            $bIsCancelledSale = ($b->reference_type ?? null) === CashFlow::REFERENCE_SALE && isset($cancelledSaleIdMap[$bRefId]);
+
+            if ($aIsCancelledSale && $bIsCancelledSale && $aRefId === $bRefId) {
+                if (($a->type ?? '') === ($b->type ?? '')) {
+                    return 0;
+                }
+                return ($a->type ?? '') === CashFlow::TYPE_IN ? -1 : 1;
+            }
+
+            $aTypeOrder = strtoupper((string) ($a->type ?? '')) === 'IN' ? 0 : 1;
+            $bTypeOrder = strtoupper((string) ($b->type ?? '')) === 'IN' ? 0 : 1;
+            if ($aTypeOrder !== $bTypeOrder) {
+                return $aTypeOrder <=> $bTypeOrder;
+            }
+
+            return abs((float) ($a->amount ?? 0)) <=> abs((float) ($b->amount ?? 0));
+        })->values();
         $runningBalance = 0.0;
         foreach ($transactions as $tx) {
             $runningBalance += (float) $tx->amount;
             $tx->running_balance = round($runningBalance, 2);
         }
-        $transactions = $transactions->reverse()->values();
 
         $label = $kasKey === 'Tunai'
             ? 'Tunai'
