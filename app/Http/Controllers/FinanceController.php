@@ -982,51 +982,6 @@ class FinanceController extends Controller
 
         $transactions = collect();
 
-        $salePaymentsQuery = DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->whereIn('sale_payments.payment_method_id', $paymentMethodIds)
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
-        if ($warehouseId) {
-            $salePaymentsQuery->where('sales.warehouse_id', $warehouseId);
-        } elseif ($branchId) {
-            $salePaymentsQuery->where('sales.branch_id', $branchId)->whereNull('sales.warehouse_id');
-        }
-        $salePaymentsDetail = $salePaymentsQuery->selectRaw('sales.sale_date as transaction_date, sales.invoice_number, sale_payments.amount')->get();
-
-        foreach ($salePaymentsDetail as $row) {
-            $transactions->push((object) [
-                'transaction_date' => $row->transaction_date,
-                'reference' => $row->invoice_number,
-                'description' => 'Penjualan ' . $row->invoice_number,
-                'amount' => (float) $row->amount,
-                'type' => 'IN',
-                'source' => 'Penjualan',
-            ]);
-        }
-
-        $servicePaymentsQuery = DB::table('service_payments')
-            ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->where('services.status', '!=', Service::STATUS_CANCEL)
-            ->whereIn('service_payments.payment_method_id', $paymentMethodIds)
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]));
-        if ($warehouseId) {
-            $servicePaymentsQuery->where('services.warehouse_id', $warehouseId);
-        } elseif ($branchId) {
-            $servicePaymentsQuery->where('services.branch_id', $branchId)->whereNull('services.warehouse_id');
-        }
-        $servicePaymentsDetail = $servicePaymentsQuery->selectRaw('COALESCE(services.exit_date, services.entry_date) as transaction_date, services.invoice_number, service_payments.amount')->get();
-
-        foreach ($servicePaymentsDetail as $row) {
-            $transactions->push((object) [
-                'transaction_date' => $row->transaction_date,
-                'reference' => $row->invoice_number,
-                'description' => 'Service Laptop ' . $row->invoice_number,
-                'amount' => (float) $row->amount,
-                'type' => 'IN',
-                'source' => 'Service',
-            ]);
-        }
-
         $cashFlowQuery = CashFlow::with('expenseCategory')
             ->when($includeNullPm, function ($q) use ($paymentMethodIds) {
                 $q->where(function ($qq) use ($paymentMethodIds) {
@@ -1035,24 +990,6 @@ class FinanceController extends Controller
                 });
             }, function ($q) use ($paymentMethodIds) {
                 $q->whereIn('payment_method_id', $paymentMethodIds);
-            })
-            ->where(function ($q) {
-                $q->whereNull('reference_type')
-                    ->orWhereNotIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
-                    ->orWhere(function ($sq) {
-                        $sq->whereIn('reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
-                            ->where('type', CashFlow::TYPE_OUT);
-                    })
-                    ->orWhere(function ($sq) {
-                        $sq->where('reference_type', CashFlow::REFERENCE_SERVICE)
-                            ->where('type', CashFlow::TYPE_IN)
-                            ->whereExists(function ($sub) {
-                                $sub->select(DB::raw(1))
-                                    ->from('income_categories')
-                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
-                                    ->where('income_categories.code', 'RTR');
-                            });
-                    });
             })
             ->where(function ($q) {
                 $q->whereNull('reference_type')
