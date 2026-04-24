@@ -984,7 +984,6 @@ class FinanceController extends Controller
 
         $salePaymentsQuery = DB::table('sale_payments')
             ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
             ->whereIn('sale_payments.payment_method_id', $paymentMethodIds)
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
         if ($warehouseId) {
