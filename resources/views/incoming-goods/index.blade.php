@@ -19,67 +19,97 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('incoming-goods.index') }}" class="flex flex-wrap gap-3 items-end">
-                    <div class="min-w-[180px]">
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori') }}</label>
-                        <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            @foreach ($categories as $c)
-                                <option value="{{ $c->id }}" {{ request('category_id') == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
-                            @endforeach
-                        </select>
+                @php
+                    $selectedLocationType = request('location_type');
+                    if (! $selectedLocationType) {
+                        $selectedLocationType = request('warehouse_id') ? 'warehouse' : (request('branch_id') ? 'branch' : '');
+                    }
+                    $selectedLocationId = request('location_id');
+                    if (! $selectedLocationId) {
+                        $selectedLocationId = request('warehouse_id') ?: request('branch_id');
+                    }
+                @endphp
+                <form method="GET" action="{{ route('incoming-goods.index') }}" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Search') }}</label>
+                        <input type="text"
+                               name="search"
+                               value="{{ request('search') }}"
+                               placeholder="{{ __('Produk / Cabang / User / Serial') }}"
+                               class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
-                    <div class="min-w-[200px]">
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
-                        <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            @foreach ($products as $p)
-                                <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
-                            @endforeach
-                        </select>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        @if (! $isBranchUser)
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
+                                <select id="ig_location_type" name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">{{ __('Semua') }}</option>
+                                    <option value="warehouse" {{ $selectedLocationType === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                    <option value="branch" {{ $selectedLocationType === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
+                                <select id="ig_location_id" name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">{{ __('Semua') }}</option>
+                                    @if ($selectedLocationType === 'warehouse')
+                                        @foreach ($warehouses as $w)
+                                            <option value="{{ $w->id }}" {{ (string) $selectedLocationId === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                        @endforeach
+                                    @elseif ($selectedLocationType === 'branch')
+                                        @foreach ($branches as $b)
+                                            <option value="{{ $b->id }}" {{ (string) $selectedLocationId === (string) $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                            </div>
+                        @else
+                            <div>
+                                <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="__('Cabang')" />
+                            </div>
+                            <div>
+                                <x-locked-location label="{{ __('Lokasi') }}" :value="$branch?->name ?? '-'" />
+                            </div>
+                        @endif
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
+                            <input type="date" name="date_from" value="{{ request('date_from') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
+                            <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
                     </div>
-                    @if (! $isBranchUser)
-                        <div class="min-w-[180px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                            <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori') }}</label>
+                            <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                @foreach ($categories as $c)
+                                    <option value="{{ $c->id }}" {{ request('category_id') == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
                                 @endforeach
                             </select>
                         </div>
-                        <div class="min-w-[180px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                            <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
+                            <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
-                                @foreach ($branches as $b)
-                                    <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                @foreach ($products as $p)
+                                    <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
                                 @endforeach
                             </select>
                         </div>
-                    @else
-                        <div class="min-w-[180px]">
-                            <x-locked-location label="{{ __('Cabang') }}" :value="__('Cabang') . ': ' . ($branch?->name ?? '')" />
+                        <div class="md:col-span-2 flex gap-2 md:justify-end">
+                            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                                {{ __('Filter') }}
+                            </button>
+                            <a href="{{ route('incoming-goods.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+                                {{ __('Reset') }}
+                            </a>
                         </div>
-                    @endif
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
-                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
-                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    </div>
-                    <div class="flex gap-2">
-                        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                            </svg>
-                            {{ __('Filter') }}
-                        </button>
-                        <a href="{{ route('incoming-goods.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
-                            {{ __('Reset') }}
-                        </a>
                     </div>
                 </form>
             </div>
@@ -144,6 +174,41 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const locationTypeEl = document.getElementById('ig_location_type');
+            const locationIdEl = document.getElementById('ig_location_id');
+            const warehouses = @json($warehouses);
+            const branches = @json($branches);
+
+            function renderLocationOptions(selectedType, selectedId = '') {
+                if (!locationIdEl) return;
+                locationIdEl.innerHTML = '';
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = @json(__('Semua'));
+                locationIdEl.appendChild(defaultOpt);
+
+                const list = selectedType === 'warehouse'
+                    ? warehouses
+                    : (selectedType === 'branch' ? branches : []);
+
+                list.forEach(function(item) {
+                    const opt = document.createElement('option');
+                    opt.value = String(item.id);
+                    opt.textContent = item.name;
+                    if (String(selectedId) === String(item.id)) {
+                        opt.selected = true;
+                    }
+                    locationIdEl.appendChild(opt);
+                });
+            }
+
+            if (locationTypeEl && locationIdEl) {
+                renderLocationOptions(locationTypeEl.value, locationIdEl.value);
+                locationTypeEl.addEventListener('change', function() {
+                    renderLocationOptions(this.value, '');
+                });
+            }
+
             document.querySelectorAll('.show-detail-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
                     const url = this.dataset.url;
@@ -195,7 +260,7 @@
                             html: '<div class="text-left">' + infoHtml + unitsHtml + '</div>',
                             confirmButtonText: 'Tutup',
                             confirmButtonColor: '#4f46e5',
-                            width: '560px',
+                            width: '920px',
                             padding: '1.5rem'
                         });
                     })

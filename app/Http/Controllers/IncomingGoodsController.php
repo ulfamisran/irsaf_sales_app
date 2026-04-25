@@ -50,17 +50,40 @@ class IncomingGoodsController extends Controller
         if ($request->filled('product_id')) {
             $query->where('product_id', $request->product_id);
         }
-        if ($request->filled('warehouse_id')) {
-            $query->where('warehouse_id', $request->warehouse_id);
-        }
-        if ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->branch_id);
+        $locationType = $request->input('location_type');
+        $locationId = (int) $request->input('location_id', 0);
+        if ($locationType === 'warehouse' && $locationId > 0) {
+            $query->where('warehouse_id', $locationId);
+        } elseif ($locationType === 'branch' && $locationId > 0) {
+            $query->where('branch_id', $locationId);
+        } else {
+            // Backward compatibility: dukung parameter lama.
+            if ($request->filled('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
         }
         if ($request->filled('date_from')) {
             $query->whereDate('received_date', '>=', $request->date_from);
         }
         if ($request->filled('date_to')) {
             $query->whereDate('received_date', '<=', $request->date_to);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('notes', 'like', "%{$search}%")
+                    ->orWhereHas('product', function ($pq) use ($search) {
+                        $pq->where('sku', 'like', "%{$search}%")
+                            ->orWhere('brand', 'like', "%{$search}%")
+                            ->orWhere('series', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('branch', fn ($bq) => $bq->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('warehouse', fn ($wq) => $wq->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', "%{$search}%"));
+            });
         }
 
         $records = $query->paginate(20)->withQueryString();
