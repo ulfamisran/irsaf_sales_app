@@ -944,17 +944,31 @@ class FinanceController extends Controller
         $kasKey = $request->filled('kas_key') ? $request->kas_key : null;
         $isOverall = $request->boolean('overall');
 
-        if (! $kasKey || (! $isOverall && ! $branchId && ! $warehouseId)) {
+        if (! $kasKey) {
             abort(404, __('Parameter tidak valid.'));
         }
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $branchId && (int) $user->branch_id !== $branchId) {
+            // Non super admin harus selalu terikat ke lokasi miliknya.
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                $branchId = (int) $user->branch_id;
+                $warehouseId = null;
+                $isOverall = false;
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                $warehouseId = (int) $user->warehouse_id;
+                $branchId = null;
+                $isOverall = false;
+            } else {
                 abort(403, __('Akses ditolak.'));
             }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $warehouseId && (int) $user->warehouse_id !== $warehouseId) {
-                abort(403, __('Akses ditolak.'));
-            }
+        }
+
+        if (! $isOverall && ! $branchId && ! $warehouseId) {
+            abort(404, __('Parameter tidak valid.'));
+        }
+
+        if ($branchId && $warehouseId) {
+            abort(404, __('Parameter lokasi tidak valid.'));
         }
 
         $locationType = $isOverall ? 'overall' : ($warehouseId ? 'warehouse' : 'branch');
@@ -972,24 +986,60 @@ class FinanceController extends Controller
             [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
         }
 
-        // Payment method IDs yang sesuai dengan kas_key
-        $paymentMethodIds = $this->getPaymentMethodIdsByKasKey($kasKey);
-        $includeNullPm = $kasKey === 'Tunai';
-
-        if (empty($paymentMethodIds)) {
-            $paymentMethodIds = [0]; // Avoid invalid WHERE IN ()
-        }
+        $kasParts = explode('|', $kasKey, 2);
+        $selectedBank = trim((string) ($kasParts[0] ?? ''));
+        $selectedRekening = trim((string) ($kasParts[1] ?? ''));
+        $isTunaiKas = $kasKey === 'Tunai';
+        $tunaiPaymentMethodIds = $isTunaiKas ? $this->getPaymentMethodIdsByKasKey('Tunai') : [];
 
         $transactions = collect();
 
-        $cashFlowQuery = CashFlow::with('expenseCategory')
-            ->when($includeNullPm, function ($q) use ($paymentMethodIds) {
-                $q->where(function ($qq) use ($paymentMethodIds) {
-                    $qq->whereIn('payment_method_id', $paymentMethodIds)
-                        ->orWhereNull('payment_method_id');
+        $cashFlowBaseQuery = CashFlow::with(['expenseCategory', 'paymentMethod'])
+            ->when($isTunaiKas, function ($q) use ($tunaiPaymentMethodIds) {
+                $tunaiPaymentMethodIds = array_values(array_unique(array_filter($tunaiPaymentMethodIds, fn ($id) => (int) $id > 0)));
+                if ($tunaiPaymentMethodIds === []) {
+                    $tunaiPaymentMethodIds = [0];
+                }
+                $q->where(function ($qq) use ($tunaiPaymentMethodIds) {
+                    $qq->whereIn('payment_method_id', $tunaiPaymentMethodIds)
+                        // Legacy sale cash-in dapat tidak punya payment_method_id.
+                        // Hanya ikut jika sale_payment-nya benar-benar metode tunai dan nominal cocok.
+                        ->orWhere(function ($legacySaleIn) use ($tunaiPaymentMethodIds) {
+                            $legacySaleIn->where('reference_type', CashFlow::REFERENCE_SALE)
+                                ->where('type', CashFlow::TYPE_IN)
+                                ->whereNull('payment_method_id')
+                                ->whereExists(function ($sub) use ($tunaiPaymentMethodIds) {
+                                    $sub->select(DB::raw(1))
+                                        ->from('sale_payments as sp')
+                                        ->whereRaw('sp.sale_id = cash_flows.reference_id')
+                                        ->whereIn('sp.payment_method_id', $tunaiPaymentMethodIds)
+                                        ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02');
+                                });
+                        });
                 });
-            }, function ($q) use ($paymentMethodIds) {
-                $q->whereIn('payment_method_id', $paymentMethodIds);
+            }, function ($q) use ($selectedBank, $selectedRekening) {
+                $q->where(function ($qq) use ($selectedBank, $selectedRekening) {
+                    $qq->whereHas('paymentMethod', function ($pm) use ($selectedBank, $selectedRekening) {
+                        $pm->whereRaw('TRIM(COALESCE(nama_bank, "")) = ?', [$selectedBank])
+                            ->whereRaw('TRIM(COALESCE(no_rekening, "")) = ?', [$selectedRekening]);
+                    })
+                    // Legacy sale cash-in dapat tidak punya payment_method_id.
+                    // Tetap ikut jika ada sale_payment yang cocok bank+rekening dan nominalnya sama.
+                        ->orWhere(function ($legacySaleIn) use ($selectedBank, $selectedRekening) {
+                            $legacySaleIn->where('reference_type', CashFlow::REFERENCE_SALE)
+                                ->where('type', CashFlow::TYPE_IN)
+                                ->whereNull('payment_method_id')
+                                ->whereExists(function ($sub) use ($selectedBank, $selectedRekening) {
+                                    $sub->select(DB::raw(1))
+                                        ->from('sale_payments as sp')
+                                        ->join('payment_methods as pm', 'sp.payment_method_id', '=', 'pm.id')
+                                        ->whereRaw('sp.sale_id = cash_flows.reference_id')
+                                        ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02')
+                                        ->whereRaw('TRIM(COALESCE(pm.nama_bank, "")) = ?', [$selectedBank])
+                                        ->whereRaw('TRIM(COALESCE(pm.no_rekening, "")) = ?', [$selectedRekening]);
+                                });
+                        });
+                });
             })
             ->where(function ($q) {
                 $q->whereNull('reference_type')
@@ -1005,10 +1055,39 @@ class FinanceController extends Controller
                     });
             })
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]));
+            ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId));
 
+        $cashFlowQuery = clone $cashFlowBaseQuery;
+        if ($dateFrom && $dateTo) {
+            $cashFlowQuery->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
+        }
         $cashFlows = $cashFlowQuery->orderByDesc('transaction_date')->orderByDesc('id')->get();
+
+        // Jika salah satu sisi pair cancel terambil oleh filter tanggal, tarik juga pasangannya
+        // agar transaksi pembatalan sale selalu tampil berpasangan (IN/OUT) untuk referensi yang sama.
+        if ($dateFrom && $dateTo) {
+            $saleReferenceIdsInRange = $cashFlows
+                ->where('reference_type', CashFlow::REFERENCE_SALE)
+                ->pluck('reference_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($saleReferenceIdsInRange->isNotEmpty()) {
+                $pairedSaleCashFlows = (clone $cashFlowBaseQuery)
+                    ->where('reference_type', CashFlow::REFERENCE_SALE)
+                    ->whereIn('reference_id', $saleReferenceIdsInRange->all())
+                    ->orderByDesc('transaction_date')
+                    ->orderByDesc('id')
+                    ->get();
+
+                $cashFlows = $cashFlows
+                    ->merge($pairedSaleCashFlows)
+                    ->unique('id')
+                    ->values();
+            }
+        }
         foreach ($cashFlows as $row) {
             $transactions->push((object) [
                 'transaction_date' => $row->transaction_date->toDateString(),
