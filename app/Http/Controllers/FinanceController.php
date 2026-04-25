@@ -539,34 +539,107 @@ class FinanceController extends Controller
             [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
         }
 
-        // Sumber ringkasan Monitoring Kas: 100% dari cash_flows.
-        $cashFlowByPm = DB::table('cash_flows')
-            ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
+        // Sumber ringkasan Monitoring Kas: 100% dari cash_flows, konsisten dengan halaman detail.
+        // Jika filter tanggal aktif, pair cancel sale (IN/OUT) tetap ditarik berpasangan.
+        $cashFlowBaseQuery = CashFlow::query()
+            ->with('paymentMethod')
             ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
-                    ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
-                    ->orWhereIn('cash_flows.reference_id', function ($sq) {
+                $q->whereNull('reference_type')
+                    ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
+                    ->orWhereIn('reference_id', function ($sq) {
                         $sq->select('id')
                             ->from('rentals')
                             ->where('status', '!=', 'cancel');
+                    })
+                    ->orWhere(function ($sq) {
+                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
+                            ->where('type', CashFlow::TYPE_OUT);
                     });
             })
-            ->when($branchId, fn ($q) => $q->where('cash_flows.branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->where('cash_flows.warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('cash_flows.transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('cash_flows.branch_id, cash_flows.warehouse_id, cash_flows.type, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
-            ->groupBy('cash_flows.branch_id', 'cash_flows.warehouse_id', 'cash_flows.type', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId));
+
+        $cashFlowRows = (clone $cashFlowBaseQuery)
+            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
             ->get();
 
-        $keyFromRow = function ($row) {
-            $jenis = strtolower(trim((string) ($row->jenis_pembayaran ?? '')));
-            $bank = trim((string) ($row->nama_bank ?? ''));
-            $rek = trim((string) ($row->no_rekening ?? ''));
-            if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
-                return 'Tunai';
+        if ($dateFrom && $dateTo) {
+            $saleReferenceIdsInRange = $cashFlowRows
+                ->where('reference_type', CashFlow::REFERENCE_SALE)
+                ->pluck('reference_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+            if ($saleReferenceIdsInRange->isNotEmpty()) {
+                $pairedSaleRows = (clone $cashFlowBaseQuery)
+                    ->where('reference_type', CashFlow::REFERENCE_SALE)
+                    ->whereIn('reference_id', $saleReferenceIdsInRange->all())
+                    ->get();
+                $cashFlowRows = $cashFlowRows->merge($pairedSaleRows)->unique('id')->values();
+            }
+        }
+
+        // Pemetaan sale_payment untuk legacy cash flow sale IN yang payment_method_id-nya null.
+        $salePaymentRows = DB::table('sale_payments as sp')
+            ->join('payment_methods as pm', 'sp.payment_method_id', '=', 'pm.id')
+            ->selectRaw('sp.sale_id, sp.amount, pm.jenis_pembayaran, pm.nama_bank, pm.no_rekening')
+            ->get();
+        $salePaymentBySale = [];
+        foreach ($salePaymentRows as $spr) {
+            $saleId = (int) ($spr->sale_id ?? 0);
+            if ($saleId <= 0) {
+                continue;
+            }
+            if (! isset($salePaymentBySale[$saleId])) {
+                $salePaymentBySale[$saleId] = [];
+            }
+            $salePaymentBySale[$saleId][] = $spr;
+        }
+
+        $keyFromRow = function ($row) use ($salePaymentBySale) {
+            $pm = $row->paymentMethod ?? null;
+            $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? ($row->jenis_pembayaran ?? ''))));
+            $bank = trim((string) ($pm->nama_bank ?? ($row->nama_bank ?? '')));
+            $rek = trim((string) ($pm->no_rekening ?? ($row->no_rekening ?? '')));
+
+            // Jika payment method ada, klasifikasi langsung dari PM tersebut.
+            if ($pm || $bank !== '' || $rek !== '' || $jenis !== '') {
+                if (str_contains($jenis, 'tunai') || ($bank === '' && $rek === '')) {
+                    return 'Tunai';
+                }
+
+                return $bank . '|' . $rek;
             }
 
-            return $bank . '|' . $rek;
+            // Legacy sale cash-in tanpa payment_method_id: cocokkan dari sale_payments.
+            if (($row->reference_type ?? null) === CashFlow::REFERENCE_SALE
+                && strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN
+                && ($row->payment_method_id ?? null) === null
+            ) {
+                $saleId = (int) ($row->reference_id ?? 0);
+                $amount = (float) ($row->amount ?? 0);
+                $candidates = $salePaymentBySale[$saleId] ?? [];
+                $matchedKeys = [];
+                foreach ($candidates as $candidate) {
+                    if (abs(((float) ($candidate->amount ?? 0)) - $amount) >= 0.02) {
+                        continue;
+                    }
+                    $cJenis = strtolower(trim((string) ($candidate->jenis_pembayaran ?? '')));
+                    $cBank = trim((string) ($candidate->nama_bank ?? ''));
+                    $cRek = trim((string) ($candidate->no_rekening ?? ''));
+                    $matchedKeys[] = (str_contains($cJenis, 'tunai') || ($cBank === '' && $cRek === ''))
+                        ? 'Tunai'
+                        : ($cBank . '|' . $cRek);
+                }
+                $matchedKeys = array_values(array_unique($matchedKeys));
+                if (count($matchedKeys) === 1) {
+                    return $matchedKeys[0];
+                }
+            }
+
+            // Null PM non-legacy / ambigu tidak dimasukkan ke kas/rekening tertentu.
+            return null;
         };
 
         // branchTotals[branch_id][key] & warehouseTotals[warehouse_id][key]
@@ -594,11 +667,15 @@ class FinanceController extends Controller
             }
         }
 
-        foreach ($cashFlowByPm as $row) {
+        foreach ($cashFlowRows as $row) {
             $key = $keyFromRow($row);
+            if ($key === null || $key === '') {
+                continue;
+            }
             $allKeys[$key] = true;
+            $amount = (float) ($row->amount ?? 0);
             $isIn = strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN;
-            $signedAmount = $isIn ? (float) $row->total : -(float) $row->total;
+            $signedAmount = $isIn ? $amount : -$amount;
             if ($row->warehouse_id) {
                 $wid = $row->warehouse_id;
                 if (! isset($warehouseTotals[$wid])) {
@@ -606,9 +683,9 @@ class FinanceController extends Controller
                 }
                 $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + $signedAmount;
                 if ($isIn) {
-                    $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
+                    $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + $amount;
                 } else {
-                    $warehouseOutTotals[$wid] = ($warehouseOutTotals[$wid] ?? 0) + (float) $row->total;
+                    $warehouseOutTotals[$wid] = ($warehouseOutTotals[$wid] ?? 0) + $amount;
                 }
             } else {
                 $bid = $row->branch_id;
@@ -617,9 +694,9 @@ class FinanceController extends Controller
                 }
                 $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + $signedAmount;
                 if ($isIn) {
-                    $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
+                    $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + $amount;
                 } else {
-                    $branchOutTotals[$bid] = ($branchOutTotals[$bid] ?? 0) + (float) $row->total;
+                    $branchOutTotals[$bid] = ($branchOutTotals[$bid] ?? 0) + $amount;
                 }
             }
         }
