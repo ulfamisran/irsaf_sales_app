@@ -36,25 +36,15 @@
         {{-- Filter --}}
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('stock-mutations.index') }}" class="flex flex-wrap gap-3 items-end">
+                <form method="GET" action="{{ route('stock-mutations.index') }}" class="space-y-4">
                     <input type="hidden" name="tab" id="filter-tab" value="{{ $activeTab }}">
-                    <div class="min-w-[200px]">
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
-                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('SKU, brand, serial...') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('No. invoice, SKU, brand, serial...') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                     </div>
-                    <div class="min-w-[220px]">
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
-                        <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            @foreach ($products as $p)
-                                <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>
-                                    {{ $p->sku }} - {{ $p->brand }} ({{ $p->in_stock_count ?? 0 }} unit)
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     @if($canFilterLocation ?? false)
-                    <div class="w-[120px]">
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi Tipe') }}</label>
                         <select name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                             <option value="">{{ __('Semua') }}</option>
@@ -62,7 +52,7 @@
                             <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                         </select>
                     </div>
-                    <div class="w-[140px]">
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
                         <select name="location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                             <option value="">{{ __('Semua') }}</option>
@@ -75,21 +65,47 @@
                         </select>
                     </div>
                     @elseif($filterLocked ?? false)
-                    <div class="w-[180px]">
-                        <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                    <div>
+                        <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="str_contains((string) ($locationLabel ?? ''), __('Cabang')) ? __('Cabang') : __('Gudang')" />
                         <input type="hidden" name="location_type" value="{{ $locationType }}">
+                    </div>
+                    <div>
+                        <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                         <input type="hidden" name="location_id" value="{{ $locationId }}">
                     </div>
                     @endif
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
-                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
-                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
-                    <div class="flex gap-2">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
+                        <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach ($products as $p)
+                                <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>
+                                    {{ $p->sku }} - {{ $p->brand }} ({{ $p->in_stock_count ?? 0 }} unit)
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
+                        <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>{{ __('Release') }}</option>
+                            <option value="cancelled" {{ request('status') === 'cancelled' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
+                            <option value="paid_off" {{ request('status') === 'paid_off' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
+                            <option value="unpaid" {{ request('status') === 'unpaid' ? 'selected' : '' }}>{{ __('Belum Lunas') }}</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 flex gap-2 md:justify-end">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -99,6 +115,7 @@
                         <a href="{{ route('stock-mutations.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
+                    </div>
                     </div>
                 </form>
             </div>

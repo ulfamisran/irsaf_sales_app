@@ -7,43 +7,74 @@
     <div class="max-w-7xl mx-auto space-y-6">
         <div class="card-modern overflow-hidden">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('stock-monitoring.index') }}" class="flex flex-wrap gap-3 items-end">
-                    @if($canFilterLocation ?? false)
-                        <div class="min-w-[160px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
-                            <select name="location_type" id="sm_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                <form method="GET" action="{{ route('stock-monitoring.index') }}" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Pencarian') }}</label>
+                        <input type="text"
+                               name="search"
+                               value="{{ request('search') }}"
+                               placeholder="{{ __('SKU, merek, seri, spesifikasi...') }}"
+                               class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        @if($canFilterLocation ?? false)
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
+                                <select name="location_type" id="sm_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                    <option value="">{{ __('Semua') }}</option>
+                                    <option value="branch" {{ ($locationType ?? '') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
+                                    <option value="warehouse" {{ ($locationType ?? '') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
+                                <select name="location_id" id="sm_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                    <option value="">{{ __('Semua') }}</option>
+                                    @if (($locationType ?? '') === 'branch')
+                                        @foreach($branches as $b)
+                                            <option value="{{ $b->id }}" {{ (string)($locationId ?? '') === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                        @endforeach
+                                    @else
+                                        @foreach($warehouses as $w)
+                                            <option value="{{ $w->id }}" {{ (string)($locationId ?? '') === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                            </div>
+                        @elseif($filterLocked ?? false)
+                            <div>
+                                <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="str_contains((string) ($locationLabel ?? ''), __('Cabang')) ? __('Cabang') : __('Gudang')" />
+                            </div>
+                            <div>
+                                <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                                <input type="hidden" name="location_type" value="{{ $locationType }}">
+                                <input type="hidden" name="location_id" value="{{ $locationId }}">
+                            </div>
+                        @endif
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Produk') }}</label>
+                            <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
-                                <option value="branch" {{ ($locationType ?? '') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
-                                <option value="warehouse" {{ ($locationType ?? '') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
+                                @foreach(($categories ?? []) as $cat)
+                                    <option value="{{ $cat->id }}" {{ (string) request('category_id') === (string) $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                                @endforeach
                             </select>
                         </div>
-                        <div id="sm_location_wrapper" class="min-w-[190px]" style="{{ ($locationType ?? '') === '' ? 'display:none' : '' }}">
-                            <label class="block text-sm font-medium text-slate-700 mb-1" id="sm_location_label">{{ ($locationType ?? '') === 'warehouse' ? __('Gudang') : __('Cabang') }}</label>
-                            <div class="sm-loc-warehouse" style="{{ ($locationType ?? '') !== 'warehouse' ? 'display:none' : '' }}">
-                                <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                    <option value="">{{ __('Semua') }}</option>
-                                    @foreach($warehouses as $w)
-                                        <option value="{{ $w->id }}" {{ (string)($locationId ?? '') === (string)$w->id && ($locationType ?? '') === 'warehouse' ? 'selected' : '' }}>{{ $w->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="sm-loc-branch" style="{{ ($locationType ?? '') !== 'branch' ? 'display:none' : '' }}">
-                                <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                    <option value="">{{ __('Semua') }}</option>
-                                    @foreach($branches as $b)
-                                        <option value="{{ $b->id }}" {{ (string)($locationId ?? '') === (string)$b->id && ($locationType ?? '') === 'branch' ? 'selected' : '' }}>{{ $b->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
+                            <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach(($products ?? []) as $p)
+                                    <option value="{{ $p->id }}" {{ (string) request('product_id') === (string) $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
+                                @endforeach
+                            </select>
                         </div>
-                    @elseif($filterLocked ?? false)
-                        <div class="min-w-[220px]">
-                            <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
+                        <div class="md:col-span-2 flex gap-2 md:justify-end">
+                            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">{{ __('Tampilkan') }}</button>
+                            <a href="{{ route('stock-monitoring.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">{{ __('Reset') }}</a>
                         </div>
-                    @endif
-                    <div class="flex gap-2">
-                        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">{{ __('Tampilkan') }}</button>
-                        <a href="{{ route('stock-monitoring.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">{{ __('Reset') }}</a>
                     </div>
                 </form>
             </div>
@@ -95,7 +126,6 @@
 
             <div class="card-modern p-5">
                 <h3 class="font-semibold text-slate-800 mb-4">{{ __('Diagram Stok per Cabang/Gudang (per Kategori & Jenis)') }}</h3>
-                <p class="text-xs text-slate-500 mb-3">{{ __('Per lokasi: bar kategori = % dari total stok lokasi; bar jenis = % dari stok kategori tersebut. Angka tetap qty.') }}</p>
                 <div class="space-y-3">
                     @forelse(($locationCategorySummaries ?? collect())->take(8) as $loc)
                         @php
@@ -215,39 +245,30 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const locType = document.getElementById('sm_location_type');
-            const locWrapper = document.getElementById('sm_location_wrapper');
-            const locLabel = document.getElementById('sm_location_label');
-            const whBlock = document.querySelector('.sm-loc-warehouse');
-            const brBlock = document.querySelector('.sm-loc-branch');
-            const whSelect = whBlock?.querySelector('select[name="warehouse_id"]');
-            const brSelect = brBlock?.querySelector('select[name="branch_id"]');
+            const locId = document.getElementById('sm_location_id');
+            const warehouses = @json(($warehouses ?? collect())->map(fn($w) => ['id' => $w->id, 'name' => $w->name])->values());
+            const branches = @json(($branches ?? collect())->map(fn($b) => ['id' => $b->id, 'name' => $b->name])->values());
 
-            function toggleLocationFilter() {
-                if (!locType || !locWrapper) return;
-                const value = locType.value;
-                if (!value) {
-                    locWrapper.style.display = 'none';
-                    if (whSelect) whSelect.value = '';
-                    if (brSelect) brSelect.value = '';
-                    return;
-                }
-                locWrapper.style.display = '';
-                if (value === 'warehouse') {
-                    if (locLabel) locLabel.textContent = '{{ __("Gudang") }}';
-                    if (whBlock) whBlock.style.display = '';
-                    if (brBlock) brBlock.style.display = 'none';
-                    if (brSelect) brSelect.value = '';
-                } else {
-                    if (locLabel) locLabel.textContent = '{{ __("Cabang") }}';
-                    if (whBlock) whBlock.style.display = 'none';
-                    if (brBlock) brBlock.style.display = '';
-                    if (whSelect) whSelect.value = '';
-                }
+            function renderLocationOptions(type, selected = '') {
+                if (!locId) return;
+                locId.innerHTML = `<option value="">{{ __('Semua') }}</option>`;
+                const rows = type === 'branch' ? branches : warehouses;
+                rows.forEach((row) => {
+                    const option = document.createElement('option');
+                    option.value = String(row.id);
+                    option.textContent = row.name;
+                    if (String(selected) === String(row.id)) {
+                        option.selected = true;
+                    }
+                    locId.appendChild(option);
+                });
             }
 
-            if (locType) {
-                locType.addEventListener('change', toggleLocationFilter);
-                toggleLocationFilter();
+            if (locType && locId) {
+                renderLocationOptions(locType.value, locId.value);
+                locType.addEventListener('change', function () {
+                    renderLocationOptions(this.value, '');
+                });
             }
 
             document.querySelectorAll('.sm-toggle-detail').forEach(function (checkbox) {

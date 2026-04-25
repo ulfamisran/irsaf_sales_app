@@ -47,9 +47,9 @@ class StockMonitoringController extends Controller
                 $locationType = '';
             }
             if ($locationType === Stock::LOCATION_BRANCH) {
-                $locationId = (int) $request->get('branch_id', 0);
+                $locationId = (int) $request->get('location_id', $request->get('branch_id', 0));
             } elseif ($locationType === Stock::LOCATION_WAREHOUSE) {
-                $locationId = (int) $request->get('warehouse_id', 0);
+                $locationId = (int) $request->get('location_id', $request->get('warehouse_id', 0));
             } else {
                 $locationId = 0;
             }
@@ -64,8 +64,30 @@ class StockMonitoringController extends Controller
         if ($locationId > 0) {
             $query->where('location_id', $locationId);
         }
+        if ($request->filled('category_id')) {
+            $categoryId = (int) $request->category_id;
+            if ($categoryId > 0) {
+                $query->whereHas('product', fn ($q) => $q->where('category_id', $categoryId));
+            }
+        }
+        if ($request->filled('product_id')) {
+            $query->where('product_id', (int) $request->product_id);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('product', function ($pq) use ($search) {
+                    $pq->where('sku', 'like', "%{$search}%")
+                        ->orWhere('brand', 'like', "%{$search}%")
+                        ->orWhere('series', 'like', "%{$search}%")
+                        ->orWhere('specs', 'like', "%{$search}%");
+                });
+            });
+        }
 
         $rows = $query->get();
+        $products = \App\Models\Product::orderBy('sku')->get(['id', 'sku', 'brand']);
+        $categories = \App\Models\Category::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
 
@@ -215,6 +237,8 @@ class StockMonitoringController extends Controller
             'locationType' => $locationType,
             'locationId' => $locationId,
             'locationLabel' => $locationLabel,
+            'products' => $products,
+            'categories' => $categories,
         ]);
     }
 }

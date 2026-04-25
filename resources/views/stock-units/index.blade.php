@@ -17,44 +17,17 @@
     <div class="max-w-7xl mx-auto">
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('stock-units.index') }}" class="space-y-3">
-                    <div style="width: 220px;">
+                <form method="GET" action="{{ route('stock-units.index') }}" class="space-y-4">
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Pencarian') }}</label>
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('SKU, serial, merek, seri...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
-                    <div class="flex flex-wrap gap-3 items-end">
-                        <div style="width: 200px;">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Produk') }}</label>
-                            <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($categories ?? [] as $cat)
-                                    <option value="{{ $cat->id }}" {{ (string) request('category_id') === (string) $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div style="width: 220px;">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
-                            <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($products as $p)
-                                    <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="min-w-[200px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Stok') }}</label>
-                            <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($statusOptions as $value => $label)
-                                    <option value="{{ $value }}" {{ request('status') === $value ? 'selected' : '' }}>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                         @if($canFilterLocation ?? false)
-                        <div class="w-[120px]">
+                        <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi Tipe') }}</label>
-                            <select name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <select id="su_location_type" name="location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">{{ __('Semua') }}</option>
                                 <option value="warehouse" {{ request('location_type') === 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
                                 <option value="branch" {{ request('location_type') === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
@@ -63,7 +36,7 @@
                         @php
                             $selectedLocationType = (string) request('location_type', '');
                         @endphp
-                        <div class="w-[140px]">
+                        <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
                             <select name="location_id" id="su_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">{{ __('Semua') }}</option>
@@ -86,13 +59,45 @@
                             </select>
                         </div>
                         @elseif($filterLocked ?? false)
-                        <div class="w-[180px]">
+                        <div>
+                            <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="str_contains((string) ($locationLabel ?? ''), __('Cabang')) ? __('Cabang') : __('Gudang')" />
+                        </div>
+                        <div>
                             <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                             <input type="hidden" name="location_type" value="{{ $locationType }}">
                             <input type="hidden" name="location_id" value="{{ $locationId }}">
                         </div>
                         @endif
-                        <div class="flex gap-2">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Produk') }}</label>
+                            <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($categories ?? [] as $cat)
+                                    <option value="{{ $cat->id }}" {{ (string) request('category_id') === (string) $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
+                            <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($products as $p)
+                                    <option value="{{ $p->id }}" {{ request('product_id') == $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Stok') }}</label>
+                            <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                @foreach ($statusOptions as $value => $label)
+                                    <option value="{{ $value }}" {{ request('status') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="flex gap-2 md:justify-end">
                             <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -265,7 +270,7 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const typeSelect = document.querySelector('select[name="location_type"]');
+            const typeSelect = document.getElementById('su_location_type');
             const locationSelect = document.getElementById('su_location_id');
             if (!typeSelect || !locationSelect) return;
 

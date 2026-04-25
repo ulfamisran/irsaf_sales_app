@@ -27,34 +27,41 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('damaged-goods.index') }}" class="flex flex-wrap gap-4 items-end">
+                @php
+                    $locType = request('location_type') ?? '';
+                    if ($filterLocked ?? false) {
+                        $locType = ($lockedWarehouseId ?? null) ? 'warehouse' : (($lockedBranchId ?? null) ? 'branch' : '');
+                    }
+                    $selectedLocationId = request('location_id');
+                    if (! $selectedLocationId) {
+                        $selectedLocationId = request('warehouse_id') ?: request('branch_id');
+                    }
+                    if ($filterLocked ?? false) {
+                        $selectedLocationId = ($lockedWarehouseId ?? null) ?: ($lockedBranchId ?? null);
+                    }
+                @endphp
+                <form method="GET" action="{{ route('damaged-goods.index') }}" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Search') }}</label>
+                        <input type="text"
+                               name="search"
+                               value="{{ request('search') }}"
+                               placeholder="{{ __('Produk, serial, user, deskripsi...') }}"
+                               class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     @if(($canFilterLocation ?? false) || ($filterLocked ?? false))
-                        @php
-                            $locType = request('location_type') ?? '';
-                            if ($filterLocked) {
-                                $locType = ($lockedWarehouseId ?? null) ? 'warehouse' : (($lockedBranchId ?? null) ? 'branch' : '');
-                            }
-                            $selectedBranchId = request('branch_id');
-                            $selectedWarehouseId = request('warehouse_id');
-                            if ($filterLocked) {
-                                $selectedBranchId = $lockedBranchId ?? null;
-                                $selectedWarehouseId = $lockedWarehouseId ?? null;
-                            }
-                            if ($locType === '' && ($selectedBranchId || $selectedWarehouseId)) {
-                                $locType = $selectedWarehouseId ? 'warehouse' : 'branch';
-                            }
-                        @endphp
                         @if($filterLocked ?? false)
-                            <div class="min-w-[200px]">
+                            <div>
+                                <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="$locType === 'warehouse' ? __('Gudang') : __('Cabang')" />
+                            </div>
+                            <div>
                                 <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
-                                @if($locType === 'warehouse')
-                                    <input type="hidden" name="warehouse_id" value="{{ $selectedWarehouseId }}">
-                                @else
-                                    <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
-                                @endif
+                                <input type="hidden" name="location_type" value="{{ $locType }}">
+                                <input type="hidden" name="location_id" value="{{ $selectedLocationId }}">
                             </div>
                         @else
-                            <div class="min-w-[160px]">
+                            <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
                                 <select name="location_type" id="dg_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     <option value="" {{ $locType === '' ? 'selected' : '' }}>{{ __('Semua') }}</option>
@@ -62,28 +69,52 @@
                                     <option value="branch" {{ $locType === 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                                 </select>
                             </div>
-                            <div id="dg_location_wrapper" class="min-w-[180px]" style="{{ $locType === '' ? 'display:none' : '' }}">
-                                <label class="block text-sm font-medium text-slate-700 mb-1" id="dg_location_label">{{ $locType === 'warehouse' ? __('Gudang') : __('Cabang') }}</label>
-                                <div class="filter-dg-warehouse" style="{{ $locType !== 'warehouse' ? 'display:none' : '' }}">
-                                    <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">{{ __('Semua') }}</option>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
+                                <select name="location_id" id="dg_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">{{ __('Semua') }}</option>
+                                    @if ($locType === 'warehouse')
                                         @foreach ($warehouses ?? [] as $w)
-                                            <option value="{{ $w->id }}" {{ (string)($selectedWarehouseId ?? '') === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                            <option value="{{ $w->id }}" {{ (string)($selectedLocationId ?? '') === (string)$w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                                         @endforeach
-                                    </select>
-                                </div>
-                                <div class="filter-dg-branch" style="{{ $locType !== 'branch' ? 'display:none' : '' }}">
-                                    <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">{{ __('Semua') }}</option>
+                                    @elseif ($locType === 'branch')
                                         @foreach ($branches ?? [] as $b)
-                                            <option value="{{ $b->id }}" {{ (string)($selectedBranchId ?? '') === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                            <option value="{{ $b->id }}" {{ (string)($selectedLocationId ?? '') === (string)$b->id ? 'selected' : '' }}>{{ $b->name }}</option>
                                         @endforeach
-                                    </select>
-                                </div>
+                                    @endif
+                                </select>
                             </div>
                         @endif
                     @endif
-                    <div class="flex gap-2">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
+                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
+                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori') }}</label>
+                        <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach(($categories ?? []) as $cat)
+                                <option value="{{ $cat->id }}" {{ (string) request('category_id') === (string) $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
+                        <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            @foreach(($products ?? []) as $p)
+                                <option value="{{ $p->id }}" {{ (string) request('product_id') === (string) $p->id ? 'selected' : '' }}>{{ $p->sku }} - {{ $p->brand }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 flex gap-2 md:justify-end">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -93,6 +124,7 @@
                         <a href="{{ route('damaged-goods.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
+                    </div>
                     </div>
                 </form>
             </div>
@@ -159,36 +191,30 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const locType = document.getElementById('dg_location_type');
-            const wrapper = document.getElementById('dg_location_wrapper');
-            const label = document.getElementById('dg_location_label');
-            const whBlock = document.querySelector('.filter-dg-warehouse');
-            const brBlock = document.querySelector('.filter-dg-branch');
-            const whSelect = whBlock?.querySelector('select[name="warehouse_id"]');
-            const brSelect = brBlock?.querySelector('select[name="branch_id"]');
+            const locId = document.getElementById('dg_location_id');
+            const warehouses = @json(($warehouses ?? collect())->map(fn($w) => ['id' => $w->id, 'name' => $w->name])->values());
+            const branches = @json(($branches ?? collect())->map(fn($b) => ['id' => $b->id, 'name' => $b->name])->values());
             if (locType) {
-                function toggle() {
-                    const v = locType.value;
-                    if (!v) {
-                        wrapper.style.display = 'none';
-                        if (whSelect) whSelect.value = '';
-                        if (brSelect) brSelect.value = '';
-                        return;
-                    }
-                    wrapper.style.display = '';
-                    if (v === 'warehouse') {
-                        if (label) label.textContent = '{{ __("Gudang") }}';
-                        if (whBlock) whBlock.style.display = '';
-                        if (brBlock) brBlock.style.display = 'none';
-                        if (brSelect) brSelect.value = '';
-                    } else {
-                        if (label) label.textContent = '{{ __("Cabang") }}';
-                        if (whBlock) whBlock.style.display = 'none';
-                        if (brBlock) brBlock.style.display = '';
-                        if (whSelect) whSelect.value = '';
-                    }
+                function renderLocationOptions(type, selected = '') {
+                    if (!locId) return;
+                    locId.innerHTML = `<option value="">{{ __('Semua') }}</option>`;
+                    const rows = type === 'branch' ? branches : (type === 'warehouse' ? warehouses : []);
+                    rows.forEach((row) => {
+                        const option = document.createElement('option');
+                        option.value = String(row.id);
+                        option.textContent = row.name;
+                        if (String(selected) === String(row.id)) {
+                            option.selected = true;
+                        }
+                        locId.appendChild(option);
+                    });
                 }
-                locType.addEventListener('change', toggle);
-                toggle();
+                if (locId) {
+                    renderLocationOptions(locType.value, locId.value);
+                    locType.addEventListener('change', function() {
+                        renderLocationOptions(this.value, '');
+                    });
+                }
             }
         });
     </script>

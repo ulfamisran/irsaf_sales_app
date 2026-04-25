@@ -129,6 +129,22 @@ class StockMutationController extends Controller
                     });
                 }
             }
+            if ($request->filled('status') && $isDistribution) {
+                $status = (string) $request->status;
+                if (in_array($status, [Distribution::STATUS_ACTIVE, Distribution::STATUS_CANCELLED], true)) {
+                    $query->where('status', $status);
+                } elseif ($status === 'paid_off') {
+                    $query->where('status', '!=', Distribution::STATUS_CANCELLED)
+                        ->where(function ($q) {
+                            $q->where('total', '<=', 0)
+                                ->orWhereRaw('total_paid >= (total - 0.02)');
+                        });
+                } elseif ($status === 'unpaid') {
+                    $query->where('status', '!=', Distribution::STATUS_CANCELLED)
+                        ->where('total', '>', 0)
+                        ->whereRaw('total_paid < (total - 0.02)');
+                }
+            }
             $dateField = $isDistribution ? 'distribution_date' : 'mutation_date';
             if ($request->filled('date_from')) {
                 $query->whereDate($dateField, '>=', $request->date_from);

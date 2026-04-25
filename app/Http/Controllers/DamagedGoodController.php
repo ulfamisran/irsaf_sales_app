@@ -54,24 +54,73 @@ class DamagedGoodController extends Controller
             }
         } else {
             $canFilterLocation = true;
-            if ($request->filled('warehouse_id')) {
+            $locType = (string) $request->input('location_type', '');
+            $locId = (int) $request->input('location_id', 0);
+            if ($locType === Stock::LOCATION_WAREHOUSE && $locId > 0) {
                 $query->whereHas('productUnit', fn ($q) => $q
                     ->where('location_type', Stock::LOCATION_WAREHOUSE)
-                    ->where('location_id', $request->warehouse_id));
-            } elseif ($request->filled('branch_id')) {
+                    ->where('location_id', $locId));
+            } elseif ($locType === Stock::LOCATION_BRANCH && $locId > 0) {
                 $query->whereHas('productUnit', fn ($q) => $q
                     ->where('location_type', Stock::LOCATION_BRANCH)
-                    ->where('location_id', $request->branch_id));
+                    ->where('location_id', $locId));
+            } else {
+                // Backward compatibility parameter lama.
+                if ($request->filled('warehouse_id')) {
+                    $query->whereHas('productUnit', fn ($q) => $q
+                        ->where('location_type', Stock::LOCATION_WAREHOUSE)
+                        ->where('location_id', $request->warehouse_id));
+                } elseif ($request->filled('branch_id')) {
+                    $query->whereHas('productUnit', fn ($q) => $q
+                        ->where('location_type', Stock::LOCATION_BRANCH)
+                        ->where('location_id', $request->branch_id));
+                }
             }
         }
 
+        if ($request->filled('category_id')) {
+            $categoryId = (int) $request->category_id;
+            if ($categoryId > 0) {
+                $query->whereHas('productUnit.product', fn ($q) => $q->where('category_id', $categoryId));
+            }
+        }
+        if ($request->filled('product_id')) {
+            $productId = (int) $request->product_id;
+            if ($productId > 0) {
+                $query->whereHas('productUnit', fn ($q) => $q->where('product_id', $productId));
+            }
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('serial_number', 'like', "%{$search}%")
+                    ->orWhere('damage_description', 'like', "%{$search}%")
+                    ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('productUnit.product', function ($pq) use ($search) {
+                        $pq->where('sku', 'like', "%{$search}%")
+                            ->orWhere('brand', 'like', "%{$search}%")
+                            ->orWhere('series', 'like', "%{$search}%");
+                    });
+            });
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('recorded_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('recorded_date', '<=', $request->date_to);
+        }
+
         $damagedGoods = $query->paginate(20)->withQueryString();
+        $products = Product::orderBy('sku')->get(['id', 'sku', 'brand']);
+        $categories = Category::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $totalHpp = (clone $query)->sum('harga_hpp');
 
         return view('damaged-goods.index', compact(
             'damagedGoods',
+            'products',
+            'categories',
             'warehouses',
             'branches',
             'canFilterLocation',

@@ -19,41 +19,67 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
-                <form method="GET" action="{{ route('purchases.index') }}" class="flex flex-wrap gap-3 items-end">
+                @php
+                    $selectedLocationType = request('location_type', 'warehouse');
+                    $selectedLocationId = request('location_id');
+                    if (! $selectedLocationId) {
+                        $selectedLocationId = $selectedLocationType === 'branch' ? request('branch_id') : request('warehouse_id');
+                    }
+                @endphp
+                <form method="GET" action="{{ route('purchases.index') }}" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
+                        <input type="text"
+                               name="search"
+                               value="{{ request('search') }}"
+                               class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                               placeholder="{{ __('No. invoice, distributor, user...') }}">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     @if ($canFilterLocation)
-                        <div class="min-w-[140px]">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
-                            <select name="location_type" id="filter_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
+                            <select name="location_type" id="po_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="warehouse" {{ request('location_type') == 'warehouse' ? 'selected' : '' }}>{{ __('Gudang') }}</option>
                                 <option value="branch" {{ request('location_type') == 'branch' ? 'selected' : '' }}>{{ __('Cabang') }}</option>
                             </select>
                         </div>
-                        <div class="min-w-[180px] filter-warehouse">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Gudang') }}</label>
-                            <select name="warehouse_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
+                            <select name="location_id" id="po_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
-                                @foreach ($warehouses as $w)
-                                    <option value="{{ $w->id }}" {{ request('warehouse_id') == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="min-w-[180px] filter-branch" style="display:none">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cabang') }}</label>
-                            <select name="branch_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">{{ __('Semua') }}</option>
-                                @foreach ($branches as $b)
-                                    <option value="{{ $b->id }}" {{ request('branch_id') == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
-                                @endforeach
+                                @if ($selectedLocationType === 'branch')
+                                    @foreach ($branches as $b)
+                                        <option value="{{ $b->id }}" {{ (string) $selectedLocationId === (string) $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                    @endforeach
+                                @else
+                                    @foreach ($warehouses as $w)
+                                        <option value="{{ $w->id }}" {{ (string) $selectedLocationId === (string) $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                    @endforeach
+                                @endif
                             </select>
                         </div>
                     @else
                         @if ($filterLocked)
-                            <div class="min-w-[200px]">
+                            <div>
+                                <x-locked-location label="{{ __('Tipe Lokasi') }}" :value="str_contains((string) $locationLabel, __('Cabang')) ? __('Cabang') : __('Gudang')" />
+                            </div>
+                            <div>
                                 <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel" />
                             </div>
                         @endif
                     @endif
-                    <div class="min-w-[200px]">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
+                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
+                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Distributor') }}</label>
                         <select name="distributor_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
@@ -63,18 +89,16 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
-                        <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
+                        <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>{{ __('Release') }}</option>
+                            <option value="cancelled" {{ request('status') === 'cancelled' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
+                            <option value="paid_off" {{ request('status') === 'paid_off' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
+                            <option value="unpaid" {{ request('status') === 'unpaid' ? 'selected' : '' }}>{{ __('Belum Lunas') }}</option>
+                        </select>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
-                        <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
-                        <input type="text" name="search" value="{{ request('search') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="No. invoice, distributor...">
-                    </div>
-                    <div class="flex gap-2">
+                    <div class="md:col-span-2 flex gap-2 md:justify-end">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -84,6 +108,7 @@
                         <a href="{{ route('purchases.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
                         </a>
+                    </div>
                     </div>
                 </form>
             </div>
@@ -204,21 +229,37 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const locType = document.getElementById('filter_location_type');
-            const whBlock = document.querySelector('.filter-warehouse');
-            const brBlock = document.querySelector('.filter-branch');
-            function toggle() {
-                const v = locType?.value;
-                if (v === 'warehouse') {
-                    if (whBlock) whBlock.style.display = '';
-                    if (brBlock) brBlock.style.display = 'none';
-                } else {
-                    if (whBlock) whBlock.style.display = 'none';
-                    if (brBlock) brBlock.style.display = '';
-                }
+            const locType = document.getElementById('po_location_type');
+            const locId = document.getElementById('po_location_id');
+            const warehouses = @json($warehouses);
+            const branches = @json($branches);
+
+            function renderLocationOptions(type, selected = '') {
+                if (!locId) return;
+                locId.innerHTML = '';
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = @json(__('Semua'));
+                locId.appendChild(defaultOpt);
+
+                const list = type === 'branch' ? branches : warehouses;
+                list.forEach(function(item) {
+                    const opt = document.createElement('option');
+                    opt.value = String(item.id);
+                    opt.textContent = item.name;
+                    if (String(selected) === String(item.id)) {
+                        opt.selected = true;
+                    }
+                    locId.appendChild(opt);
+                });
             }
-            locType?.addEventListener('change', toggle);
-            toggle();
+
+            if (locType && locId) {
+                renderLocationOptions(locType.value, locId.value);
+                locType.addEventListener('change', function() {
+                    renderLocationOptions(this.value, '');
+                });
+            }
         });
     </script>
     @endpush

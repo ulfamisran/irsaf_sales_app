@@ -60,10 +60,21 @@ class PurchaseController extends Controller
         } else {
             $canFilterLocation = true;
             if ($request->filled('location_type')) {
-                if ($request->location_type === 'warehouse' && $request->filled('warehouse_id')) {
-                    $query->where('warehouse_id', $request->warehouse_id);
-                } elseif ($request->location_type === 'branch' && $request->filled('branch_id')) {
-                    $query->where('branch_id', $request->branch_id);
+                $locationId = (int) $request->input('location_id', 0);
+                if ($request->location_type === 'warehouse') {
+                    if ($locationId > 0) {
+                        $query->where('warehouse_id', $locationId);
+                    } elseif ($request->filled('warehouse_id')) {
+                        // Backward compatibility parameter lama.
+                        $query->where('warehouse_id', $request->warehouse_id);
+                    }
+                } elseif ($request->location_type === 'branch') {
+                    if ($locationId > 0) {
+                        $query->where('branch_id', $locationId);
+                    } elseif ($request->filled('branch_id')) {
+                        // Backward compatibility parameter lama.
+                        $query->where('branch_id', $request->branch_id);
+                    }
                 }
             }
         }
@@ -76,6 +87,22 @@ class PurchaseController extends Controller
         }
         if ($request->filled('distributor_id')) {
             $query->where('distributor_id', $request->distributor_id);
+        }
+        if ($request->filled('status')) {
+            $status = (string) $request->status;
+            if (in_array($status, [Purchase::STATUS_ACTIVE, Purchase::STATUS_CANCELLED], true)) {
+                $query->where('status', $status);
+            } elseif ($status === 'paid_off') {
+                $query->where('status', '!=', Purchase::STATUS_CANCELLED)
+                    ->where(function ($q) {
+                        $q->where('total', '<=', 0)
+                            ->orWhereRaw('total_paid >= (total - 0.02)');
+                    });
+            } elseif ($status === 'unpaid') {
+                $query->where('status', '!=', Purchase::STATUS_CANCELLED)
+                    ->where('total', '>', 0)
+                    ->whereRaw('total_paid < (total - 0.02)');
+            }
         }
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
