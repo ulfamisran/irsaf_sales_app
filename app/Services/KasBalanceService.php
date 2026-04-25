@@ -4,8 +4,6 @@ namespace App\Services;
 
 use App\Models\CashFlow;
 use App\Models\PaymentMethod;
-use App\Models\Sale;
-use App\Models\Service;
 use Illuminate\Support\Facades\DB;
 
 class KasBalanceService
@@ -79,7 +77,8 @@ class KasBalanceService
 
     /**
      * Hitung saldo per payment_method_id.
-     * sale_payments + service_payments (seluruh transaksi non-cancel) + cash_flows IN - cash_flows OUT.
+     * 100% berbasis cash_flows (konsisten Monitoring Kas/Detail Kas).
+     * Include fallback legacy sale cash-in tanpa payment_method_id bila cocok unik ke sale_payment.
      * Konsisten dengan Monitoring Kas.
      *
      * @return array<int, float> [payment_method_id => saldo]
@@ -88,75 +87,15 @@ class KasBalanceService
     {
         $totals = [];
 
-        $salePayments = DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
-            ->when($locationType === 'branch', fn ($q) => $q->where('sales.branch_id', $locationId)->whereNull('sales.warehouse_id'))
-            ->when($locationType === 'warehouse', fn ($q) => $q->where('sales.warehouse_id', $locationId))
-            ->selectRaw('payment_method_id, SUM(amount) as total')
-            ->groupBy('payment_method_id')
-            ->get();
-
-        foreach ($salePayments as $row) {
-            $pmId = (int) $row->payment_method_id;
-            if ($pmId > 0) {
-                $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
-            }
-        }
-
-        $servicePayments = DB::table('service_payments')
-            ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->where('services.status', '!=', Service::STATUS_CANCEL)
-            ->when($locationType === 'branch', fn ($q) => $q->where('services.branch_id', $locationId)->whereNull('services.warehouse_id'))
-            ->when($locationType === 'warehouse', fn ($q) => $q->where('services.warehouse_id', $locationId))
-            ->selectRaw('payment_method_id, SUM(amount) as total')
-            ->groupBy('payment_method_id')
-            ->get();
-
-        foreach ($servicePayments as $row) {
-            $pmId = (int) $row->payment_method_id;
-            if ($pmId > 0) {
-                $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
-            }
-        }
-
-        $cashFlowIn = DB::table('cash_flows')
-            ->where('cash_flows.type', CashFlow::TYPE_IN)
-            ->whereNotNull('cash_flows.payment_method_id')
-            ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
-                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
-                    ->orWhere(function ($q2) {
-                        $q2->where('cash_flows.reference_type', CashFlow::REFERENCE_SERVICE)
-                            ->whereExists(function ($sq) {
-                                $sq->select(DB::raw(1))
-                                    ->from('income_categories')
-                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
-                                    ->where('income_categories.code', 'RTR');
-                            });
-                    });
-            })
-            ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
-                    ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
-                    ->orWhereIn('cash_flows.reference_id', function ($sq) {
-                        $sq->select('id')->from('rentals')->where('status', '!=', 'cancel');
-                    });
-            })
-            ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
-            ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
-            ->selectRaw('payment_method_id, SUM(amount) as total')
-            ->groupBy('payment_method_id')
-            ->get();
-
-        foreach ($cashFlowIn as $row) {
-            $pmId = (int) $row->payment_method_id;
-            $totals[$pmId] = ($totals[$pmId] ?? 0) + (float) $row->total;
-        }
-
-        $cashFlowOut = DB::table('cash_flows')
-            ->where('cash_flows.type', CashFlow::TYPE_OUT)
-            ->whereNotNull('cash_flows.payment_method_id')
+        $cashFlowRows = DB::table('cash_flows')
+            ->select([
+                'cash_flows.id',
+                'cash_flows.type',
+                'cash_flows.amount',
+                'cash_flows.payment_method_id',
+                'cash_flows.reference_type',
+                'cash_flows.reference_id',
+            ])
             ->where(function ($q) {
                 $q->whereNull('cash_flows.reference_type')
                     ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
@@ -170,13 +109,64 @@ class KasBalanceService
             })
             ->when($locationType === 'branch', fn ($q) => $q->where('cash_flows.branch_id', $locationId))
             ->when($locationType === 'warehouse', fn ($q) => $q->where('cash_flows.warehouse_id', $locationId))
-            ->selectRaw('payment_method_id, SUM(amount) as total')
-            ->groupBy('payment_method_id')
             ->get();
 
-        foreach ($cashFlowOut as $row) {
-            $pmId = (int) $row->payment_method_id;
-            $totals[$pmId] = ($totals[$pmId] ?? 0) - (float) $row->total;
+        // Fallback legacy sale cash-in tanpa payment_method_id: map via sale_payments (sale_id + nominal).
+        $legacySaleRows = $cashFlowRows
+            ->filter(fn ($row) => (int) ($row->payment_method_id ?? 0) <= 0
+                && ($row->reference_type ?? null) === CashFlow::REFERENCE_SALE
+                && strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN
+                && ! empty($row->reference_id));
+        $legacySaleIds = $legacySaleRows
+            ->pluck('reference_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $salePaymentsBySale = DB::table('sale_payments')
+            ->select(['sale_id', 'payment_method_id', 'amount'])
+            ->whereIn('sale_id', $legacySaleIds === [] ? [0] : $legacySaleIds)
+            ->get();
+        $salePaymentsIndex = [];
+        foreach ($salePaymentsBySale as $sp) {
+            $sid = (int) ($sp->sale_id ?? 0);
+            if ($sid <= 0) {
+                continue;
+            }
+            if (! isset($salePaymentsIndex[$sid])) {
+                $salePaymentsIndex[$sid] = [];
+            }
+            $salePaymentsIndex[$sid][] = $sp;
+        }
+
+        foreach ($cashFlowRows as $row) {
+            $amount = (float) ($row->amount ?? 0);
+            if ($amount == 0.0) {
+                continue;
+            }
+            $pmId = (int) ($row->payment_method_id ?? 0);
+            if ($pmId <= 0
+                && ($row->reference_type ?? null) === CashFlow::REFERENCE_SALE
+                && strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN
+            ) {
+                $saleId = (int) ($row->reference_id ?? 0);
+                $matches = collect($salePaymentsIndex[$saleId] ?? [])
+                    ->filter(fn ($sp) => abs(((float) ($sp->amount ?? 0)) - $amount) < 0.02)
+                    ->pluck('payment_method_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if (count($matches) === 1) {
+                    $pmId = $matches[0];
+                }
+            }
+            if ($pmId <= 0) {
+                continue;
+            }
+            $isIn = strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN;
+            $totals[$pmId] = ($totals[$pmId] ?? 0) + ($isIn ? $amount : -$amount);
         }
 
         $result = [];
