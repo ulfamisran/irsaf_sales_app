@@ -539,45 +539,9 @@ class FinanceController extends Controller
             [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
         }
 
-        $salePayments = DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->join('payment_methods', 'sale_payments.payment_method_id', '=', 'payment_methods.id')
-            ->where('sales.status', '!=', Sale::STATUS_CANCEL)
-            ->when($branchId && ! $warehouseId, fn ($q) => $q->where('sales.branch_id', $branchId)->whereNull('sales.warehouse_id'))
-            ->when($warehouseId, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('sales.branch_id, sales.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(sale_payments.amount) as total')
-            ->groupBy('sales.branch_id', 'sales.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
-            ->get();
-
-        $servicePayments = DB::table('service_payments')
-            ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->join('payment_methods', 'service_payments.payment_method_id', '=', 'payment_methods.id')
-            ->where('services.status', '!=', Service::STATUS_CANCEL)
-            ->when($branchId && ! $warehouseId, fn ($q) => $q->where('services.branch_id', $branchId)->whereNull('services.warehouse_id'))
-            ->when($warehouseId, fn ($q) => $q->where('services.warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween(DB::raw('COALESCE(services.exit_date, services.entry_date)'), [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('services.branch_id, services.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(service_payments.amount) as total')
-            ->groupBy('services.branch_id', 'services.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
-            ->get();
-
-        // CashFlow IN/OUT (manual + rental + retur pembelian material saat batal service), grouped by branch_id/warehouse_id and payment method
-        $cashFlowInByPm = DB::table('cash_flows')
+        // Sumber ringkasan Monitoring Kas: 100% dari cash_flows.
+        $cashFlowByPm = DB::table('cash_flows')
             ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
-            ->where('cash_flows.type', CashFlow::TYPE_IN)
-            ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
-                    ->orWhereNotIn('cash_flows.reference_type', [CashFlow::REFERENCE_SALE, CashFlow::REFERENCE_SERVICE])
-                    ->orWhere(function ($q2) {
-                        $q2->where('cash_flows.reference_type', CashFlow::REFERENCE_SERVICE)
-                            ->whereExists(function ($sq) {
-                                $sq->select(DB::raw(1))
-                                    ->from('income_categories')
-                                    ->whereColumn('income_categories.id', 'cash_flows.income_category_id')
-                                    ->where('income_categories.code', 'RTR');
-                            });
-                    });
-            })
             ->where(function ($q) {
                 $q->whereNull('cash_flows.reference_type')
                     ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
@@ -590,31 +554,8 @@ class FinanceController extends Controller
             ->when($branchId, fn ($q) => $q->where('cash_flows.branch_id', $branchId))
             ->when($warehouseId, fn ($q) => $q->where('cash_flows.warehouse_id', $warehouseId))
             ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('cash_flows.transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('cash_flows.branch_id, cash_flows.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
-            ->groupBy('cash_flows.branch_id', 'cash_flows.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
-            ->get();
-
-        $cashFlowOutByPm = DB::table('cash_flows')
-            ->leftJoin('payment_methods', 'cash_flows.payment_method_id', '=', 'payment_methods.id')
-            ->where('cash_flows.type', CashFlow::TYPE_OUT)
-            ->where(function ($q) {
-                $q->whereNull('cash_flows.reference_type')
-                    ->orWhere('cash_flows.reference_type', '!=', CashFlow::REFERENCE_RENTAL)
-                    ->orWhereIn('cash_flows.reference_id', function ($sq) {
-                        $sq->select('id')
-                            ->from('rentals')
-                            ->where('status', '!=', 'cancel');
-                    })
-                    ->orWhere(function ($sq) {
-                        $sq->where('cash_flows.reference_type', CashFlow::REFERENCE_RENTAL)
-                            ->where('cash_flows.type', CashFlow::TYPE_OUT);
-                    });
-            })
-            ->when($branchId, fn ($q) => $q->where('cash_flows.branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->where('cash_flows.warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('cash_flows.transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('cash_flows.branch_id, cash_flows.warehouse_id, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
-            ->groupBy('cash_flows.branch_id', 'cash_flows.warehouse_id', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
+            ->selectRaw('cash_flows.branch_id, cash_flows.warehouse_id, cash_flows.type, payment_methods.jenis_pembayaran, payment_methods.nama_bank, payment_methods.no_rekening, SUM(cash_flows.amount) as total')
+            ->groupBy('cash_flows.branch_id', 'cash_flows.warehouse_id', 'cash_flows.type', 'payment_methods.jenis_pembayaran', 'payment_methods.nama_bank', 'payment_methods.no_rekening')
             ->get();
 
         $keyFromRow = function ($row) {
@@ -633,6 +574,8 @@ class FinanceController extends Controller
         $warehouseTotals = [];
         $branchInTotals = [];
         $warehouseInTotals = [];
+        $branchOutTotals = [];
+        $warehouseOutTotals = [];
         $allKeys = [];
 
         // Masukkan metode pembayaran aktif sesuai lokasi (nama bank + no rekening) agar rekening kosong tetap tampil
@@ -651,80 +594,33 @@ class FinanceController extends Controller
             }
         }
 
-        foreach ($salePayments as $row) {
+        foreach ($cashFlowByPm as $row) {
             $key = $keyFromRow($row);
             $allKeys[$key] = true;
+            $isIn = strtoupper((string) ($row->type ?? '')) === CashFlow::TYPE_IN;
+            $signedAmount = $isIn ? (float) $row->total : -(float) $row->total;
             if ($row->warehouse_id) {
                 $wid = $row->warehouse_id;
                 if (! isset($warehouseTotals[$wid])) {
                     $warehouseTotals[$wid] = [];
                 }
-                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + (float) $row->total;
-                $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
+                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + $signedAmount;
+                if ($isIn) {
+                    $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
+                } else {
+                    $warehouseOutTotals[$wid] = ($warehouseOutTotals[$wid] ?? 0) + (float) $row->total;
+                }
             } else {
                 $bid = $row->branch_id;
                 if (! isset($branchTotals[$bid])) {
                     $branchTotals[$bid] = [];
                 }
-                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
-                $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
-            }
-        }
-
-        foreach ($servicePayments as $row) {
-            $key = $keyFromRow($row);
-            $allKeys[$key] = true;
-            if ($row->warehouse_id) {
-                $wid = $row->warehouse_id;
-                if (! isset($warehouseTotals[$wid])) {
-                    $warehouseTotals[$wid] = [];
+                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + $signedAmount;
+                if ($isIn) {
+                    $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
+                } else {
+                    $branchOutTotals[$bid] = ($branchOutTotals[$bid] ?? 0) + (float) $row->total;
                 }
-                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + (float) $row->total;
-                $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
-            } else {
-                $bid = $row->branch_id;
-                if (! isset($branchTotals[$bid])) {
-                    $branchTotals[$bid] = [];
-                }
-                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
-                $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
-            }
-        }
-
-        foreach ($cashFlowInByPm as $row) {
-            $key = $keyFromRow($row);
-            $allKeys[$key] = true;
-            if ($row->warehouse_id) {
-                $wid = $row->warehouse_id;
-                if (! isset($warehouseTotals[$wid])) {
-                    $warehouseTotals[$wid] = [];
-                }
-                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) + (float) $row->total;
-                $warehouseInTotals[$wid] = ($warehouseInTotals[$wid] ?? 0) + (float) $row->total;
-            } else {
-                $bid = $row->branch_id;
-                if (! isset($branchTotals[$bid])) {
-                    $branchTotals[$bid] = [];
-                }
-                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) + (float) $row->total;
-                $branchInTotals[$bid] = ($branchInTotals[$bid] ?? 0) + (float) $row->total;
-            }
-        }
-
-        foreach ($cashFlowOutByPm as $row) {
-            $key = $keyFromRow($row);
-            if ($row->warehouse_id) {
-                $wid = $row->warehouse_id;
-                if (! isset($warehouseTotals[$wid])) {
-                    $warehouseTotals[$wid] = [];
-                }
-                $warehouseTotals[$wid][$key] = ($warehouseTotals[$wid][$key] ?? 0) - (float) $row->total;
-            } else {
-                $bid = $row->branch_id;
-                if (! isset($branchTotals[$bid])) {
-                    $branchTotals[$bid] = [];
-                }
-                $branchTotals[$bid][$key] = ($branchTotals[$bid][$key] ?? 0) - (float) $row->total;
             }
         }
 
@@ -797,36 +693,8 @@ class FinanceController extends Controller
             }
         }
 
-        $branchExpense = [];
-        $warehouseExpense = [];
-        $cashFlowOutTotals = DB::table('cash_flows')
-            ->where('type', CashFlow::TYPE_OUT)
-            ->where(function ($q) {
-                $q->whereNull('reference_type')
-                    ->orWhere('reference_type', '!=', CashFlow::REFERENCE_RENTAL)
-                    ->orWhereIn('reference_id', function ($sq) {
-                        $sq->select('id')
-                            ->from('rentals')
-                            ->where('status', '!=', 'cancel');
-                    })
-                    ->orWhere(function ($sq) {
-                        $sq->where('reference_type', CashFlow::REFERENCE_RENTAL)
-                            ->where('type', CashFlow::TYPE_OUT);
-                    });
-            })
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
-            ->when($dateFrom && $dateTo, fn ($q) => $q->whereBetween('transaction_date', [$dateFrom->toDateString(), $dateTo->toDateString()]))
-            ->selectRaw('branch_id, warehouse_id, SUM(amount) as total')
-            ->groupBy('branch_id', 'warehouse_id')
-            ->get();
-        foreach ($cashFlowOutTotals as $row) {
-            if ($row->warehouse_id) {
-                $warehouseExpense[$row->warehouse_id] = (float) $row->total;
-            } else {
-                $branchExpense[$row->branch_id] = (float) $row->total;
-            }
-        }
+        $branchExpense = $branchOutTotals;
+        $warehouseExpense = $warehouseOutTotals;
 
         $branchTradeIn = [];
         $overallTradeIn = 0.0;
