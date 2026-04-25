@@ -1161,8 +1161,13 @@ class FinanceController extends Controller
             ? 'Tunai'
             : (explode('|', $kasKey, 2)[0] ?? '-') . ' (' . (explode('|', $kasKey, 2)[1] ?? '-') . ')';
 
-        $totalPemasukan = $transactions->where('type', 'IN')->sum('amount');
-        $totalPengeluaran = $transactions->where('type', 'OUT')->sum(fn ($t) => abs($t->amount));
+        // Hitung ringkasan murni dari tabel cash_flows yang sudah terfilter.
+        $totalPemasukan = (float) $cashFlows
+            ->where('type', CashFlow::TYPE_IN)
+            ->sum(fn ($cf) => (float) $cf->amount);
+        $totalPengeluaran = (float) $cashFlows
+            ->where('type', CashFlow::TYPE_OUT)
+            ->sum(fn ($cf) => (float) $cf->amount);
         $saldo = $totalPemasukan - $totalPengeluaran;
 
         return view('finance.cash-monitoring-detail', [
