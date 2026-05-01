@@ -501,11 +501,8 @@ class ServiceService
                 ]);
             }
 
-            // Hapus dana masuk asal (pembayaran service) agar tidak double-count di saldo
-            CashFlow::where('reference_type', CashFlow::REFERENCE_SERVICE)
-                ->where('reference_id', $service->id)
-                ->where('type', CashFlow::TYPE_IN)
-                ->delete();
+            // Jangan hapus cashflow IN asli pembayaran service.
+            // Simpan jejak IN + OUT reversal agar histori kas tetap lengkap dan berpasangan.
 
             // Dana masuk: retur pembelian material (barang yang dibeli untuk service dibatalkan)
             $returPembelianCategory = IncomeCategory::firstOrCreate(

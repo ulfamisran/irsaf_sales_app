@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\CashFlow;
 use App\Models\DamagedGood;
+use App\Models\Distribution;
 use App\Models\ExpenseCategory;
 use App\Models\Role;
 use App\Models\PaymentMethod;
@@ -138,7 +139,7 @@ class FinanceController extends Controller
             $salesQuery->where('branch_id', $branchId);
         }
         if ($warehouseId) {
-            $salesQuery->whereRaw('1 = 0');
+            $salesQuery->where('warehouse_id', $warehouseId);
         }
 
         $sales = $salesQuery->with('saleDetails', 'payments')->get()->filter(fn ($sale) => $sale->isPaidOff());
@@ -148,7 +149,7 @@ class FinanceController extends Controller
             ->where('sales.status', Sale::STATUS_RELEASED)
             ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->whereRaw('1 = 0'))
+            ->when($warehouseId, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
             ->sum('sale_payments.amount');
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;
@@ -166,7 +167,7 @@ class FinanceController extends Controller
             $servicesQuery->where('branch_id', $branchId);
         }
         if ($warehouseId) {
-            $servicesQuery->whereRaw('1 = 0');
+            $servicesQuery->where('warehouse_id', $warehouseId);
         }
 
         $services = $servicesQuery->get();
@@ -1009,26 +1010,38 @@ class FinanceController extends Controller
         $cashFlows = $cashFlowQuery->orderByDesc('transaction_date')->orderByDesc('id')->get();
 
         // Jika salah satu sisi pair cancel terambil oleh filter tanggal, tarik juga pasangannya
-        // agar transaksi pembatalan sale selalu tampil berpasangan (IN/OUT) untuk referensi yang sama.
+        // agar transaksi pembatalan sale/service/rental/distribusi selalu tampil berpasangan (IN/OUT)
+        // untuk referensi yang sama.
         if ($dateFrom && $dateTo) {
-            $saleReferenceIdsInRange = $cashFlows
-                ->where('reference_type', CashFlow::REFERENCE_SALE)
-                ->pluck('reference_id')
-                ->filter()
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values();
+            $pairedReferenceTypes = [
+                CashFlow::REFERENCE_SALE,
+                CashFlow::REFERENCE_SERVICE,
+                CashFlow::REFERENCE_RENTAL,
+                CashFlow::REFERENCE_DISTRIBUTION,
+            ];
 
-            if ($saleReferenceIdsInRange->isNotEmpty()) {
-                $pairedSaleCashFlows = (clone $cashFlowBaseQuery)
-                    ->where('reference_type', CashFlow::REFERENCE_SALE)
-                    ->whereIn('reference_id', $saleReferenceIdsInRange->all())
+            foreach ($pairedReferenceTypes as $refType) {
+                $referenceIdsInRange = $cashFlows
+                    ->where('reference_type', $refType)
+                    ->pluck('reference_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($referenceIdsInRange->isEmpty()) {
+                    continue;
+                }
+
+                $pairedCashFlows = (clone $cashFlowBaseQuery)
+                    ->where('reference_type', $refType)
+                    ->whereIn('reference_id', $referenceIdsInRange->all())
                     ->orderByDesc('transaction_date')
                     ->orderByDesc('id')
                     ->get();
 
                 $cashFlows = $cashFlows
-                    ->merge($pairedSaleCashFlows)
+                    ->merge($pairedCashFlows)
                     ->unique('id')
                     ->values();
             }
@@ -1046,35 +1059,71 @@ class FinanceController extends Controller
             ]);
         }
 
-        $saleReferenceIds = $transactions
-            ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_SALE && ! empty($tx->reference_id))
-            ->pluck('reference_id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values();
-        $cancelledSaleIds = $saleReferenceIds->isEmpty()
-            ? []
-            : Sale::query()
-                ->whereIn('id', $saleReferenceIds)
-                ->where('status', Sale::STATUS_CANCEL)
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
-        $cancelledSaleIdMap = array_fill_keys($cancelledSaleIds, true);
+        $referenceIdsByType = [
+            CashFlow::REFERENCE_SALE => $transactions
+                ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_SALE && ! empty($tx->reference_id))
+                ->pluck('reference_id')->map(fn ($id) => (int) $id)->unique()->values()->all(),
+            CashFlow::REFERENCE_SERVICE => $transactions
+                ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_SERVICE && ! empty($tx->reference_id))
+                ->pluck('reference_id')->map(fn ($id) => (int) $id)->unique()->values()->all(),
+            CashFlow::REFERENCE_RENTAL => $transactions
+                ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_RENTAL && ! empty($tx->reference_id))
+                ->pluck('reference_id')->map(fn ($id) => (int) $id)->unique()->values()->all(),
+            CashFlow::REFERENCE_DISTRIBUTION => $transactions
+                ->filter(fn ($tx) => ($tx->reference_type ?? null) === CashFlow::REFERENCE_DISTRIBUTION && ! empty($tx->reference_id))
+                ->pluck('reference_id')->map(fn ($id) => (int) $id)->unique()->values()->all(),
+        ];
 
-        $transactions = $transactions->sort(function ($a, $b) use ($cancelledSaleIdMap) {
+        $cancelledReferenceMap = [];
+        foreach (($referenceIdsByType[CashFlow::REFERENCE_SALE] ?? []) as $id) {
+            $cancelledReferenceMap[CashFlow::REFERENCE_SALE . ':' . (int) $id] = false;
+        }
+        foreach (($referenceIdsByType[CashFlow::REFERENCE_SERVICE] ?? []) as $id) {
+            $cancelledReferenceMap[CashFlow::REFERENCE_SERVICE . ':' . (int) $id] = false;
+        }
+        foreach (($referenceIdsByType[CashFlow::REFERENCE_RENTAL] ?? []) as $id) {
+            $cancelledReferenceMap[CashFlow::REFERENCE_RENTAL . ':' . (int) $id] = false;
+        }
+        foreach (($referenceIdsByType[CashFlow::REFERENCE_DISTRIBUTION] ?? []) as $id) {
+            $cancelledReferenceMap[CashFlow::REFERENCE_DISTRIBUTION . ':' . (int) $id] = false;
+        }
+
+        if (! empty($referenceIdsByType[CashFlow::REFERENCE_SALE])) {
+            foreach (Sale::query()->whereIn('id', $referenceIdsByType[CashFlow::REFERENCE_SALE])->where('status', Sale::STATUS_CANCEL)->pluck('id') as $id) {
+                $cancelledReferenceMap[CashFlow::REFERENCE_SALE . ':' . (int) $id] = true;
+            }
+        }
+        if (! empty($referenceIdsByType[CashFlow::REFERENCE_SERVICE])) {
+            foreach (Service::query()->whereIn('id', $referenceIdsByType[CashFlow::REFERENCE_SERVICE])->where('status', Service::STATUS_CANCEL)->pluck('id') as $id) {
+                $cancelledReferenceMap[CashFlow::REFERENCE_SERVICE . ':' . (int) $id] = true;
+            }
+        }
+        if (! empty($referenceIdsByType[CashFlow::REFERENCE_RENTAL])) {
+            foreach (Rental::query()->whereIn('id', $referenceIdsByType[CashFlow::REFERENCE_RENTAL])->where('status', Rental::STATUS_CANCEL)->pluck('id') as $id) {
+                $cancelledReferenceMap[CashFlow::REFERENCE_RENTAL . ':' . (int) $id] = true;
+            }
+        }
+        if (! empty($referenceIdsByType[CashFlow::REFERENCE_DISTRIBUTION])) {
+            foreach (Distribution::query()->whereIn('id', $referenceIdsByType[CashFlow::REFERENCE_DISTRIBUTION])->where('status', Distribution::STATUS_CANCELLED)->pluck('id') as $id) {
+                $cancelledReferenceMap[CashFlow::REFERENCE_DISTRIBUTION . ':' . (int) $id] = true;
+            }
+        }
+
+        $transactions = $transactions->sort(function ($a, $b) use ($cancelledReferenceMap) {
             $aDate = (string) ($a->transaction_date ?? '');
             $bDate = (string) ($b->transaction_date ?? '');
             if ($aDate !== $bDate) {
                 return strcmp($aDate, $bDate);
             }
 
+            $aRefType = (string) ($a->reference_type ?? '');
+            $bRefType = (string) ($b->reference_type ?? '');
             $aRefId = (int) ($a->reference_id ?? 0);
             $bRefId = (int) ($b->reference_id ?? 0);
-            $aIsCancelledSale = ($a->reference_type ?? null) === CashFlow::REFERENCE_SALE && isset($cancelledSaleIdMap[$aRefId]);
-            $bIsCancelledSale = ($b->reference_type ?? null) === CashFlow::REFERENCE_SALE && isset($cancelledSaleIdMap[$bRefId]);
+            $aIsCancelledRef = ! empty($cancelledReferenceMap[$aRefType . ':' . $aRefId]);
+            $bIsCancelledRef = ! empty($cancelledReferenceMap[$bRefType . ':' . $bRefId]);
 
-            if ($aIsCancelledSale && $bIsCancelledSale && $aRefId === $bRefId) {
+            if ($aIsCancelledRef && $bIsCancelledRef && $aRefType === $bRefType && $aRefId === $bRefId) {
                 if (($a->type ?? '') === ($b->type ?? '')) {
                     return 0;
                 }
@@ -1091,9 +1140,9 @@ class FinanceController extends Controller
         })->values();
 
         foreach ($transactions as $tx) {
+            $refType = (string) ($tx->reference_type ?? '');
             $refId = (int) ($tx->reference_id ?? 0);
-            $tx->is_cancel_pair = ($tx->reference_type ?? null) === CashFlow::REFERENCE_SALE
-                && isset($cancelledSaleIdMap[$refId])
+            $tx->is_cancel_pair = ! empty($cancelledReferenceMap[$refType . ':' . $refId])
                 && in_array(($tx->type ?? ''), [CashFlow::TYPE_IN, CashFlow::TYPE_OUT], true);
         }
         $runningBalance = 0.0;
