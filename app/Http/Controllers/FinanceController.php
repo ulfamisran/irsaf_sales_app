@@ -1279,34 +1279,38 @@ class FinanceController extends Controller
             $serviceProfit = 0.0;
             $rentalProfit = 0.0;
 
-            if ($isBranch) {
-                $salesForBranch = Sale::query()
-                    ->where('status', Sale::STATUS_RELEASED)
-                    ->where('branch_id', $branchId)
-                    ->whereBetween('sale_date', [$dateFromStr, $dateToStr])
-                    ->with('saleDetails', 'payments')
-                    ->get()
-                    ->filter(fn ($sale) => $sale->isPaidOff());
+            // Penjualan & Service: hitung baik untuk Cabang maupun Gudang
+            // (karena Sale dan Service dapat berlokasi di gudang sejak migrasi
+            // 2026_04_18_081950_add_warehouse_and_location_type_to_services_table).
+            $salesForLocation = Sale::query()
+                ->where('status', Sale::STATUS_RELEASED)
+                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereBetween('sale_date', [$dateFromStr, $dateToStr])
+                ->with('saleDetails', 'payments')
+                ->get()
+                ->filter(fn ($sale) => $sale->isPaidOff());
 
-                $salesPaid = (float) DB::table('sale_payments')
-                    ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                    ->where('sales.status', Sale::STATUS_RELEASED)
-                    ->where('sales.branch_id', $branchId)
-                    ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
-                    ->sum('sale_payments.amount');
-                $salesHpp = (float) $salesForBranch->sum->total_hpp;
-                $salesProfit = $salesPaid - $salesHpp;
+            $salesPaid = (float) DB::table('sale_payments')
+                ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+                ->where('sales.status', Sale::STATUS_RELEASED)
+                ->when($isBranch, fn ($q) => $q->where('sales.branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
+                ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
+                ->sum('sale_payments.amount');
+            $salesHpp = (float) $salesForLocation->sum->total_hpp;
+            $salesProfit = $salesPaid - $salesHpp;
 
-                $servicesForBranch = Service::query()
-                    ->with('serviceMaterials')
-                    ->where('branch_id', $branchId)
-                    ->where('status', Service::STATUS_COMPLETED)
-                    ->whereBetween(DB::raw('COALESCE(exit_date, entry_date)'), [$dateFromStr, $dateToStr])
-                    ->get();
-                $serviceTotal = (float) $servicesForBranch->sum->total_service_price;
-                $serviceMaterial = (float) $servicesForBranch->sum->materials_total_price;
-                $serviceProfit = $serviceTotal - $serviceMaterial;
-            }
+            $servicesForLocation = Service::query()
+                ->with('serviceMaterials')
+                ->where('status', Service::STATUS_COMPLETED)
+                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereBetween(DB::raw('COALESCE(exit_date, entry_date)'), [$dateFromStr, $dateToStr])
+                ->get();
+            $serviceTotal = (float) $servicesForLocation->sum->total_service_price;
+            $serviceMaterial = (float) $servicesForLocation->sum->materials_total_price;
+            $serviceProfit = $serviceTotal - $serviceMaterial;
 
             $rentalTotal = (float) Rental::query()
                 ->where('status', Rental::STATUS_RELEASED)
