@@ -160,6 +160,21 @@ class KasBalanceService
                     ->all();
                 if (count($matches) === 1) {
                     $pmId = $matches[0];
+                } else {
+                    // Setelah pembatalan penjualan, sale_payments dihapus — petakan lewat reversal OUT (nominal sama).
+                    $revPmIds = DB::table('cash_flows')
+                        ->where('reference_type', CashFlow::REFERENCE_SALE)
+                        ->where('reference_id', $saleId)
+                        ->where('type', CashFlow::TYPE_OUT)
+                        ->whereRaw('ABS(amount - ?) < 0.02', [$amount])
+                        ->whereNotNull('payment_method_id')
+                        ->pluck('payment_method_id')
+                        ->map(fn ($id) => (int) $id)
+                        ->unique()
+                        ->values();
+                    if ($revPmIds->count() === 1) {
+                        $pmId = (int) $revPmIds->first();
+                    }
                 }
             }
             if ($pmId <= 0) {

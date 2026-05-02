@@ -534,7 +534,8 @@ class ServiceService
                 ]);
             }
 
-            ServicePayment::where('service_id', $service->id)->delete();
+            // Catatan: ServicePayment & CashFlow IN asli TIDAK dihapus.
+            // Histori pembayaran tetap utuh; reversal OUT dibuat sebagai pasangan.
             $service->update([
                 'status' => Service::STATUS_CANCEL,
                 'cancel_date' => now()->toDateString(),

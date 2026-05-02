@@ -954,12 +954,25 @@ class FinanceController extends Controller
                             $legacySaleIn->where('reference_type', CashFlow::REFERENCE_SALE)
                                 ->where('type', CashFlow::TYPE_IN)
                                 ->whereNull('payment_method_id')
-                                ->whereExists(function ($sub) use ($tunaiPaymentMethodIds) {
-                                    $sub->select(DB::raw(1))
-                                        ->from('sale_payments as sp')
-                                        ->whereRaw('sp.sale_id = cash_flows.reference_id')
-                                        ->whereIn('sp.payment_method_id', $tunaiPaymentMethodIds)
-                                        ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02');
+                                ->where(function ($inner) use ($tunaiPaymentMethodIds) {
+                                    // Cocokkan ke sale_payments (sumber pembayaran asli).
+                                    $inner->whereExists(function ($sub) use ($tunaiPaymentMethodIds) {
+                                        $sub->select(DB::raw(1))
+                                            ->from('sale_payments as sp')
+                                            ->whereRaw('sp.sale_id = cash_flows.reference_id')
+                                            ->whereIn('sp.payment_method_id', $tunaiPaymentMethodIds)
+                                            ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02');
+                                    })
+                                    // Cadangan: cocokkan ke pasangan reversal OUT pada cash_flows itu sendiri.
+                                        ->orWhereExists(function ($sub) use ($tunaiPaymentMethodIds) {
+                                            $sub->select(DB::raw(1))
+                                                ->from('cash_flows as rev')
+                                                ->whereColumn('rev.reference_id', 'cash_flows.reference_id')
+                                                ->where('rev.reference_type', CashFlow::REFERENCE_SALE)
+                                                ->where('rev.type', CashFlow::TYPE_OUT)
+                                                ->whereRaw('ABS(rev.amount - cash_flows.amount) < 0.02')
+                                                ->whereIn('rev.payment_method_id', $tunaiPaymentMethodIds);
+                                        });
                                 });
                         });
                 });
@@ -975,14 +988,27 @@ class FinanceController extends Controller
                             $legacySaleIn->where('reference_type', CashFlow::REFERENCE_SALE)
                                 ->where('type', CashFlow::TYPE_IN)
                                 ->whereNull('payment_method_id')
-                                ->whereExists(function ($sub) use ($selectedBank, $selectedRekening) {
-                                    $sub->select(DB::raw(1))
-                                        ->from('sale_payments as sp')
-                                        ->join('payment_methods as pm', 'sp.payment_method_id', '=', 'pm.id')
-                                        ->whereRaw('sp.sale_id = cash_flows.reference_id')
-                                        ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02')
-                                        ->whereRaw('TRIM(COALESCE(pm.nama_bank, "")) = ?', [$selectedBank])
-                                        ->whereRaw('TRIM(COALESCE(pm.no_rekening, "")) = ?', [$selectedRekening]);
+                                ->where(function ($inner) use ($selectedBank, $selectedRekening) {
+                                    $inner->whereExists(function ($sub) use ($selectedBank, $selectedRekening) {
+                                        $sub->select(DB::raw(1))
+                                            ->from('sale_payments as sp')
+                                            ->join('payment_methods as pm', 'sp.payment_method_id', '=', 'pm.id')
+                                            ->whereRaw('sp.sale_id = cash_flows.reference_id')
+                                            ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02')
+                                            ->whereRaw('TRIM(COALESCE(pm.nama_bank, "")) = ?', [$selectedBank])
+                                            ->whereRaw('TRIM(COALESCE(pm.no_rekening, "")) = ?', [$selectedRekening]);
+                                    })
+                                        ->orWhereExists(function ($sub) use ($selectedBank, $selectedRekening) {
+                                            $sub->select(DB::raw(1))
+                                                ->from('cash_flows as rev')
+                                                ->join('payment_methods as pm', 'rev.payment_method_id', '=', 'pm.id')
+                                                ->whereColumn('rev.reference_id', 'cash_flows.reference_id')
+                                                ->where('rev.reference_type', CashFlow::REFERENCE_SALE)
+                                                ->where('rev.type', CashFlow::TYPE_OUT)
+                                                ->whereRaw('ABS(rev.amount - cash_flows.amount) < 0.02')
+                                                ->whereRaw('TRIM(COALESCE(pm.nama_bank, "")) = ?', [$selectedBank])
+                                                ->whereRaw('TRIM(COALESCE(pm.no_rekening, "")) = ?', [$selectedRekening]);
+                                        });
                                 });
                         });
                 });

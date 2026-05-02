@@ -1096,7 +1096,16 @@ class CashFlowController extends Controller
                                     ->whereRaw('sp.sale_id = cash_flows.reference_id')
                                     ->whereIn('sp.payment_method_id', $ids)
                                     ->whereRaw('ABS(sp.amount - cash_flows.amount) < 0.02');
-                            });
+                            })
+                                ->orWhereExists(function ($sub) use ($ids) {
+                                    $sub->select(DB::raw(1))
+                                        ->from('cash_flows as rev')
+                                        ->whereColumn('rev.reference_id', 'cash_flows.reference_id')
+                                        ->where('rev.reference_type', CashFlow::REFERENCE_SALE)
+                                        ->where('rev.type', CashFlow::TYPE_OUT)
+                                        ->whereRaw('ABS(rev.amount - cash_flows.amount) < 0.02')
+                                        ->whereIn('rev.payment_method_id', $ids);
+                                });
                             $pms = PaymentMethod::query()->whereIn('id', $ids)->get();
                             if ($pms->isEmpty()) {
                                 return;

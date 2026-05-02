@@ -827,24 +827,54 @@ class SaleService
                     'is_active' => true,
                 ]
             );
-            $payments = SalePayment::with('paymentMethod')->where('sale_id', $sale->id)->get();
-            foreach ($payments as $sp) {
-                $pmLabel = $sp->paymentMethod?->display_label ?? __('Payment');
+            // Sumber refund: prioritas dari CashFlow IN penjualan (paling akurat dengan kas masuk
+            // yang benar-benar tercatat). Jika tidak ada, fallback ke SalePayment.
+            $refundSources = CashFlow::where('reference_type', CashFlow::REFERENCE_SALE)
+                ->where('reference_id', $sale->id)
+                ->where('type', CashFlow::TYPE_IN)
+                ->get()
+                ->map(fn ($cf) => (object) [
+                    'amount' => (float) $cf->amount,
+                    'payment_method_id' => $cf->payment_method_id,
+                    'label' => $cf->paymentMethod?->display_label
+                        ?? CashFlow::parsePaymentMethodSuffixFromSaleDescription($cf->description)
+                        ?? __('Payment'),
+                ]);
+
+            if ($refundSources->isEmpty()) {
+                $refundSources = SalePayment::with('paymentMethod')
+                    ->where('sale_id', $sale->id)
+                    ->get()
+                    ->map(fn ($sp) => (object) [
+                        'amount' => (float) $sp->amount,
+                        'payment_method_id' => $sp->payment_method_id,
+                        'label' => $sp->paymentMethod?->display_label ?? __('Payment'),
+                    ]);
+            }
+
+            foreach ($refundSources as $src) {
+                $amt = (float) $src->amount;
+                if ($amt <= 0) {
+                    continue;
+                }
+                $pmLabel = $src->label ?? __('Payment');
                 CashFlow::create([
                     'branch_id' => $sale->branch_id,
                     'warehouse_id' => $sale->warehouse_id,
                     'type' => CashFlow::TYPE_OUT,
-                    'amount' => $sp->amount,
+                    'amount' => $amt,
                     'description' => __('Pengembalian dana pembatalan penjualan') . ' ' . $sale->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_SALE,
                     'reference_id' => $sale->id,
                     'expense_category_id' => $reversalCategory->id,
-                    'payment_method_id' => $sp->payment_method_id,
+                    'payment_method_id' => $src->payment_method_id,
                     'transaction_date' => $refundDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
             }
-            SalePayment::where('sale_id', $sale->id)->delete();
+
+            // Catatan: SalePayment & CashFlow IN asli TIDAK dihapus.
+            // Histori pembayaran tetap utuh; reversal OUT dibuat sebagai pasangan.
 
             // Tukar tambah dibatalkan: nonaktifkan produk & set unit status cancel
             $tradeIns = SaleTradeIn::where('sale_id', $sale->id)->get();
