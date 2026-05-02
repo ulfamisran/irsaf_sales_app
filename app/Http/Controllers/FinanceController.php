@@ -598,7 +598,30 @@ class FinanceController extends Controller
             $salePaymentBySale[$saleId][] = $spr;
         }
 
-        $keyFromRow = function ($row) use ($salePaymentBySale) {
+        // Pemetaan reversal OUT cash flow untuk legacy sale IN yang tidak dapat
+        // ditentukan kas-nya dari sale_payments. Reversal OUT yang dibuat saat
+        // pembatalan selalu memiliki payment_method_id (lihat SaleService::cancelSale)
+        // sehingga bisa menjadi sumber yang andal untuk menentukan kas IN-nya.
+        $saleReversalRows = DB::table('cash_flows as cf')
+            ->join('payment_methods as pm', 'cf.payment_method_id', '=', 'pm.id')
+            ->where('cf.reference_type', CashFlow::REFERENCE_SALE)
+            ->where('cf.type', CashFlow::TYPE_OUT)
+            ->whereNotNull('cf.payment_method_id')
+            ->selectRaw('cf.reference_id as sale_id, cf.amount, pm.jenis_pembayaran, pm.nama_bank, pm.no_rekening')
+            ->get();
+        $saleReversalBySale = [];
+        foreach ($saleReversalRows as $srr) {
+            $saleId = (int) ($srr->sale_id ?? 0);
+            if ($saleId <= 0) {
+                continue;
+            }
+            if (! isset($saleReversalBySale[$saleId])) {
+                $saleReversalBySale[$saleId] = [];
+            }
+            $saleReversalBySale[$saleId][] = $srr;
+        }
+
+        $keyFromRow = function ($row) use ($salePaymentBySale, $saleReversalBySale) {
             $pm = $row->paymentMethod ?? null;
             $jenis = strtolower(trim((string) ($pm->jenis_pembayaran ?? ($row->jenis_pembayaran ?? ''))));
             $bank = trim((string) ($pm->nama_bank ?? ($row->nama_bank ?? '')));
@@ -620,22 +643,37 @@ class FinanceController extends Controller
             ) {
                 $saleId = (int) ($row->reference_id ?? 0);
                 $amount = (float) ($row->amount ?? 0);
-                $candidates = $salePaymentBySale[$saleId] ?? [];
-                $matchedKeys = [];
-                foreach ($candidates as $candidate) {
-                    if (abs(((float) ($candidate->amount ?? 0)) - $amount) >= 0.02) {
-                        continue;
+
+                $candidateKeyFromRows = function (array $candidates) use ($amount) {
+                    $matchedKeys = [];
+                    foreach ($candidates as $candidate) {
+                        if (abs(((float) ($candidate->amount ?? 0)) - $amount) >= 0.02) {
+                            continue;
+                        }
+                        $cJenis = strtolower(trim((string) ($candidate->jenis_pembayaran ?? '')));
+                        $cBank = trim((string) ($candidate->nama_bank ?? ''));
+                        $cRek = trim((string) ($candidate->no_rekening ?? ''));
+                        $matchedKeys[] = (str_contains($cJenis, 'tunai') || ($cBank === '' && $cRek === ''))
+                            ? 'Tunai'
+                            : ($cBank . '|' . $cRek);
                     }
-                    $cJenis = strtolower(trim((string) ($candidate->jenis_pembayaran ?? '')));
-                    $cBank = trim((string) ($candidate->nama_bank ?? ''));
-                    $cRek = trim((string) ($candidate->no_rekening ?? ''));
-                    $matchedKeys[] = (str_contains($cJenis, 'tunai') || ($cBank === '' && $cRek === ''))
-                        ? 'Tunai'
-                        : ($cBank . '|' . $cRek);
+                    $matchedKeys = array_values(array_unique($matchedKeys));
+
+                    return count($matchedKeys) === 1 ? $matchedKeys[0] : null;
+                };
+
+                // Cadangan 1: cocokkan ke sale_payments (sumber pembayaran asli).
+                $key = $candidateKeyFromRows($salePaymentBySale[$saleId] ?? []);
+                if ($key !== null) {
+                    return $key;
                 }
-                $matchedKeys = array_values(array_unique($matchedKeys));
-                if (count($matchedKeys) === 1) {
-                    return $matchedKeys[0];
+
+                // Cadangan 2: cocokkan ke pasangan reversal OUT pada cash_flows itu sendiri.
+                // Ini menyamakan perilaku dengan halaman Detail Monitoring Kas agar nilai
+                // ringkasan = nilai detail untuk sale lama yang sale_payments-nya tidak ada.
+                $key = $candidateKeyFromRows($saleReversalBySale[$saleId] ?? []);
+                if ($key !== null) {
+                    return $key;
                 }
             }
 

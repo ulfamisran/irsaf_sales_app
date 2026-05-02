@@ -203,8 +203,8 @@
                 @endif
 
                 <!-- Finance -->
-                @if ($isSuperAdmin || $isAdminCabang)
-                <li x-data="{ open: {{ request()->routeIs('cash-flows.*', 'finance.*') ? 'true' : 'false' }} }" class="pt-2">
+                @if ($isSuperAdmin || $isAdminPusat || $isAdminCabang)
+                <li x-data="{ open: {{ request()->routeIs('cash-flows.*', 'finance.*', 'saldo-adjustment.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Finance</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -222,6 +222,9 @@
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         <li><x-sidebar-nav-link :href="route('cash-flows.index')" :active="request()->routeIs('cash-flows.index')">Arus Kas</x-sidebar-nav-link></li>
                         <li><x-sidebar-nav-link :href="route('finance.cash-monitoring')" :active="request()->routeIs('finance.cash-monitoring')">Monitoring Kas</x-sidebar-nav-link></li>
+                        @if ($isSuperAdmin || $isAdminPusat)
+                        <li><x-sidebar-nav-link :href="route('saldo-adjustment.index')" :active="request()->routeIs('saldo-adjustment.*')">Penyesuaian Saldo</x-sidebar-nav-link></li>
+                        @endif
                         <li><x-sidebar-nav-link :href="route('finance.profit-loss')" :active="request()->routeIs('finance.profit-loss')">Laba Rugi</x-sidebar-nav-link></li>
                         @if ($isSuperAdmin || $isAdminPusat)
                         <li><x-sidebar-nav-link :href="route('finance.profit-loss-comparison')" :active="request()->routeIs('finance.profit-loss-comparison')">Perbandingan Laba Rugi</x-sidebar-nav-link></li>

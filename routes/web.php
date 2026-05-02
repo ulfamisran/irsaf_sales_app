@@ -463,6 +463,19 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang')
         ->name('cash-flows.out.store');
 
+    Route::get('cash-flows/saldo-adjustment', [\App\Http\Controllers\SaldoAdjustmentController::class, 'index'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('saldo-adjustment.index');
+    Route::get('cash-flows/saldo-adjustment/create', [\App\Http\Controllers\SaldoAdjustmentController::class, 'create'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('saldo-adjustment.create');
+    Route::get('cash-flows/saldo-adjustment/form-data', [\App\Http\Controllers\SaldoAdjustmentController::class, 'formData'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('saldo-adjustment.form-data');
+    Route::post('cash-flows/saldo-adjustment', [\App\Http\Controllers\SaldoAdjustmentController::class, 'store'])
+        ->middleware('role:super_admin,admin_pusat')
+        ->name('saldo-adjustment.store');
+
     Route::get('mutasi-dana', [\App\Http\Controllers\MutasiDanaController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('mutasi-dana.index');
