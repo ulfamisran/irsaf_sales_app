@@ -88,12 +88,17 @@
                                 @endforeach
                             </select>
                         </div>
+                        @php
+                            $selectedStatus = request()->has('status')
+                                ? (string) request('status')
+                                : \App\Models\ProductUnit::STATUS_IN_STOCK;
+                        @endphp
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Stok') }}</label>
                             <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
                                 @foreach ($statusOptions as $value => $label)
-                                    <option value="{{ $value }}" {{ request('status') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                    <option value="{{ $value }}" {{ $selectedStatus === $value ? 'selected' : '' }}>{{ $label }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -104,7 +109,7 @@
                                 </svg>
                                 {{ __('Filter') }}
                             </button>
-                            <a href="{{ route('stock-units.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
+                            <a href="{{ route('stock-units.index', ['status' => \App\Models\ProductUnit::STATUS_IN_STOCK]) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                                 {{ __('Reset') }}
                             </a>
                         </div>
@@ -124,6 +129,8 @@
                         <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                             <p class="text-xs text-slate-500">{{ $item['category_name'] ?? '-' }}</p>
                             <p class="text-lg font-semibold text-indigo-700">{{ number_format((int) ($item['total'] ?? 0), 0, ',', '.') }}</p>
+                            <p class="mt-1 text-xs text-slate-500">{{ __('Total HPP In Stock') }}</p>
+                            <p class="text-sm font-semibold text-emerald-700">{{ number_format((int) ($item['total_hpp'] ?? 0), 0, ',', '.') }}</p>
                         </div>
                     @empty
                         <div class="col-span-full text-sm text-slate-500">{{ __('Tidak ada barang in stock untuk filter saat ini.') }}</div>
@@ -132,6 +139,8 @@
                 <div class="mt-4 pt-3 border-t border-slate-200">
                     <p class="text-sm text-slate-600">{{ __('Total Seluruh In Stock') }}</p>
                     <p class="text-xl font-semibold text-emerald-600">{{ number_format((int) ($totalInStockUnits ?? 0), 0, ',', '.') }}</p>
+                    <p class="mt-2 text-sm text-slate-600">{{ __('Total HPP Seluruh In Stock') }}</p>
+                    <p class="text-xl font-semibold text-indigo-700">{{ number_format((int) ($totalInStockHpp ?? 0), 0, ',', '.') }}</p>
                 </div>
             </div>
         </div>

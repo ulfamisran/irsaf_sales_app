@@ -120,6 +120,11 @@ class StockUnitController extends Controller
             ->selectRaw('product_id, COUNT(*) as total')
             ->groupBy('product_id')
             ->pluck('total', 'product_id');
+        $inStockHppSums = (clone $countBase)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->selectRaw('product_id, COALESCE(SUM(harga_hpp), 0) as total_hpp')
+            ->groupBy('product_id')
+            ->pluck('total_hpp', 'product_id');
 
         $filteredProductCategoryMap = Product::query()
             ->whereIn('id', (clone $countBase)->select('product_id')->distinct())
@@ -138,14 +143,19 @@ class StockUnitController extends Controller
                     'category_id' => $categoryId > 0 ? $categoryId : null,
                     'category_name' => $categoryName,
                     'total' => 0,
+                    'total_hpp' => 0,
                 ];
             }
             $inStockCategoryTotals[$categoryKey]['total'] += (int) $total;
+            $inStockCategoryTotals[$categoryKey]['total_hpp'] += (int) round((float) ($inStockHppSums[$productId] ?? 0));
         }
         $inStockCategoryTotals = collect($inStockCategoryTotals)
             ->sortByDesc('total')
             ->values();
         $totalInStockUnits = (int) $inStockCategoryTotals->sum('total');
+        $totalInStockHpp = (int) round((clone $countBase)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->sum('harga_hpp'));
 
         return view('stock-units.index', compact(
             'productsPage',
@@ -163,6 +173,7 @@ class StockUnitController extends Controller
             'inStockCounts',
             'inStockCategoryTotals',
             'totalInStockUnits',
+            'totalInStockHpp',
             'soldInfoBySerial',
             'tradeInProductIds'
         ));
@@ -467,9 +478,15 @@ class StockUnitController extends Controller
                 $countBase->whereHas('product', fn ($q) => $q->where('category_id', $categoryId));
             }
         }
-        if ($request->filled('status')) {
-            $listBase->where('status', (string) $request->status);
-            $countBase->where('status', (string) $request->status);
+        if ($request->has('status')) {
+            if ($request->filled('status')) {
+                $listBase->where('status', (string) $request->status);
+                $countBase->where('status', (string) $request->status);
+            }
+        } else {
+            // Default daftar unit: tampilkan stok yang masih in stock.
+            $listBase->where('status', ProductUnit::STATUS_IN_STOCK);
+            $countBase->where('status', ProductUnit::STATUS_IN_STOCK);
         }
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('location_type')) {
