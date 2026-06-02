@@ -130,7 +130,7 @@
                             <p class="text-xs text-slate-500">{{ $item['category_name'] ?? '-' }}</p>
                             <p class="text-lg font-semibold text-indigo-700">{{ number_format((int) ($item['total'] ?? 0), 0, ',', '.') }}</p>
                             <p class="mt-1 text-xs text-slate-500">{{ __('Total HPP In Stock') }}</p>
-                            <p class="text-sm font-semibold text-emerald-700">{{ number_format((int) ($item['total_hpp'] ?? 0), 0, ',', '.') }}</p>
+                            <p class="text-sm font-semibold text-indigo-700">{{ number_format((int) ($item['total_hpp'] ?? 0), 0, ',', '.') }}</p>
                         </div>
                     @empty
                         <div class="col-span-full text-sm text-slate-500">{{ __('Tidak ada barang in stock untuk filter saat ini.') }}</div>
@@ -138,7 +138,7 @@
                 </div>
                 <div class="mt-4 pt-3 border-t border-slate-200">
                     <p class="text-sm text-slate-600">{{ __('Total Seluruh In Stock') }}</p>
-                    <p class="text-xl font-semibold text-emerald-600">{{ number_format((int) ($totalInStockUnits ?? 0), 0, ',', '.') }}</p>
+                    <p class="text-xl font-semibold text-indigo-700">{{ number_format((int) ($totalInStockUnits ?? 0), 0, ',', '.') }}</p>
                     <p class="mt-2 text-sm text-slate-600">{{ __('Total HPP Seluruh In Stock') }}</p>
                     <p class="text-xl font-semibold text-indigo-700">{{ number_format((int) ($totalInStockHpp ?? 0), 0, ',', '.') }}</p>
                 </div>
