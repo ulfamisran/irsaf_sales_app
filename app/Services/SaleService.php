@@ -762,9 +762,8 @@ class SaleService
     }
 
     /**
-     * Cancel an OPEN sale (void): return reserved units to in_stock if possible, set status to cancel.
+     * Cancel an OPEN or RELEASED sale: serial units return to in_stock, sale status becomes cancel.
      * Data penjualan tetap tersimpan.
-     * Jika unit serial sudah sold, tetap batalkan invoice tanpa mengubah status unit.
      */
     public function cancelSale(Sale $sale, int $userId, string $reason): Sale
     {
@@ -776,45 +775,36 @@ class SaleService
             $locType = $sale->stockLocationType();
             $locId = $sale->stockLocationId();
 
-            if ($sale->status === Sale::STATUS_OPEN) {
-                try {
-                    $this->unreserveSaleUnits($sale, strict: false);
-                } catch (InvalidArgumentException $e) {
-                    // Abaikan jika unit tidak dapat dikembalikan
-                }
-            }
+            $details = SaleDetail::where('sale_id', $sale->id)->get();
+            foreach ($details as $detail) {
+                $productId = (int) $detail->product_id;
+                $serialNumbers = $this->parseSerialNumbersText($detail->serial_numbers);
+                $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
 
-            if ($sale->status === Sale::STATUS_RELEASED) {
-                $details = SaleDetail::where('sale_id', $sale->id)->get();
-                foreach ($details as $detail) {
-                    $productId = (int) $detail->product_id;
-                    $product = Product::find($productId);
-                    if (! $product) {
-                        continue;
-                    }
-                    $serialNumbers = $this->parseSerialNumbersText($detail->serial_numbers);
-                    $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
-                    if ($isSerialTracked && ! empty($serialNumbers)) {
-                        ProductUnit::where('product_id', $productId)
-                            ->where('location_type', $locType)
-                            ->where('location_id', $locId)
-                            ->whereIn('serial_number', $serialNumbers)
-                            ->update([
-                                'status' => ProductUnit::STATUS_IN_STOCK,
-                                'sold_at' => null,
-                            ]);
-                        $this->recalculateLocationStock($productId, $locType, $locId);
-                    } else {
-                        $stock = Stock::firstOrCreate(
-                            [
-                                'product_id' => $productId,
-                                'location_type' => $locType,
-                                'location_id' => $locId,
-                            ],
-                            ['quantity' => 0]
-                        );
-                        $stock->increment('quantity', (int) $detail->quantity);
-                    }
+                if ($isSerialTracked && ! empty($serialNumbers)) {
+                    ProductUnit::where('product_id', $productId)
+                        ->where('location_type', $locType)
+                        ->where('location_id', $locId)
+                        ->whereIn('serial_number', $serialNumbers)
+                        ->update([
+                            'status' => ProductUnit::STATUS_IN_STOCK,
+                            'sold_at' => null,
+                        ]);
+                    $this->recalculateLocationStock($productId, $locType, $locId);
+
+                    continue;
+                }
+
+                if ($sale->status === Sale::STATUS_RELEASED) {
+                    $stock = Stock::firstOrCreate(
+                        [
+                            'product_id' => $productId,
+                            'location_type' => $locType,
+                            'location_id' => $locId,
+                        ],
+                        ['quantity' => 0]
+                    );
+                    $stock->increment('quantity', (int) $detail->quantity);
                 }
             }
 
