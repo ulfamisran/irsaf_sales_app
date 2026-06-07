@@ -134,7 +134,7 @@
                             </tr>
                             @forelse($sales ?? [] as $sale)
                             @php
-                                $saleTotal = (float) $sale->total_paid ?: (float) $sale->total;
+                                $saleTotal = (float) $sale->payment_total_for_report;
                                 $saleHpp = (float) $sale->total_hpp;
                                 $saleProfit = $saleTotal - $saleHpp;
                             @endphp

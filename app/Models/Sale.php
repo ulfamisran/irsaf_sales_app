@@ -48,6 +48,23 @@ class Sale extends Model
     }
 
     /**
+     * Total pembayaran untuk laporan laba rugi: tunai (sale_payments) + tukar tambah.
+     */
+    public function getPaymentTotalForReportAttribute(): float
+    {
+        $cash = (float) ($this->relationLoaded('payments')
+            ? $this->payments->sum('amount')
+            : $this->payments()->sum('amount'));
+
+        $combined = round($cash + $this->trade_in_total, 2);
+        if ($combined > 0) {
+            return $combined;
+        }
+
+        return (float) $this->total_paid ?: (float) $this->total;
+    }
+
+    /**
      * Apakah penjualan sudah lunas (total pembayaran >= total).
      */
     public function isPaidOff(): bool

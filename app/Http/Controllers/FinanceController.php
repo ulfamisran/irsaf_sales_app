@@ -142,15 +142,10 @@ class FinanceController extends Controller
             $salesQuery->where('warehouse_id', $warehouseId);
         }
 
-        $sales = $salesQuery->with('saleDetails', 'payments')->get()->filter(fn ($sale) => $sale->isPaidOff());
+        $sales = $salesQuery->with('saleDetails', 'payments', 'tradeIns')->get()->filter(fn ($sale) => $sale->isPaidOff());
 
-        $totalSales = (float) DB::table('sale_payments')
-            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-            ->where('sales.status', Sale::STATUS_RELEASED)
-            ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
-            ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
-            ->when($warehouseId, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
-            ->sum('sale_payments.amount');
+        // Total transaksi = pembayaran tunai + nilai tukar tambah (selaras dengan baris detail).
+        $totalSales = (float) $sales->sum(fn ($sale) => $sale->payment_total_for_report);
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;
 
@@ -177,15 +172,13 @@ class FinanceController extends Controller
         $totalServiceMaterialCost = (float) $services->sum->materials_total_price;
         $totalServiceProfit = $totalServiceRevenue - $totalServiceMaterialCost;
 
-        $totalTradeIn = 0.0;
-        if (! $warehouseId) {
-            $totalTradeIn = (float) DB::table('sale_trade_ins')
-                ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
-                ->where('sales.status', Sale::STATUS_RELEASED)
-                ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
-                ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
-                ->sum('sale_trade_ins.trade_in_value');
-        }
+        $totalTradeIn = (float) DB::table('sale_trade_ins')
+            ->join('sales', 'sale_trade_ins.sale_id', '=', 'sales.id')
+            ->where('sales.status', Sale::STATUS_RELEASED)
+            ->whereBetween('sales.sale_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->when($branchId, fn ($q) => $q->where('sales.branch_id', $branchId))
+            ->when($warehouseId, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
+            ->sum('sale_trade_ins.trade_in_value');
 
         // Pemasukan Distribusi: filter tanggal (CashFlow IN reference_type = distribution)
         $incomeDistributionQuery = CashFlow::query()
@@ -1325,17 +1318,11 @@ class FinanceController extends Controller
                 ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->whereBetween('sale_date', [$dateFromStr, $dateToStr])
-                ->with('saleDetails', 'payments')
+                ->with('saleDetails', 'payments', 'tradeIns')
                 ->get()
                 ->filter(fn ($sale) => $sale->isPaidOff());
 
-            $salesPaid = (float) DB::table('sale_payments')
-                ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
-                ->where('sales.status', Sale::STATUS_RELEASED)
-                ->when($isBranch, fn ($q) => $q->where('sales.branch_id', $branchId))
-                ->when(! $isBranch, fn ($q) => $q->where('sales.warehouse_id', $warehouseId))
-                ->whereBetween('sales.sale_date', [$dateFromStr, $dateToStr])
-                ->sum('sale_payments.amount');
+            $salesPaid = (float) $salesForLocation->sum(fn ($sale) => $sale->payment_total_for_report);
             $salesHpp = (float) $salesForLocation->sum->total_hpp;
             $salesProfit = $salesPaid - $salesHpp;
 
