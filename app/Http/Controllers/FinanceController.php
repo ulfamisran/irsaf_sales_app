@@ -159,10 +159,12 @@ class FinanceController extends Controller
             );
 
         if ($branchId) {
-            $servicesQuery->where('branch_id', $branchId);
+            $servicesQuery->where('location_type', Service::LOCATION_BRANCH)
+                ->where('branch_id', $branchId);
         }
         if ($warehouseId) {
-            $servicesQuery->where('warehouse_id', $warehouseId);
+            $servicesQuery->where('location_type', Service::LOCATION_WAREHOUSE)
+                ->where('warehouse_id', $warehouseId);
         }
 
         $services = $servicesQuery->get();
@@ -302,15 +304,11 @@ class FinanceController extends Controller
         $totalExpense = (float) $expenseQuery->sum('amount');
 
         // Penyewaan: hanya released (selesai), Harga sewa
+        // Filter lokasi memakai location_type karena penyewaan gudang tetap menyimpan branch_id.
         $rentalQuery = Rental::query()
             ->where('status', Rental::STATUS_RELEASED)
             ->whereBetween('pickup_date', [$dateFrom->toDateString(), $dateTo->toDateString()]);
-        if ($warehouseId) {
-            $rentalQuery->where('warehouse_id', $warehouseId);
-        }
-        if ($branchId) {
-            $rentalQuery->where('branch_id', $branchId);
-        }
+        $this->applyRentalLocationFilter($rentalQuery, $branchId, $warehouseId);
         $rentals = $rentalQuery->orderBy('pickup_date')->get();
         $totalRentalIncome = (float) $rentals->sum('total');
 
@@ -1329,8 +1327,8 @@ class FinanceController extends Controller
             $servicesForLocation = Service::query()
                 ->with('serviceMaterials')
                 ->where('status', Service::STATUS_COMPLETED)
-                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
-                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->when($isBranch, fn ($q) => $q->where('location_type', Service::LOCATION_BRANCH)->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('location_type', Service::LOCATION_WAREHOUSE)->where('warehouse_id', $warehouseId))
                 ->whereBetween(DB::raw('COALESCE(exit_date, entry_date)'), [$dateFromStr, $dateToStr])
                 ->get();
             $serviceTotal = (float) $servicesForLocation->sum->total_service_price;
@@ -1340,8 +1338,8 @@ class FinanceController extends Controller
             $rentalTotal = (float) Rental::query()
                 ->where('status', Rental::STATUS_RELEASED)
                 ->whereBetween('pickup_date', [$dateFromStr, $dateToStr])
-                ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
-                ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->when($isBranch, fn ($q) => $q->where('location_type', Rental::LOCATION_BRANCH)->where('branch_id', $branchId))
+                ->when(! $isBranch, fn ($q) => $q->where('location_type', Rental::LOCATION_WAREHOUSE)->where('warehouse_id', $warehouseId))
                 ->sum('total');
             $rentalProfit = $rentalTotal;
             $totalPemasukan += $salesProfit + $serviceProfit + $rentalProfit;
@@ -1452,6 +1450,22 @@ class FinanceController extends Controller
             'locations' => $locations,
             'includeExternalExpense' => $includeExternalExpense,
         ]);
+    }
+
+    /**
+     * Filter penyewaan berdasarkan lokasi aktual (location_type), bukan hanya branch_id.
+     * Penyewaan gudang tetap menyimpan branch_id untuk kebutuhan relasi database.
+     */
+    private function applyRentalLocationFilter($query, ?int $branchId, ?int $warehouseId): void
+    {
+        if ($branchId) {
+            $query->where('location_type', Rental::LOCATION_BRANCH)
+                ->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $query->where('location_type', Rental::LOCATION_WAREHOUSE)
+                ->where('warehouse_id', $warehouseId);
+        }
     }
 
     private function kasKeyFromPaymentMethod(string $jenis, string $bank, string $rek): string
