@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\SaleRequest;
+use App\Http\Requests\UpdateSaleHppRequest;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\PaymentMethod;
@@ -13,6 +14,7 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\Role;
 use App\Models\Sale;
+use App\Models\SaleDetail;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
 use App\Services\SaleService;
@@ -958,6 +960,169 @@ class SaleController extends Controller
         }
 
         return (int) $customer->id;
+    }
+
+    /**
+     * Form koreksi HPP penjualan released (super_admin / admin_pusat).
+     */
+    public function editHpp(Sale $sale): View
+    {
+        $user = auth()->user();
+        if (! $user?->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($sale->status !== Sale::STATUS_RELEASED) {
+            abort(403, __('Hanya penjualan released yang dapat dikoreksi HPP-nya.'));
+        }
+
+        $sale->load('saleDetails.product');
+        $hppRows = $this->buildHppEditRows($sale);
+
+        return view('sales.edit-hpp', compact('sale', 'hppRows'));
+    }
+
+    /**
+     * Simpan koreksi HPP — hanya mengubah sale_details.hpp / hpp_by_serial.
+     */
+    public function updateHpp(UpdateSaleHppRequest $request, Sale $sale): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user?->isSuperAdminOrAdminPusat()) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($sale->status !== Sale::STATUS_RELEASED) {
+            abort(403, __('Hanya penjualan released yang dapat dikoreksi HPP-nya.'));
+        }
+
+        $items = $request->validated('items');
+        $reason = $request->validated('reason');
+        $validDetailIds = $sale->saleDetails()->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $detailsById = $sale->saleDetails()->get()->keyBy('id');
+        $changes = [];
+
+        try {
+            DB::transaction(function () use ($items, $validDetailIds, $detailsById, &$changes) {
+            $grouped = collect($items)->groupBy('sale_detail_id');
+
+            foreach ($grouped as $detailId => $rows) {
+                $detailId = (int) $detailId;
+                if (! in_array($detailId, $validDetailIds, true)) {
+                    throw new \InvalidArgumentException(__('Baris item tidak valid untuk penjualan ini.'));
+                }
+
+                /** @var SaleDetail $detail */
+                $detail = $detailsById->get($detailId);
+                if (! $detail) {
+                    continue;
+                }
+
+                $expectedSerials = $this->parseSerialNumbers($detail->serial_numbers);
+                $hppBySerial = [];
+                $totalHpp = 0.0;
+                $count = 0;
+
+                foreach ($rows as $row) {
+                    $hpp = round((float) ($row['hpp'] ?? 0), 2);
+                    $serial = isset($row['serial']) ? trim((string) $row['serial']) : '';
+
+                    if ($serial !== '') {
+                        if (! in_array($serial, $expectedSerials, true)) {
+                            throw new \InvalidArgumentException(
+                                __('Serial :serial tidak termasuk dalam transaksi ini.', ['serial' => $serial])
+                            );
+                        }
+                        $hppBySerial[$serial] = $hpp;
+                    }
+
+                    $totalHpp += $hpp;
+                    $count++;
+                }
+
+                if ($count === 0) {
+                    continue;
+                }
+
+                $newHpp = empty($expectedSerials)
+                    ? round((float) $rows->first()['hpp'], 2)
+                    : round($totalHpp / $count, 2);
+
+                $oldHpp = (float) $detail->hpp;
+                $detail->update([
+                    'hpp' => $newHpp,
+                    'hpp_by_serial' => ! empty($hppBySerial) ? $hppBySerial : null,
+                ]);
+
+                $label = ($detail->product?->sku ?? '#'.$detail->product_id);
+                $changes[] = $label . ': ' . number_format($oldHpp, 0, ',', '.') . ' → ' . number_format($newHpp, 0, ',', '.');
+            }
+        });
+        } catch (\InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'sale.update_hpp',
+            'reference_type' => 'sale',
+            'reference_id' => $sale->id,
+            'description' => 'Koreksi HPP penjualan ' . $sale->invoice_number . '. Alasan: ' . $reason . '. ' . implode('; ', $changes),
+        ]);
+
+        return redirect()
+            ->route('sales.show', $sale)
+            ->with('success', __('HPP penjualan berhasil diperbarui.'));
+    }
+
+    /**
+     * @return array<int, array{sale_detail_id: int, product_label: string, serial: ?string, price: float, quantity: int, hpp: float}>
+     */
+    private function buildHppEditRows(Sale $sale): array
+    {
+        $rows = [];
+        foreach ($sale->saleDetails as $detail) {
+            $serials = $this->parseSerialNumbers($detail->serial_numbers);
+            $bySerial = is_array($detail->hpp_by_serial) ? $detail->hpp_by_serial : [];
+            $productLabel = trim(($detail->product?->sku ?? '-') . ' - ' . ($detail->product?->brand ?? '') . ' ' . ($detail->product?->series ?? ''));
+
+            if (empty($serials)) {
+                $rows[] = [
+                    'sale_detail_id' => $detail->id,
+                    'product_label' => $productLabel,
+                    'serial' => null,
+                    'price' => (float) $detail->price,
+                    'quantity' => (int) $detail->quantity,
+                    'hpp' => (float) $detail->hpp,
+                ];
+
+                continue;
+            }
+
+            foreach ($serials as $sn) {
+                $rows[] = [
+                    'sale_detail_id' => $detail->id,
+                    'product_label' => $productLabel,
+                    'serial' => $sn,
+                    'price' => (float) $detail->price,
+                    'quantity' => 1,
+                    'hpp' => (float) ($bySerial[$sn] ?? $detail->hpp),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function parseSerialNumbers(?string $serialNumbers): array
+    {
+        if (! $serialNumbers) {
+            return [];
+        }
+        $parts = preg_split('/[\r\n,]+/', (string) $serialNumbers) ?: [];
+
+        return array_values(array_unique(array_filter(array_map('trim', $parts))));
     }
 
     private function authorizeSaleForUser(Sale $sale): void

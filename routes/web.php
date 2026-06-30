@@ -160,6 +160,16 @@ Route::middleware('auth')->group(function () {
     Route::delete('products/{product}/units/{unit}', [ProductController::class, 'destroyUnit'])
         ->middleware('role:admin_cabang,super_admin,admin_pusat')
         ->name('products.units.destroy');
+    Route::middleware('role:super_admin,admin_pusat')->group(function () {
+        Route::get('products/{product}/units/{unit}/edit', [ProductController::class, 'editUnit'])
+            ->name('products.units.edit');
+        Route::patch('products/{product}/units/{unit}', [ProductController::class, 'updateUnit'])
+            ->name('products.units.update');
+        Route::get('sales/{sale}/edit-hpp', [SaleController::class, 'editHpp'])
+            ->name('sales.edit-hpp');
+        Route::patch('sales/{sale}/hpp', [SaleController::class, 'updateHpp'])
+            ->name('sales.update-hpp');
+    });
     Route::resource('products', ProductController::class)
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
     Route::resource('customers', CustomerController::class)

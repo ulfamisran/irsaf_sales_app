@@ -8,8 +8,12 @@
             </div>
             <div class="flex gap-2">
                 @php
-                    $canEditProduct = !$product->hasSoldUnits()
-                        && (auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]));
+                    $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
+                    $canEditProduct = $isPusat
+                        || (
+                            ! $product->hasSoldUnits()
+                            && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG])
+                        );
                     if ($canEditProduct && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id) {
                         $canEditProduct = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
                     }
@@ -158,20 +162,27 @@
                                 <td class="px-4 py-3">{{ $u->user?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">
                                     @php
+                                        $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
+                                        $canEditUnit = $isPusat;
                                         $canDeleteUnit = $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK
                                             && (auth()->user()?->isSuperAdmin()
                                                 || auth()->user()?->isAdminPusat()
                                                 || (auth()->user()?->hasRole(\App\Models\Role::ADMIN_CABANG) && auth()->user()?->branch_id && $u->location_type === \App\Models\Stock::LOCATION_BRANCH && (int) $u->location_id === (int) auth()->user()->branch_id));
                                     @endphp
-                                    @if ($canDeleteUnit)
-                                        <form action="{{ route('products.units.destroy', [$product, $u]) }}" method="POST" class="inline">
-                                            @csrf
-                                            @method('DELETE')
-                                            <x-icon-btn-delete :label="__('Hapus')" />
-                                        </form>
-                                    @else
-                                        <span class="text-slate-400 text-sm">-</span>
-                                    @endif
+                                    <div class="flex items-center gap-2">
+                                        @if ($canEditUnit)
+                                            <x-icon-btn-edit :href="route('products.units.edit', [$product, $u])" :label="__('Edit')" />
+                                        @endif
+                                        @if ($canDeleteUnit)
+                                            <form action="{{ route('products.units.destroy', [$product, $u]) }}" method="POST" class="inline">
+                                                @csrf
+                                                @method('DELETE')
+                                                <x-icon-btn-delete :label="__('Hapus')" />
+                                            </form>
+                                        @elseif (! $canEditUnit)
+                                            <span class="text-slate-400 text-sm">-</span>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @empty

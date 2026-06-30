@@ -6,7 +6,12 @@
                 <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Detail Unit') }}</h2>
                 <p class="text-sm text-slate-600 mt-1">{{ $unit->product?->sku }} - {{ $unit->product?->brand }} {{ $unit->product?->series }}</p>
             </div>
-            <x-icon-btn-back :href="route('stock-units.index')" :label="__('Kembali')" />
+            <div class="flex gap-2">
+                @if (auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat())
+                    <x-icon-btn-edit :href="route('products.units.edit', [$unit->product, $unit])" :label="__('Edit')" />
+                @endif
+                <x-icon-btn-back :href="route('stock-units.index')" :label="__('Kembali')" />
+            </div>
         </div>
     </x-slot>
 

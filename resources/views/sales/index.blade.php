@@ -213,6 +213,16 @@
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
                                         <x-icon-btn-view :href="route('sales.show', $sale)" />
+                                        @if ((auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat()) && $sale->status === 'released')
+                                            <a href="{{ route('sales.edit-hpp', $sale) }}"
+                                               class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+                                               title="{{ __('Edit HPP') }}">
+                                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                </svg>
+                                                {{ __('Edit HPP') }}
+                                            </a>
+                                        @endif
                                         <a href="{{ route('sales.invoice', $sale) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors" title="{{ __('Print Invoice') }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/>

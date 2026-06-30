@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProductRequest;
+use App\Http\Requests\ProductUnitRequest;
 use App\Models\Branch;
 use App\Models\Product;
 use App\Models\ProductUnit;
@@ -145,7 +146,7 @@ class ProductController extends Controller
     public function edit(Request $request, Product $product): View
     {
         $user = $request->user();
-        if ($product->hasSoldUnits()) {
+        if (! $this->isPusatUser($user) && $product->hasSoldUnits()) {
             abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
         }
         if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
@@ -170,7 +171,7 @@ class ProductController extends Controller
     public function update(ProductRequest $request, Product $product): RedirectResponse
     {
         $user = $request->user();
-        if ($product->hasSoldUnits()) {
+        if (! $this->isPusatUser($user) && $product->hasSoldUnits()) {
             abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
         }
         if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
@@ -197,6 +198,14 @@ class ProductController extends Controller
             $data['sku'] = $sku;
         }
         $this->productRepository->update($product, $data);
+        AuditLog::create([
+            'user_id' => $user?->id,
+            'action' => 'product.update',
+            'reference_type' => 'product',
+            'reference_id' => $product->id,
+            'description' => 'Update product ' . $product->sku,
+        ]);
+
         return redirect()->route('products.index')->with('success', __('Product updated successfully.'));
     }
 
@@ -300,5 +309,59 @@ class ProductController extends Controller
         $unit->delete();
 
         return redirect()->back()->with('success', __('Product unit :serial berhasil dihapus.', ['serial' => $serialNumber]));
+    }
+
+    /**
+     * Show the form for editing a product unit (super_admin / admin_pusat only).
+     */
+    public function editUnit(Request $request, Product $product, ProductUnit $unit): View
+    {
+        $this->authorizePusatUnit($request, $product, $unit);
+        $unit->load(['warehouse', 'branch']);
+
+        return view('products.units.edit', compact('product', 'unit'));
+    }
+
+    /**
+     * Update a product unit (super_admin / admin_pusat only).
+     */
+    public function updateUnit(ProductUnitRequest $request, Product $product, ProductUnit $unit): RedirectResponse
+    {
+        $user = $request->user();
+        $this->authorizePusatUnit($request, $product, $unit);
+
+        $validated = $request->validated();
+        $unit->update([
+            'harga_hpp' => round((float) $validated['harga_hpp'], 2),
+            'harga_jual' => round((float) $validated['harga_jual'], 2),
+            'notes' => $validated['notes'] ?? $unit->notes,
+        ]);
+
+        AuditLog::create([
+            'user_id' => $user?->id,
+            'action' => 'product_unit.update',
+            'reference_type' => 'product_unit',
+            'reference_id' => $unit->id,
+            'description' => 'Update unit ' . $unit->serial_number . ' (produk ' . $product->sku . ')',
+        ]);
+
+        return redirect()
+            ->route('products.show', $product)
+            ->with('success', __('Unit :serial berhasil diperbarui.', ['serial' => $unit->serial_number]));
+    }
+
+    private function isPusatUser($user): bool
+    {
+        return $user?->isSuperAdmin() || $user?->isAdminPusat();
+    }
+
+    private function authorizePusatUnit(Request $request, Product $product, ProductUnit $unit): void
+    {
+        if (! $this->isPusatUser($request->user())) {
+            abort(403, __('Unauthorized.'));
+        }
+        if ($unit->product_id !== (int) $product->id) {
+            abort(404, __('Unit tidak termasuk dalam produk ini.'));
+        }
     }
 }
