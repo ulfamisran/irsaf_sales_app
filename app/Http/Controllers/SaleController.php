@@ -26,8 +26,10 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Throwable;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SaleController extends Controller
@@ -982,7 +984,7 @@ class SaleController extends Controller
     }
 
     /**
-     * Simpan koreksi HPP — hanya mengubah sale_details.hpp / hpp_by_serial.
+     * Simpan koreksi HPP — hanya mengubah sale_details.hpp.
      */
     public function updateHpp(UpdateSaleHppRequest $request, Sale $sale): RedirectResponse
     {
@@ -996,68 +998,45 @@ class SaleController extends Controller
 
         $items = $request->validated('items');
         $reason = $request->validated('reason');
-        $validDetailIds = $sale->saleDetails()->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $detailsById = $sale->saleDetails()->get()->keyBy('id');
+        $detailsById = $sale->saleDetails()->with('product')->get()->keyBy(fn (SaleDetail $detail) => (int) $detail->id);
+        $validDetailIds = $detailsById->keys()->all();
         $changes = [];
 
         try {
             DB::transaction(function () use ($items, $validDetailIds, $detailsById, &$changes) {
-            $grouped = collect($items)->groupBy('sale_detail_id');
-
-            foreach ($grouped as $detailId => $rows) {
-                $detailId = (int) $detailId;
-                if (! in_array($detailId, $validDetailIds, true)) {
-                    throw new \InvalidArgumentException(__('Baris item tidak valid untuk penjualan ini.'));
-                }
-
-                /** @var SaleDetail $detail */
-                $detail = $detailsById->get($detailId);
-                if (! $detail) {
-                    continue;
-                }
-
-                $expectedSerials = $this->parseSerialNumbers($detail->serial_numbers);
-                $hppBySerial = [];
-                $totalHpp = 0.0;
-                $count = 0;
-
-                foreach ($rows as $row) {
-                    $hpp = round((float) ($row['hpp'] ?? 0), 2);
-                    $serial = isset($row['serial']) ? trim((string) $row['serial']) : '';
-
-                    if ($serial !== '') {
-                        if (! in_array($serial, $expectedSerials, true)) {
-                            throw new \InvalidArgumentException(
-                                __('Serial :serial tidak termasuk dalam transaksi ini.', ['serial' => $serial])
-                            );
-                        }
-                        $hppBySerial[$serial] = $hpp;
+                foreach ($items as $item) {
+                    $detailId = (int) $item['sale_detail_id'];
+                    if (! in_array($detailId, $validDetailIds, true)) {
+                        throw new InvalidArgumentException(__('Baris item tidak valid untuk penjualan ini.'));
                     }
 
-                    $totalHpp += $hpp;
-                    $count++;
+                    /** @var SaleDetail|null $detail */
+                    $detail = $detailsById->get($detailId);
+                    if (! $detail) {
+                        throw new InvalidArgumentException(__('Detail penjualan tidak ditemukan.'));
+                    }
+
+                    $newHpp = round((float) ($item['hpp'] ?? 0), 2);
+                    $oldHpp = (float) $detail->hpp;
+                    $detail->update(['hpp' => $newHpp]);
+
+                    $label = ($detail->product?->sku ?? '#'.$detail->product_id);
+                    $changes[] = $label.' : '.number_format($oldHpp, 0, ',', '.').' → '.number_format($newHpp, 0, ',', '.');
                 }
-
-                if ($count === 0) {
-                    continue;
-                }
-
-                $newHpp = empty($expectedSerials)
-                    ? round((float) $rows->first()['hpp'], 2)
-                    : round($totalHpp / $count, 2);
-
-                $oldHpp = (float) $detail->hpp;
-                $detail->update([
-                    'hpp' => $newHpp,
-                    'hpp_by_serial' => ! empty($hppBySerial) ? $hppBySerial : null,
-                ]);
-
-                $label = ($detail->product?->sku ?? '#'.$detail->product_id);
-                $changes[] = $label . ': ' . number_format($oldHpp, 0, ',', '.') . ' → ' . number_format($newHpp, 0, ',', '.');
-            }
-        });
-        } catch (\InvalidArgumentException $e) {
+            });
+        } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('sale.update_hpp failed', [
+                'sale_id' => $sale->id,
+                'user_id' => $user->id,
+                'items_count' => count($items),
+                'message' => $e->getMessage(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->with('error', __('Gagal menyimpan koreksi HPP. Silakan coba lagi.'));
         }
 
         AuditLog::create([
@@ -1065,7 +1044,7 @@ class SaleController extends Controller
             'action' => 'sale.update_hpp',
             'reference_type' => 'sale',
             'reference_id' => $sale->id,
-            'description' => 'Koreksi HPP penjualan ' . $sale->invoice_number . '. Alasan: ' . $reason . '. ' . implode('; ', $changes),
+            'description' => 'Koreksi HPP penjualan '.$sale->invoice_number.'. Alasan: '.$reason.'. '.implode('; ', $changes),
         ]);
 
         return redirect()
@@ -1081,32 +1060,16 @@ class SaleController extends Controller
         $rows = [];
         foreach ($sale->saleDetails as $detail) {
             $serials = $this->parseSerialNumbers($detail->serial_numbers);
-            $bySerial = is_array($detail->hpp_by_serial) ? $detail->hpp_by_serial : [];
             $productLabel = trim(($detail->product?->sku ?? '-') . ' - ' . ($detail->product?->brand ?? '') . ' ' . ($detail->product?->series ?? ''));
 
-            if (empty($serials)) {
-                $rows[] = [
-                    'sale_detail_id' => $detail->id,
-                    'product_label' => $productLabel,
-                    'serial' => null,
-                    'price' => (float) $detail->price,
-                    'quantity' => (int) $detail->quantity,
-                    'hpp' => (float) $detail->hpp,
-                ];
-
-                continue;
-            }
-
-            foreach ($serials as $sn) {
-                $rows[] = [
-                    'sale_detail_id' => $detail->id,
-                    'product_label' => $productLabel,
-                    'serial' => $sn,
-                    'price' => (float) $detail->price,
-                    'quantity' => 1,
-                    'hpp' => (float) ($bySerial[$sn] ?? $detail->hpp),
-                ];
-            }
+            $rows[] = [
+                'sale_detail_id' => $detail->id,
+                'product_label' => $productLabel,
+                'serial' => ! empty($serials) ? implode(', ', $serials) : null,
+                'price' => (float) $detail->price,
+                'quantity' => (int) $detail->quantity,
+                'hpp' => (float) $detail->hpp,
+            ];
         }
 
         return $rows;

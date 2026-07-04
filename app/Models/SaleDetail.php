@@ -16,7 +16,6 @@ class SaleDetail extends Model
         'quantity',
         'price',
         'hpp',
-        'hpp_by_serial',
         'serial_numbers',
     ];
 
@@ -25,7 +24,6 @@ class SaleDetail extends Model
         return [
             'price' => 'decimal:2',
             'hpp' => 'decimal:2',
-            'hpp_by_serial' => 'array',
         ];
     }
 

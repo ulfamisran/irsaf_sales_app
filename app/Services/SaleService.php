@@ -531,10 +531,14 @@ class SaleService
                     $newProduct = Product::create(array_merge($productPayload, ['sku' => $sku]));
                     $tradeIn->update(['product_id' => $newProduct->id]);
 
-                    // Unit: inactive jika harga jual 0, in_stock jika ada harga jual
+                    // Unit: inactive jika harga jual 0, in_stock jika ada harga jual.
+                    // HPP & harga jual unit WAJIB disimpan (= nilai tukar tambah) agar
+                    // penjualan berikutnya atas unit ini mencatat HPP yang benar (bukan 0).
                     ProductUnit::create([
                         'product_id' => $newProduct->id,
                         'user_id' => $userId,
+                        'harga_hpp' => $hpp,
+                        'harga_jual' => $sellingPrice,
                         'serial_number' => $tradeIn->serial_number,
                         'location_type' => $locType,
                         'location_id' => $locId,

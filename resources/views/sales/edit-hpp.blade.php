@@ -55,9 +55,6 @@
                                             <td class="px-4 py-2 text-right text-slate-600">{{ $row['quantity'] }}</td>
                                             <td class="px-4 py-2 text-right">
                                                 <input type="hidden" name="items[{{ $i }}][sale_detail_id]" value="{{ $row['sale_detail_id'] }}">
-                                                @if ($row['serial'])
-                                                    <input type="hidden" name="items[{{ $i }}][serial]" value="{{ $row['serial'] }}">
-                                                @endif
                                                 <x-text-input
                                                     name="items[{{ $i }}][hpp]"
                                                     type="text"
