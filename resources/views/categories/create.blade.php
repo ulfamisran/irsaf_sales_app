@@ -28,6 +28,14 @@
                                 <textarea id="description" name="description" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="3">{{ old('description') }}</textarea>
                                 <x-input-error :messages="$errors->get('description')" class="mt-2" />
                             </div>
+                            <div class="flex items-start gap-2">
+                                <input type="checkbox" id="requires_serial" name="requires_serial" value="1" {{ old('requires_serial', true) ? 'checked' : '' }} class="mt-1 rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                                <div>
+                                    <label for="requires_serial" class="text-sm font-medium text-gray-700">{{ __('Butuh nomor serial per unit') }}</label>
+                                    <p class="text-xs text-slate-500">{{ __('Nonaktifkan untuk kategori non-serial seperti Aksesoris — pembelian barang kategori ini hanya memakai jumlah (qty), tanpa input nomor serial.') }}</p>
+                                </div>
+                                <x-input-error :messages="$errors->get('requires_serial')" class="mt-2" />
+                            </div>
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Save') }}</x-primary-button>
                                 <a href="{{ route('categories.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Cancel') }}</a>

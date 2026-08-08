@@ -15,7 +15,15 @@ class Category extends Model
         'name',
         'code',
         'description',
+        'requires_serial',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'requires_serial' => 'boolean',
+        ];
+    }
 
     /**
      * Get the products for the category.

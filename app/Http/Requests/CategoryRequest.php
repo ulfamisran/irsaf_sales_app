@@ -14,6 +14,13 @@ class CategoryRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'requires_serial' => $this->boolean('requires_serial'),
+        ]);
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -33,6 +40,7 @@ class CategoryRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:50', $uniqueCode],
             'description' => ['nullable', 'string'],
+            'requires_serial' => ['boolean'],
         ];
     }
 }

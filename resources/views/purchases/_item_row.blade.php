@@ -10,9 +10,10 @@
     $serialsText = $serialsText ?? '';
     $p = $detail?->product;
     $labelText = $p ? (($p->sku ?? '').' — '.trim(($p->brand ?? '').' '.($p->series ?? ''))) : __('Pilih Produk');
+    $requiresSerial = $p ? (bool) ($p->category?->requires_serial ?? true) : true;
 @endphp
-<div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-    <div class="purchase-serial-autocomplete relative rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3">
+<div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4" data-requires-serial="{{ $requiresSerial ? 1 : 0 }}">
+    <div class="purchase-serial-autocomplete serial-optional-block relative rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 {{ $requiresSerial ? '' : 'hidden' }}">
         <x-input-label :value="__('Cari nomor serial')" class="text-xs font-medium text-indigo-900" />
         <input type="text" class="purchase-serial-search block mt-1 w-full rounded-md border border-indigo-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Ketik minimal 2 karakter, pilih dari daftar — mengisi produk & serial') }}" autocomplete="off">
         <div class="purchase-serial-dropdown hidden absolute left-0 right-0 z-30 mt-1 max-h-52 overflow-auto rounded-md border border-indigo-200 bg-white shadow-lg"></div>
@@ -52,18 +53,24 @@
         </div>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3 items-start">
-        <div class="min-w-0 md:col-span-2">
+        <div class="min-w-0 qty-block md:col-span-2">
             <x-input-label :value="__('Qty')" />
-            <p class="text-[11px] text-slate-500 -mt-0.5 mb-0.5">{{ __('Jika serial diisi, qty mengikuti jumlah baris serial (1 baris = 1 unit).') }}</p>
+            <p class="text-[11px] text-slate-500 -mt-0.5 mb-0.5 serial-optional-block {{ $requiresSerial ? '' : 'hidden' }}">{{ __('Jika serial diisi, qty mengikuti jumlah baris serial (1 baris = 1 unit).') }}</p>
             <x-text-input type="number" name="items[{{ $idx }}][quantity]" min="1" value="{{ $qty }}" class="item-qty block mt-1 w-full max-w-full" required />
         </div>
-        <div class="min-w-0 md:col-span-2">
+        <div class="min-w-0 price-block md:col-span-2">
             <x-input-label :value="__('Harga Beli')" />
             <x-text-input type="text" name="items[{{ $idx }}][unit_price]" data-rupiah="true" class="item-price block mt-1 w-full max-w-full" placeholder="0" value="{{ $price !== null && $price !== '' ? number_format((float) $price, 0, ',', '.') : '' }}" required />
         </div>
-        <div class="min-w-0 md:col-span-8">
+        <div class="min-w-0 md:col-span-8 serial-optional-block {{ $requiresSerial ? '' : 'hidden' }}">
             <x-input-label :value="__('Serial (1 per baris, opsional)')" />
             <textarea name="items[{{ $idx }}][serial_numbers_text]" class="item-serials block mt-1 w-full max-w-full min-w-0 rounded-md border-gray-300 shadow-sm text-sm" rows="2" placeholder="SN001&#10;SN002" data-text-name="items[{{ $idx }}][serial_numbers_text]">{{ $serialsText }}</textarea>
+        </div>
+        <div class="min-w-0 md:col-span-8 flex items-center accessory-note-block {{ $requiresSerial ? 'hidden' : '' }}">
+            <p class="text-xs text-slate-500 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 w-full">
+                <span class="font-medium text-slate-600">{{ __('Kategori non-serial') }}:</span>
+                {{ __('barang ini (mis. Aksesoris) tidak memakai nomor serial — stok ditambah langsung berdasarkan jumlah (Qty) di atas.') }}
+            </p>
         </div>
     </div>
     <div class="mt-2 flex justify-end">

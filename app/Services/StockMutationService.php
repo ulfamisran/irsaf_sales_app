@@ -186,8 +186,12 @@ class StockMutationService
         }
 
         return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $userId) {
+            // Kategori non-serial (mis. Aksesoris) selalu boleh ditambah stoknya via qty saja,
+            // meskipun SKU ini kebetulan punya riwayat ProductUnit dari data lama.
+            $categoryRequiresSerial = $product->category?->requires_serial ?? true;
+
             // If this product already uses serial-numbered units, require serial numbers.
-            $isSerialTracked = ProductUnit::where('product_id', $product->id)->exists();
+            $isSerialTracked = $categoryRequiresSerial && ProductUnit::where('product_id', $product->id)->exists();
             if ($isSerialTracked) {
                 throw new InvalidArgumentException(__('Produk ini memakai nomor serial. Mohon masukkan nomor serial.'));
             }

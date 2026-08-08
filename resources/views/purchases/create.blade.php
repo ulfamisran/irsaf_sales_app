@@ -202,7 +202,7 @@
                                 <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
                                     <div class="flex-1 min-w-[200px] space-y-2">
                                         <x-input-label :value="__('Barang yang Dibeli')" class="font-semibold" />
-                                        <p class="text-xs text-slate-500">{{ __('Pilih lokasi & kategori, lalu pilih produk. Filter merk & series untuk mempermudah pencarian.') }}</p>
+                                        <p class="text-xs text-slate-500">{{ __('Pilih lokasi & kategori, lalu pilih produk (SKU yang sudah ada bisa langsung dipilih). Filter merk & series untuk mempermudah pencarian. Untuk kategori non-serial (mis. Aksesoris), kolom nomor serial otomatis tersembunyi — cukup isi jumlah (Qty).') }}</p>
                                         <div class="flex flex-wrap gap-3 mt-2">
                                             <div class="min-w-[160px]">
                                                 <x-input-label for="purchase_category_id" :value="__('Kategori Barang')" class="text-xs" />
@@ -288,7 +288,15 @@
             'label' => $m->display_label,
             'saldo' => (float) ($saldoByPaymentMethod[$m->id] ?? 0),
         ])->values();
-        $productsJson = $products->map(fn ($p) => ['id' => $p->id, 'sku' => $p->sku ?? '', 'brand' => $p->brand ?? '', 'series' => $p->series ?? '', 'purchase_price' => (float) ($p->purchase_price ?? 0), 'selling_price' => (float) ($p->selling_price ?? 0)])->values();
+        $productsJson = $products->map(fn ($p) => [
+            'id' => $p->id,
+            'sku' => $p->sku ?? '',
+            'brand' => $p->brand ?? '',
+            'series' => $p->series ?? '',
+            'purchase_price' => (float) ($p->purchase_price ?? 0),
+            'selling_price' => (float) ($p->selling_price ?? 0),
+            'requires_serial' => $p->category ? (bool) $p->category->requires_serial : true,
+        ])->values();
     @endphp
     <script>
         let paymentMethods = @json($paymentMethodsJson);
@@ -404,13 +412,29 @@
                     const id = opt.getAttribute('data-id'), price = opt.getAttribute('data-price');
                     if (productIdInput) productIdInput.value = id;
                     const label = row.querySelector('.product-select-label');
-                    if (label) { const p = products.find(x => String(x.id) === String(id)); if (p) label.innerHTML = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || ''); label.classList.remove('text-slate-500'); }
+                    const p = products.find(x => String(x.id) === String(id));
+                    if (label) { if (p) label.innerHTML = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || ''); label.classList.remove('text-slate-500'); }
+                    toggleSerialUiForRow(row, p ? (p.requires_serial !== false) : true);
                     const priceInp = row.querySelector('.item-price'); if (priceInp && price) { priceInp.value = new Intl.NumberFormat('id-ID').format(price); updateAllTotals(); }
                     dropdown.classList.add('hidden');
                 };
             });
         }
         document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+
+        function toggleSerialUiForRow(row, requiresSerial) {
+            row.dataset.requiresSerial = requiresSerial ? '1' : '0';
+            row.querySelectorAll('.serial-optional-block').forEach(el => el.classList.toggle('hidden', !requiresSerial));
+            const accessoryNote = row.querySelector('.accessory-note-block');
+            if (accessoryNote) accessoryNote.classList.toggle('hidden', requiresSerial);
+            if (!requiresSerial) {
+                const ta = row.querySelector('.item-serials');
+                if (ta && ta.value) { ta.value = ''; }
+                clearPurchaseSerialDropdown(row);
+                const si = row.querySelector('.purchase-serial-search');
+                if (si) si.value = '';
+            }
+        }
 
         function countNonEmptySerialLines(text) {
             return String(text || '')
@@ -498,6 +522,7 @@
                 priceInp.value = new Intl.NumberFormat('id-ID').format(Math.round(priceToUse));
                 updateAllTotals();
             }
+            toggleSerialUiForRow(row, true);
             const ta = row.querySelector('.item-serials');
             if (ta) ta.value = item.serial_number || '';
             clearPurchaseSerialDropdown(row);
@@ -673,6 +698,7 @@
             });
             tpl.querySelector('.product-select-label')?.classList.add('text-slate-500');
             tpl.querySelector('.product-select-label').textContent = 'Pilih Produk';
+            toggleSerialUiForRow(tpl, true);
             tpl.querySelector('.brand-filter').innerHTML = '<option value="">Semua Merk</option>';
             tpl.querySelector('.series-filter').innerHTML = '<option value="">Semua Series</option>';
             tpl.querySelector('.product-dropdown-list').innerHTML = '';
@@ -727,6 +753,11 @@
             attachItemSerialToQtySync(row);
             syncQuantityFromSerialLines(row);
             attachItemTotalListeners(row);
+            const pid = row.querySelector('.product-id-input')?.value;
+            if (pid) {
+                const p = products.find(x => String(x.id) === String(pid));
+                if (p) toggleSerialUiForRow(row, p.requires_serial !== false);
+            }
         });
         updateAllTotals();
 
@@ -842,6 +873,7 @@
                     row.querySelector('.product-id-input').value = '';
                     const label = row.querySelector('.product-select-label');
                     if (label) { label.textContent = 'Pilih Produk'; label.classList.add('text-slate-500'); }
+                    toggleSerialUiForRow(row, true);
                 }
             });
         }

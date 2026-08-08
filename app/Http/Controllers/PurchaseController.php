@@ -652,6 +652,7 @@ class PurchaseController extends Controller
                 'series' => $p->series ?? '',
                 'purchase_price' => (float) ($p->purchase_price ?? 0),
                 'selling_price' => (float) ($p->selling_price ?? 0),
+                'requires_serial' => $p->category ? (bool) $p->category->requires_serial : true,
             ])->values(),
             'open_services' => $openServices,
         ]);

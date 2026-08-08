@@ -18,8 +18,8 @@ class SampleDataSeeder extends Seeder
     public function run(): void
     {
         $categories = [
-            ['name' => 'Laptop', 'code' => 'LAP', 'description' => 'Laptop/Notebook'],
-            ['name' => 'Aksesoris', 'code' => 'AKS', 'description' => 'Aksesoris Laptop'],
+            ['name' => 'Laptop', 'code' => 'LAP', 'description' => 'Laptop/Notebook', 'requires_serial' => true],
+            ['name' => 'Aksesoris', 'code' => 'AKS', 'description' => 'Aksesoris Laptop', 'requires_serial' => false],
         ];
 
         foreach ($categories as $c) {
