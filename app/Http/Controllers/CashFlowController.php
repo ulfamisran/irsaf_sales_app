@@ -561,6 +561,32 @@ class CashFlowController extends Controller
         return view('cash-flows.in-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
     }
 
+    public function showIn(Request $request, CashFlow $cashFlow): View
+    {
+        if ($cashFlow->type !== CashFlow::TYPE_IN || $cashFlow->reference_type !== CashFlow::REFERENCE_OTHER) {
+            abort(404);
+        }
+
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+                if ($cashFlow->branch_id != $user->branch_id) {
+                    abort(403);
+                }
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+                if ($cashFlow->warehouse_id != $user->warehouse_id) {
+                    abort(403);
+                }
+            } else {
+                abort(403);
+            }
+        }
+
+        $cashFlow->load(['user', 'branch', 'warehouse', 'incomeCategory', 'paymentMethod']);
+
+        return view('cash-flows.in-show', compact('cashFlow'));
+    }
+
     public function updateIn(Request $request, CashFlow $cashFlow): RedirectResponse
     {
         if ($cashFlow->type !== CashFlow::TYPE_IN || $cashFlow->reference_type !== CashFlow::REFERENCE_OTHER) {

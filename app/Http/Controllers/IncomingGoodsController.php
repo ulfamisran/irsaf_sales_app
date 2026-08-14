@@ -280,6 +280,31 @@ class IncomingGoodsController extends Controller
         return redirect()->route('incoming-goods.index')->with('success', __('Barang masuk berhasil dicatat.'));
     }
 
+    public function show(Request $request, IncomingGood $incomingGood): View
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $incomingGood->load(['product.category', 'warehouse', 'branch', 'user']);
+        $serials = $this->parseSerialNumbersForDetail($incomingGood->notes);
+        $units = collect();
+        if (! empty($serials)) {
+            $units = ProductUnit::with(['warehouse', 'branch'])
+                ->where('product_id', $incomingGood->product_id)
+                ->whereIn('serial_number', $serials)
+                ->orderBy('serial_number')
+                ->get();
+        }
+
+        return view('incoming-goods.show', compact('incomingGood', 'units'));
+    }
+
     public function detail(Request $request, IncomingGood $incomingGood): JsonResponse
     {
         $user = $request->user();

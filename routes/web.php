@@ -17,6 +17,7 @@ use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RentalController;
 use App\Http\Controllers\SaleController;
@@ -250,6 +251,9 @@ Route::middleware('auth')->group(function () {
     Route::post('damaged-goods/{damagedGood}/reactivate', [DamagedGoodController::class, 'reactivate'])
         ->middleware('role:admin_cabang,super_admin,admin_pusat')
         ->name('damaged-goods.reactivate');
+    Route::get('damaged-goods/{damagedGood}', [DamagedGoodController::class, 'show'])
+        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->name('damaged-goods.show');
 
     Route::get('incoming-goods', [IncomingGoodsController::class, 'index'])
         ->middleware('role:admin_gudang,admin_cabang')
@@ -266,6 +270,9 @@ Route::middleware('auth')->group(function () {
     Route::get('incoming-goods/{incomingGood}/detail', [IncomingGoodsController::class, 'detail'])
         ->middleware('role:admin_gudang,admin_cabang')
         ->name('incoming-goods.detail');
+    Route::get('incoming-goods/{incomingGood}', [IncomingGoodsController::class, 'show'])
+        ->middleware('role:admin_gudang,admin_cabang')
+        ->name('incoming-goods.show');
 
     Route::get('purchases/distributors', [PurchaseController::class, 'distributors'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
@@ -424,6 +431,9 @@ Route::middleware('auth')->group(function () {
     Route::get('cash-flows/in/{cashFlow}/edit', [CashFlowController::class, 'editIn'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('cash-flows.in.edit');
+    Route::get('cash-flows/in/{cashFlow}', [CashFlowController::class, 'showIn'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('cash-flows.in.show');
     Route::put('cash-flows/in/{cashFlow}', [CashFlowController::class, 'updateIn'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('cash-flows.in.update');
@@ -549,6 +559,13 @@ Route::middleware('auth')->group(function () {
         ->name('reports.stock-branch');
 
     Route::middleware('role:super_admin')->group(function () {
+        Route::get('daily-reports', [DailyReportController::class, 'index'])->name('daily-reports.index');
+        Route::get('daily-reports/barang-masuk', [DailyReportController::class, 'barangMasuk'])->name('daily-reports.barang-masuk');
+        Route::get('daily-reports/user-activity', [DailyReportController::class, 'userActivity'])->name('daily-reports.user-activity');
+        Route::get('daily-reports/barang-terjual', [DailyReportController::class, 'barangTerjual'])->name('daily-reports.barang-terjual');
+        Route::get('daily-reports/service', [DailyReportController::class, 'service'])->name('daily-reports.service');
+        Route::get('daily-reports/barang-rusak', [DailyReportController::class, 'barangRusak'])->name('daily-reports.barang-rusak');
+
         Route::get('landing-page', [LandingPageAdminController::class, 'index'])
             ->name('landing-page.manage');
         Route::put('landing-page/settings', [LandingPageAdminController::class, 'updateSettings'])

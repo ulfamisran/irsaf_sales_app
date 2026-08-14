@@ -350,6 +350,25 @@ class DamagedGoodController extends Controller
         return redirect()->route('damaged-goods.index')->with('success', $msg);
     }
 
+    public function show(DamagedGood $damagedGood): View
+    {
+        $user = request()->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            $unit = $damagedGood->productUnit;
+            if (! $unit || $unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        $damagedGood->load(['user', 'reactivatedByUser', 'productUnit.product.category', 'productUnit.warehouse', 'productUnit.branch']);
+
+        return view('damaged-goods.show', compact('damagedGood'));
+    }
+
     public function reactivateForm(DamagedGood $damagedGood): View
     {
         $user = request()->user();

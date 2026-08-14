@@ -26,10 +26,11 @@ class CheckRole
 
         if ($request->user()->isAdminPusat()) {
             $routeName = $request->route()?->getName();
-            $isSettingsRoute = $routeName
+            $isStrictSuperAdminOnlyRoute = $routeName
                 && (str_starts_with($routeName, 'landing-page.')
-                    || str_starts_with($routeName, 'users.'));
-            if (! $isSettingsRoute) {
+                    || str_starts_with($routeName, 'users.')
+                    || str_starts_with($routeName, 'daily-reports.'));
+            if (! $isStrictSuperAdminOnlyRoute) {
                 return $next($request);
             }
         }

@@ -235,7 +235,7 @@
 
                 <!-- Laporan -->
                 @if ($isSuperAdmin || $isAdminCabang || $isAdminGudang)
-                <li x-data="{ open: {{ request()->routeIs('reports.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('reports.*', 'daily-reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Analitik</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -252,6 +252,9 @@
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         <li><x-sidebar-nav-link :href="route('reports.index')" :active="request()->routeIs('reports.*')">Laporan</x-sidebar-nav-link></li>
+                        @if (auth()->user()->isStrictSuperAdmin())
+                            <li><x-sidebar-nav-link :href="route('daily-reports.index')" :active="request()->routeIs('daily-reports.*')">Laporan Harian</x-sidebar-nav-link></li>
+                        @endif
                     </ul>
                 </li>
                 @endif
