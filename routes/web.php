@@ -286,6 +286,12 @@ Route::middleware('auth')->group(function () {
     Route::get('purchases/search-unit-by-serial', [PurchaseController::class, 'searchUnitBySerial'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.search-unit-by-serial');
+    Route::get('purchases/export', [PurchaseController::class, 'export'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.export');
+    Route::get('purchases/export-pdf', [PurchaseController::class, 'exportPdf'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.export-pdf');
     Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');
@@ -561,10 +567,20 @@ Route::middleware('auth')->group(function () {
     Route::middleware('role:super_admin')->group(function () {
         Route::get('daily-reports', [DailyReportController::class, 'index'])->name('daily-reports.index');
         Route::get('daily-reports/barang-masuk', [DailyReportController::class, 'barangMasuk'])->name('daily-reports.barang-masuk');
+        Route::get('daily-reports/barang-masuk/export', [DailyReportController::class, 'barangMasukExport'])->name('daily-reports.barang-masuk.export');
+        Route::get('daily-reports/barang-masuk/export-pdf', [DailyReportController::class, 'barangMasukExportPdf'])->name('daily-reports.barang-masuk.export-pdf');
         Route::get('daily-reports/user-activity', [DailyReportController::class, 'userActivity'])->name('daily-reports.user-activity');
+        Route::get('daily-reports/user-activity/export', [DailyReportController::class, 'userActivityExport'])->name('daily-reports.user-activity.export');
+        Route::get('daily-reports/user-activity/export-pdf', [DailyReportController::class, 'userActivityExportPdf'])->name('daily-reports.user-activity.export-pdf');
         Route::get('daily-reports/barang-terjual', [DailyReportController::class, 'barangTerjual'])->name('daily-reports.barang-terjual');
+        Route::get('daily-reports/barang-terjual/export', [DailyReportController::class, 'barangTerjualExport'])->name('daily-reports.barang-terjual.export');
+        Route::get('daily-reports/barang-terjual/export-pdf', [DailyReportController::class, 'barangTerjualExportPdf'])->name('daily-reports.barang-terjual.export-pdf');
         Route::get('daily-reports/service', [DailyReportController::class, 'service'])->name('daily-reports.service');
+        Route::get('daily-reports/service/export', [DailyReportController::class, 'serviceExport'])->name('daily-reports.service.export');
+        Route::get('daily-reports/service/export-pdf', [DailyReportController::class, 'serviceExportPdf'])->name('daily-reports.service.export-pdf');
         Route::get('daily-reports/barang-rusak', [DailyReportController::class, 'barangRusak'])->name('daily-reports.barang-rusak');
+        Route::get('daily-reports/barang-rusak/export', [DailyReportController::class, 'barangRusakExport'])->name('daily-reports.barang-rusak.export');
+        Route::get('daily-reports/barang-rusak/export-pdf', [DailyReportController::class, 'barangRusakExportPdf'])->name('daily-reports.barang-rusak.export-pdf');
 
         Route::get('landing-page', [LandingPageAdminController::class, 'index'])
             ->name('landing-page.manage');

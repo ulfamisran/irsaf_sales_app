@@ -17,12 +17,16 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use App\Services\PurchaseService;
+use App\Support\ExcelExporter;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PurchaseController extends Controller
 {
@@ -31,6 +35,64 @@ class PurchaseController extends Controller
     ) {}
 
     public function index(Request $request): View
+    {
+        $user = $request->user();
+        $ctx = $this->buildPurchasesListQuery($request);
+        $query = $ctx['query'];
+
+        $totalUnpaid = (float) (clone $query)->reorder()
+            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->where('total', '>', 0)
+            ->whereColumn('total_paid', '<', 'total')
+            ->sum(DB::raw('total - total_paid'));
+
+        $purchases = $query->paginate(20)->withQueryString();
+        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $distributors = Distributor::orderBy('name')->get(['id', 'name']);
+
+        return view('purchases.index', [
+            'purchases' => $purchases,
+            'warehouses' => $warehouses,
+            'branches' => $branches,
+            'distributors' => $distributors,
+            'canFilterLocation' => $ctx['canFilterLocation'],
+            'filterLocked' => $ctx['filterLocked'],
+            'locationLabel' => $ctx['locationLabel'],
+            'totalUnpaid' => $totalUnpaid,
+        ]);
+    }
+
+    public function export(Request $request): StreamedResponse
+    {
+        $ctx = $this->buildPurchasesListQuery($request);
+        $purchases = (clone $ctx['query'])->with(['distributor', 'warehouse', 'branch', 'user', 'payments'])->get();
+        $summary = $this->computePurchasesExportSummary($purchases);
+        $filterMeta = $this->purchasesExportFilterMeta($request, $ctx);
+
+        $filename = 'rekap-pembelian-'.now()->format('Ymd-His').'.xlsx';
+        $html = view('purchases.export', array_merge($summary, compact('purchases', 'filterMeta')))->render();
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $ctx = $this->buildPurchasesListQuery($request);
+        $purchases = (clone $ctx['query'])->with(['distributor', 'warehouse', 'branch', 'user', 'payments'])->get();
+        $summary = $this->computePurchasesExportSummary($purchases);
+        $filterMeta = $this->purchasesExportFilterMeta($request, $ctx);
+
+        $pdf = Pdf::loadView('purchases.export-pdf', array_merge($summary, compact('purchases', 'filterMeta')))
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('rekap-pembelian-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    /**
+     * @return array{query: Builder, canFilterLocation: bool, filterLocked: bool, locationLabel: ?string}
+     */
+    private function buildPurchasesListQuery(Request $request): array
     {
         $user = $request->user();
         if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
@@ -49,11 +111,11 @@ class PurchaseController extends Controller
             if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
-                $locationLabel = __('Cabang') . ': ' . (Branch::find($user->branch_id)?->name ?? '');
+                $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
             } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
-                $locationLabel = __('Gudang') . ': ' . (Warehouse::find($user->warehouse_id)?->name ?? '');
+                $locationLabel = __('Gudang').': '.(Warehouse::find($user->warehouse_id)?->name ?? '');
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
             }
@@ -65,14 +127,12 @@ class PurchaseController extends Controller
                     if ($locationId > 0) {
                         $query->where('warehouse_id', $locationId);
                     } elseif ($request->filled('warehouse_id')) {
-                        // Backward compatibility parameter lama.
                         $query->where('warehouse_id', $request->warehouse_id);
                     }
                 } elseif ($request->location_type === 'branch') {
                     if ($locationId > 0) {
                         $query->where('branch_id', $locationId);
                     } elseif ($request->filled('branch_id')) {
-                        // Backward compatibility parameter lama.
                         $query->where('branch_id', $request->branch_id);
                     }
                 }
@@ -113,18 +173,79 @@ class PurchaseController extends Controller
             });
         }
 
-        $totalUnpaid = (float) (clone $query)->reorder()
-            ->where('status', '!=', Purchase::STATUS_CANCELLED)
-            ->where('total', '>', 0)
-            ->whereColumn('total_paid', '<', 'total')
-            ->sum(DB::raw('total - total_paid'));
+        return [
+            'query' => $query,
+            'canFilterLocation' => $canFilterLocation,
+            'filterLocked' => $filterLocked,
+            'locationLabel' => $locationLabel,
+        ];
+    }
 
-        $purchases = $query->paginate(20)->withQueryString();
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
-        $distributors = Distributor::orderBy('name')->get(['id', 'name']);
+    /**
+     * @param  \Illuminate\Support\Collection<int, Purchase>  $purchases
+     * @return array{totalAmount: float, totalPaid: float, totalUnpaid: float, count: int}
+     */
+    private function computePurchasesExportSummary($purchases): array
+    {
+        $active = $purchases->filter(fn (Purchase $p) => ! $p->isCancelled());
+        $totalAmount = (float) $active->sum('total');
+        $totalPaid = (float) $active->sum('total_paid');
+        $totalUnpaid = (float) $active
+            ->filter(fn (Purchase $p) => (float) $p->total > 0 && ! $p->isPaidOff())
+            ->sum(fn (Purchase $p) => max(0, (float) $p->total - (float) $p->total_paid));
 
-        return view('purchases.index', compact('purchases', 'warehouses', 'branches', 'distributors', 'canFilterLocation', 'filterLocked', 'locationLabel', 'totalUnpaid'));
+        return [
+            'totalAmount' => $totalAmount,
+            'totalPaid' => $totalPaid,
+            'totalUnpaid' => $totalUnpaid,
+            'count' => $purchases->count(),
+        ];
+    }
+
+    /**
+     * @param  array{canFilterLocation: bool, filterLocked: bool, locationLabel: ?string}  $ctx
+     * @return array{dateFrom: string, dateTo: string, locationLine: string, distributorLine: string, statusLine: string, searchLine: string}
+     */
+    private function purchasesExportFilterMeta(Request $request, array $ctx): array
+    {
+        $locationLine = $ctx['locationLabel'] ?? __('Semua');
+        if ($ctx['canFilterLocation'] ?? false) {
+            $lt = $request->get('location_type');
+            $lid = $request->get('location_id') ?: ($lt === 'branch' ? $request->get('branch_id') : $request->get('warehouse_id'));
+            if ($lt === 'warehouse' && $lid) {
+                $locationLine = __('Gudang').': '.(Warehouse::find($lid)?->name ?? '#'.$lid);
+            } elseif ($lt === 'branch' && $lid) {
+                $locationLine = __('Cabang').': '.(Branch::find($lid)?->name ?? '#'.$lid);
+            } elseif ($lt === 'warehouse') {
+                $locationLine = __('Semua Gudang');
+            } elseif ($lt === 'branch') {
+                $locationLine = __('Semua Cabang');
+            } else {
+                $locationLine = __('Semua');
+            }
+        }
+
+        $distributorLine = __('Semua');
+        if ($request->filled('distributor_id')) {
+            $distributorLine = Distributor::find($request->distributor_id)?->name ?? '#'.$request->distributor_id;
+        }
+
+        $statusMap = [
+            'active' => __('Release'),
+            'cancelled' => __('Dibatalkan'),
+            'paid_off' => __('Lunas'),
+            'unpaid' => __('Belum Lunas'),
+        ];
+        $statusLine = $statusMap[(string) $request->get('status', '')] ?? __('Semua');
+
+        return [
+            'dateFrom' => $request->get('date_from') ?: '-',
+            'dateTo' => $request->get('date_to') ?: '-',
+            'locationLine' => $locationLine,
+            'distributorLine' => $distributorLine,
+            'statusLine' => $statusLine,
+            'searchLine' => $request->filled('search') ? (string) $request->search : '-',
+        ];
     }
 
     public function create(Request $request): View

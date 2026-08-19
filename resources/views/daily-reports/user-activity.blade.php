@@ -30,12 +30,25 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             {{ __('Tampilkan') }}
                         </button>
                         <a href="{{ route('daily-reports.user-activity') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200">
                             {{ __('Reset') }}
+                        </a>
+                        @php
+                            $uaQuery = array_filter([
+                                'date' => $date,
+                                'user_id' => $filterUserId,
+                                'jenis_transaksi' => $filterJenis,
+                            ], fn ($v) => $v !== null && $v !== '');
+                        @endphp
+                        <a href="{{ route('daily-reports.user-activity.export', $uaQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                            {{ __('Download Excel') }}
+                        </a>
+                        <a href="{{ route('daily-reports.user-activity.export-pdf', $uaQuery) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700">
+                            {{ __('Download PDF') }}
                         </a>
                         <a href="{{ route('daily-reports.index') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50">
                             {{ __('Kembali') }}
@@ -44,6 +57,23 @@
                 </form>
             </div>
         </div>
+
+        @if (($totalPembelian ?? null) !== null || ($totalPenjualan ?? null) !== null)
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                @if (($totalPembelian ?? null) !== null)
+                    <div class="card-modern p-6">
+                        <p class="text-sm text-slate-600">{{ __('Total Pembelian') }}</p>
+                        <p class="text-2xl font-bold text-indigo-600">{{ number_format($totalPembelian, 0, ',', '.') }}</p>
+                    </div>
+                @endif
+                @if (($totalPenjualan ?? null) !== null)
+                    <div class="card-modern p-6">
+                        <p class="text-sm text-slate-600">{{ __('Total Penjualan') }}</p>
+                        <p class="text-2xl font-bold text-emerald-600">{{ number_format($totalPenjualan, 0, ',', '.') }}</p>
+                    </div>
+                @endif
+            </div>
+        @endif
 
         <div class="card-modern overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100">

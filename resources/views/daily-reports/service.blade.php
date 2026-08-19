@@ -5,7 +5,12 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
-        @include('daily-reports.partials.date-filter', ['action' => route('daily-reports.service'), 'date' => $date])
+        @include('daily-reports.partials.date-filter', [
+            'action' => route('daily-reports.service'),
+            'date' => $date,
+            'exportExcel' => 'daily-reports.service.export',
+            'exportPdf' => 'daily-reports.service.export-pdf',
+        ])
 
         @php
             $svcLokasi = function ($svc) {

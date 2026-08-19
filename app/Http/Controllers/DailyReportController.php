@@ -14,10 +14,13 @@ use App\Models\SaleDetail;
 use App\Models\SaleTradeIn;
 use App\Models\Service;
 use App\Models\User;
+use App\Support\ExcelExporter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DailyReportController extends Controller
 {
@@ -67,9 +70,159 @@ class DailyReportController extends Controller
     public function barangMasuk(Request $request): View
     {
         $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangMasukData($request);
 
+        return view('daily-reports.barang-masuk', $data);
+    }
+
+    public function barangMasukExport(Request $request): StreamedResponse
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangMasukData($request);
+        $html = view('daily-reports.exports.barang-masuk', $data)->render();
+
+        return ExcelExporter::downloadFromHtml(
+            $html,
+            'laporan-barang-masuk-'.$data['date'].'-'.now()->format('His').'.xlsx',
+            'generic'
+        );
+    }
+
+    public function barangMasukExportPdf(Request $request)
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangMasukData($request);
+        $pdf = Pdf::loadView('daily-reports.exports.barang-masuk-pdf', $data)->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-barang-masuk-'.$data['date'].'-'.now()->format('His').'.pdf');
+    }
+
+    public function userActivity(Request $request): View
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildUserActivityData($request);
+
+        return view('daily-reports.user-activity', $data);
+    }
+
+    public function userActivityExport(Request $request): StreamedResponse
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildUserActivityData($request);
+        $html = view('daily-reports.exports.user-activity', $data)->render();
+
+        return ExcelExporter::downloadFromHtml(
+            $html,
+            'laporan-log-pengguna-'.$data['date'].'-'.now()->format('His').'.xlsx',
+            'generic'
+        );
+    }
+
+    public function userActivityExportPdf(Request $request)
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildUserActivityData($request);
+        $pdf = Pdf::loadView('daily-reports.exports.user-activity-pdf', $data)->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-log-pengguna-'.$data['date'].'-'.now()->format('His').'.pdf');
+    }
+
+    public function barangTerjual(Request $request): View
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangTerjualData($request);
+
+        return view('daily-reports.barang-terjual', $data);
+    }
+
+    public function barangTerjualExport(Request $request): StreamedResponse
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangTerjualData($request);
+        $html = view('daily-reports.exports.barang-terjual', $data)->render();
+
+        return ExcelExporter::downloadFromHtml(
+            $html,
+            'laporan-barang-terjual-'.$data['date'].'-'.now()->format('His').'.xlsx',
+            'generic'
+        );
+    }
+
+    public function barangTerjualExportPdf(Request $request)
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangTerjualData($request);
+        $pdf = Pdf::loadView('daily-reports.exports.barang-terjual-pdf', $data)->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-barang-terjual-'.$data['date'].'-'.now()->format('His').'.pdf');
+    }
+
+    public function service(Request $request): View
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildServiceData($request);
+
+        return view('daily-reports.service', $data);
+    }
+
+    public function serviceExport(Request $request): StreamedResponse
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildServiceData($request);
+        $html = view('daily-reports.exports.service', $data)->render();
+
+        return ExcelExporter::downloadFromHtml(
+            $html,
+            'laporan-service-'.$data['date'].'-'.now()->format('His').'.xlsx',
+            'generic'
+        );
+    }
+
+    public function serviceExportPdf(Request $request)
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildServiceData($request);
+        $pdf = Pdf::loadView('daily-reports.exports.service-pdf', $data)->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-service-'.$data['date'].'-'.now()->format('His').'.pdf');
+    }
+
+    public function barangRusak(Request $request): View
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangRusakData($request);
+
+        return view('daily-reports.barang-rusak', $data);
+    }
+
+    public function barangRusakExport(Request $request): StreamedResponse
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangRusakData($request);
+        $html = view('daily-reports.exports.barang-rusak', $data)->render();
+
+        return ExcelExporter::downloadFromHtml(
+            $html,
+            'laporan-barang-rusak-'.$data['date'].'-'.now()->format('His').'.xlsx',
+            'generic'
+        );
+    }
+
+    public function barangRusakExportPdf(Request $request)
+    {
+        $this->ensureStrictSuperAdmin();
+        $data = $this->buildBarangRusakData($request);
+        $pdf = Pdf::loadView('daily-reports.exports.barang-rusak-pdf', $data)->setPaper('a4', 'landscape');
+
+        return $pdf->download('laporan-barang-rusak-'.$data['date'].'-'.now()->format('His').'.pdf');
+    }
+
+    /**
+     * @return array{date: string, rows: Collection, totalPembelian: float}
+     */
+    private function buildBarangMasukData(Request $request): array
+    {
         $date = $this->resolveDate($request);
-        $rows = collect();
 
         $purchases = PurchaseDetail::with(['purchase.user', 'purchase.distributor', 'purchase.warehouse', 'purchase.branch', 'product'])
             ->whereHas('purchase', function ($q) use ($date) {
@@ -91,6 +244,7 @@ class DailyReportController extends Controller
                     'tanggal' => $p?->purchase_date,
                     'waktu' => $p?->created_at,
                     'keterangan' => $p?->jenis_pembelian ?? '-',
+                    'nilai' => (float) ($d->subtotal ?? 0),
                     'detail_url' => $p ? route('purchases.show', ['purchase' => $p, 'view' => 'detail']) : null,
                 ];
             });
@@ -110,6 +264,7 @@ class DailyReportController extends Controller
                     'tanggal' => $ig->received_date,
                     'waktu' => $ig->created_at,
                     'keterangan' => $ig->notes ?: '-',
+                    'nilai' => null,
                     'detail_url' => route('incoming-goods.show', $ig),
                 ];
             });
@@ -136,6 +291,7 @@ class DailyReportController extends Controller
                     'tanggal' => $dist?->distribution_date,
                     'waktu' => $dist?->created_at,
                     'keterangan' => $asal.' → '.$tujuan,
+                    'nilai' => (float) $d->quantity * (float) ($d->biaya_distribusi_per_unit ?? 0),
                     'detail_url' => $dist ? route('stock-mutations.invoice', $dist) : null,
                 ];
             });
@@ -163,6 +319,7 @@ class DailyReportController extends Controller
                     'tanggal' => $sale?->sale_date,
                     'waktu' => $sale?->created_at ?? $ti->created_at,
                     'keterangan' => 'Nilai: '.number_format((float) $ti->trade_in_value, 0, ',', '.'),
+                    'nilai' => (float) $ti->trade_in_value,
                     'detail_url' => $sale ? route('sales.show', $sale) : null,
                 ];
             });
@@ -174,16 +331,23 @@ class DailyReportController extends Controller
             ->sortByDesc(fn ($r) => ($r['waktu']?->timestamp ?? 0))
             ->values();
 
-        return view('daily-reports.barang-masuk', [
+        $totalPembelian = (float) Purchase::query()
+            ->whereDate('purchase_date', $date)
+            ->where('status', '!=', 'cancelled')
+            ->sum('total');
+
+        return [
             'date' => $date,
             'rows' => $rows,
-        ]);
+            'totalPembelian' => $totalPembelian,
+        ];
     }
 
-    public function userActivity(Request $request): View
+    /**
+     * @return array{date: string, activities: Collection, users: Collection, transactionTypes: list<string>, filterUserId: ?int, filterJenis: ?string, totalPembelian: ?float, totalPenjualan: ?float}
+     */
+    private function buildUserActivityData(Request $request): array
     {
-        $this->ensureStrictSuperAdmin();
-
         $date = $this->resolveDate($request);
         $userId = $request->filled('user_id') ? (int) $request->user_id : null;
         $jenis = $request->filled('jenis_transaksi') ? (string) $request->jenis_transaksi : null;
@@ -192,22 +356,56 @@ class DailyReportController extends Controller
             ->sortByDesc(fn ($r) => ($r['waktu']?->timestamp ?? 0))
             ->values();
 
-        $users = User::orderBy('name')->get(['id', 'name']);
+        $totalPembelian = null;
+        $totalPenjualan = null;
 
-        return view('daily-reports.user-activity', [
+        if ($jenis === null || $jenis === '' || $jenis === self::TX_PEMBELIAN) {
+            $q = Purchase::query()
+                ->whereDate('purchase_date', $date)
+                ->where('status', '!=', 'cancelled')
+                ->when($userId, fn ($query) => $query->where('user_id', $userId));
+            if ($jenis === self::TX_PEMBELIAN || ($jenis === null || $jenis === '')) {
+                $totalPembelian = (float) $q->sum('total');
+            }
+        }
+
+        if ($jenis === null || $jenis === '' || $jenis === self::TX_PENJUALAN) {
+            $q = Sale::query()
+                ->whereDate('sale_date', $date)
+                ->where('status', '!=', Sale::STATUS_CANCEL)
+                ->when($userId, fn ($query) => $query->where('user_id', $userId));
+            if ($jenis === self::TX_PENJUALAN || ($jenis === null || $jenis === '')) {
+                $totalPenjualan = (float) $q->sum('total');
+            }
+        }
+
+        // Only surface totals relevant to filter selection
+        if ($jenis === self::TX_PEMBELIAN) {
+            $totalPenjualan = null;
+        } elseif ($jenis === self::TX_PENJUALAN) {
+            $totalPembelian = null;
+        } elseif ($jenis !== null && $jenis !== '') {
+            $totalPembelian = null;
+            $totalPenjualan = null;
+        }
+
+        return [
             'date' => $date,
             'activities' => $activities,
-            'users' => $users,
+            'users' => User::orderBy('name')->get(['id', 'name']),
             'transactionTypes' => self::transactionTypes(),
             'filterUserId' => $userId,
             'filterJenis' => $jenis,
-        ]);
+            'totalPembelian' => $totalPembelian,
+            'totalPenjualan' => $totalPenjualan,
+        ];
     }
 
-    public function barangTerjual(Request $request): View
+    /**
+     * @return array{date: string, rows: Collection, totalPenjualan: float}
+     */
+    private function buildBarangTerjualData(Request $request): array
     {
-        $this->ensureStrictSuperAdmin();
-
         $date = $this->resolveDate($request);
 
         $details = SaleDetail::with(['sale.user', 'sale.branch', 'sale.warehouse', 'product'])
@@ -229,6 +427,7 @@ class DailyReportController extends Controller
                     'tanggal' => $sale?->sale_date,
                     'waktu' => $sale?->created_at,
                     'status_lunas' => $sale?->isPaidOff() ? 'Lunas' : 'Belum Lunas',
+                    'nilai' => (float) $d->quantity * (float) ($d->price ?? 0),
                     'total_invoice' => $sale?->total,
                     'detail_url' => $sale ? route('sales.show', $sale) : null,
                 ];
@@ -236,16 +435,23 @@ class DailyReportController extends Controller
             ->sortByDesc(fn ($r) => ($r['waktu']?->timestamp ?? 0))
             ->values();
 
-        return view('daily-reports.barang-terjual', [
+        $totalPenjualan = (float) Sale::query()
+            ->whereDate('sale_date', $date)
+            ->where('status', '!=', Sale::STATUS_CANCEL)
+            ->sum('total');
+
+        return [
             'date' => $date,
             'rows' => $details,
-        ]);
+            'totalPenjualan' => $totalPenjualan,
+        ];
     }
 
-    public function service(Request $request): View
+    /**
+     * @return array{date: string, masuk: Collection, keluar: Collection, menunggu: Collection}
+     */
+    private function buildServiceData(Request $request): array
     {
-        $this->ensureStrictSuperAdmin();
-
         $date = $this->resolveDate($request);
 
         $masuk = Service::with(['user', 'customer', 'branch', 'warehouse'])
@@ -273,18 +479,19 @@ class DailyReportController extends Controller
             ->orderByDesc('entry_date')
             ->get();
 
-        return view('daily-reports.service', [
+        return [
             'date' => $date,
             'masuk' => $masuk,
             'keluar' => $keluar,
             'menunggu' => $menunggu,
-        ]);
+        ];
     }
 
-    public function barangRusak(Request $request): View
+    /**
+     * @return array{date: string, rows: Collection, totalHpp: float}
+     */
+    private function buildBarangRusakData(Request $request): array
     {
-        $this->ensureStrictSuperAdmin();
-
         $date = $this->resolveDate($request);
 
         $rows = DamagedGood::with(['user', 'productUnit.product.category', 'productUnit.branch', 'productUnit.warehouse'])
@@ -292,10 +499,11 @@ class DailyReportController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return view('daily-reports.barang-rusak', [
+        return [
             'date' => $date,
             'rows' => $rows,
-        ]);
+            'totalHpp' => (float) $rows->sum('harga_hpp'),
+        ];
     }
 
     private function ensureStrictSuperAdmin(): void

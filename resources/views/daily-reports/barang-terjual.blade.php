@@ -5,7 +5,17 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
-        @include('daily-reports.partials.date-filter', ['action' => route('daily-reports.barang-terjual'), 'date' => $date])
+        @include('daily-reports.partials.date-filter', [
+            'action' => route('daily-reports.barang-terjual'),
+            'date' => $date,
+            'exportExcel' => 'daily-reports.barang-terjual.export',
+            'exportPdf' => 'daily-reports.barang-terjual.export-pdf',
+        ])
+
+        <div class="card-modern p-6 mb-6">
+            <p class="text-sm text-slate-600">{{ __('Total Penjualan') }} ({{ \Carbon\Carbon::parse($date)->format('d/m/Y') }})</p>
+            <p class="text-2xl font-bold text-emerald-600">{{ number_format($totalPenjualan ?? 0, 0, ',', '.') }}</p>
+        </div>
 
         <div class="card-modern overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100">
