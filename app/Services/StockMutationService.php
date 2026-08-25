@@ -227,8 +227,12 @@ class StockMutationService
                 throw new InvalidArgumentException(__('Quantity must be positive.'));
             }
 
+            // Non-serial categories (e.g. Aksesoris) always reduce Stock.quantity.
+            $product->loadMissing('category');
+            $categoryRequiresSerial = $product->category?->requires_serial ?? true;
+
             // If this location/product is serial-tracked, reduce by marking units as sold.
-            $isSerialTrackedAtLocation = ProductUnit::where('product_id', $product->id)
+            $isSerialTrackedAtLocation = $categoryRequiresSerial && ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $locationType)
                 ->where('location_id', $locationId)
                 ->exists();

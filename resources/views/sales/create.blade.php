@@ -719,11 +719,17 @@
                 const units = Array.isArray(data.units) ? data.units : [];
                 const isTracked = !!data.is_serial_tracked;
 
-                rowSerials.set(row, serials);
-                rowUnits.set(row, units);
+                rowSerials.set(row, isTracked ? serials : []);
+                rowUnits.set(row, isTracked ? units : []);
                 // Enable inputs when product is serial-tracked (even if zero available, allow manual typing/scanning)
                 setSerialInputsEnabled(row, isTracked);
-                renderSerialOptions(row);
+                if (!isTracked) {
+                    serialSelect.innerHTML = '';
+                    const qtyInput = row.querySelector('input[name*="[quantity]"]');
+                    if (qtyInput) qtyInput.removeAttribute('readonly');
+                } else {
+                    renderSerialOptions(row);
+                }
             } catch (e) {
                 rowSerials.set(row, []);
                 rowUnits.set(row, []);

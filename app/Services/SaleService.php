@@ -140,15 +140,13 @@ class SaleService
 
                 // Reserve serial-numbered units for OPEN sale (in_stock -> keep)
                 $productId = (int) $detail['product_id'];
-                $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
-                if ($isSerialTracked) {
+                $product = $product ?? Product::with('category')->find($productId);
+                if ($product && $product->requiresSerialTracking()) {
                     if (count($serialNumbers) !== (int) $detail['quantity']) {
-                        $product = Product::find($productId);
                         throw new InvalidArgumentException(
-                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product?->sku ?? $productId])
+                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
                         );
                     }
-                    $product = Product::findOrFail($productId);
                     $this->stockMutationService->reserveUnits(
                         $product,
                         $locType,
@@ -293,15 +291,13 @@ class SaleService
 
                 // Reserve new selections
                 $productId = (int) $detail['product_id'];
-                $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
-                if ($isSerialTracked) {
+                $product = $product ?? Product::with('category')->find($productId);
+                if ($product && $product->requiresSerialTracking()) {
                     if (count($serialNumbers) !== (int) $detail['quantity']) {
-                        $product = Product::find($productId);
                         throw new InvalidArgumentException(
-                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product?->sku ?? $productId])
+                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
                         );
                     }
-                    $product = Product::findOrFail($productId);
                     $this->stockMutationService->reserveUnits(
                         $product,
                         $sale->stockLocationType(),
@@ -383,8 +379,7 @@ class SaleService
                     $serialNumbers = array_values(array_unique(array_filter(array_map('trim', $serialNumbers))));
                 }
 
-                $isSerialTracked = ProductUnit::where('product_id', $product->id)->exists();
-                if ($isSerialTracked) {
+                if ($product->requiresSerialTracking()) {
                     if (count($serialNumbers) !== (int) $detail->quantity) {
                         throw new InvalidArgumentException(__('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku]));
                     }
@@ -783,7 +778,8 @@ class SaleService
             foreach ($details as $detail) {
                 $productId = (int) $detail->product_id;
                 $serialNumbers = $this->parseSerialNumbersText($detail->serial_numbers);
-                $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
+                $product = Product::with('category')->find($productId);
+                $isSerialTracked = $product?->requiresSerialTracking() ?? false;
 
                 if ($isSerialTracked && ! empty($serialNumbers)) {
                     ProductUnit::where('product_id', $productId)
@@ -900,8 +896,8 @@ class SaleService
 
     private function recalculateLocationStock(int $productId, string $locationType, int $locationId): void
     {
-        $isSerialTracked = ProductUnit::where('product_id', $productId)->exists();
-        if (! $isSerialTracked) {
+        $product = Product::with('category')->find($productId);
+        if (! $product || ! $product->requiresSerialTracking()) {
             return;
         }
         $qty = ProductUnit::where('product_id', $productId)
@@ -944,13 +940,8 @@ class SaleService
             }
 
             $productId = (int) $d->product_id;
-            $isSerialTracked = ProductUnit::query()->where('product_id', $productId)->exists();
-            if (! $isSerialTracked) {
-                continue;
-            }
-
-            $product = Product::find($productId);
-            if (! $product) {
+            $product = Product::with('category')->find($productId);
+            if (! $product || ! $product->requiresSerialTracking()) {
                 continue;
             }
 

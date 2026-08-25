@@ -567,11 +567,10 @@ class SaleController extends Controller
         $locType = $warehouseId ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
         $locId = $warehouseId ?: $branchId;
 
-        $isSerialTracked = ProductUnit::query()
-            ->where('product_id', (int) $validated['product_id'])
-            ->exists();
+        $product = Product::with('category')->find((int) $validated['product_id']);
+        $isSerialTracked = $product?->requiresSerialTracking() ?? false;
 
-        if (! $locId) {
+        if (! $locId || ! $isSerialTracked) {
             return response()->json([
                 'serial_numbers' => [],
                 'units' => [],

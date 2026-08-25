@@ -89,6 +89,21 @@ class Product extends Model
     }
 
     /**
+     * Whether sales/stock for this product must use serial numbers.
+     * Categories with requires_serial=false (e.g. Aksesoris) are qty-only.
+     */
+    public function requiresSerialTracking(): bool
+    {
+        $this->loadMissing('category');
+
+        if (! ($this->category?->requires_serial ?? true)) {
+            return false;
+        }
+
+        return $this->units()->exists();
+    }
+
+    /**
      * Check if any unit of this product has been sold.
      */
     public function hasSoldUnits(): bool
