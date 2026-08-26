@@ -138,21 +138,24 @@ class SaleService
                     'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
                 ]);
 
-                // Reserve serial-numbered units for OPEN sale (in_stock -> keep)
+                // Reserve serial: wajib untuk produk serial-tracked; opsional untuk aksesoris berserial lama.
                 $productId = (int) $detail['product_id'];
                 $product = $product ?? Product::with('category')->find($productId);
-                if ($product && $product->requiresSerialTracking()) {
-                    if (count($serialNumbers) !== (int) $detail['quantity']) {
-                        throw new InvalidArgumentException(
-                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
+                if ($product) {
+                    $requiresSerial = $product->requiresSerialTracking();
+                    if ($requiresSerial || ! empty($serialNumbers)) {
+                        if (count($serialNumbers) !== (int) $detail['quantity']) {
+                            throw new InvalidArgumentException(
+                                __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
+                            );
+                        }
+                        $this->stockMutationService->reserveUnits(
+                            $product,
+                            $locType,
+                            $locId,
+                            $serialNumbers
                         );
                     }
-                    $this->stockMutationService->reserveUnits(
-                        $product,
-                        $locType,
-                        $locId,
-                        $serialNumbers
-                    );
                 }
             }
 
@@ -292,18 +295,21 @@ class SaleService
                 // Reserve new selections
                 $productId = (int) $detail['product_id'];
                 $product = $product ?? Product::with('category')->find($productId);
-                if ($product && $product->requiresSerialTracking()) {
-                    if (count($serialNumbers) !== (int) $detail['quantity']) {
-                        throw new InvalidArgumentException(
-                            __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
+                if ($product) {
+                    $requiresSerial = $product->requiresSerialTracking();
+                    if ($requiresSerial || ! empty($serialNumbers)) {
+                        if (count($serialNumbers) !== (int) $detail['quantity']) {
+                            throw new InvalidArgumentException(
+                                __('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku ?? $productId])
+                            );
+                        }
+                        $this->stockMutationService->reserveUnits(
+                            $product,
+                            $sale->stockLocationType(),
+                            $sale->stockLocationId(),
+                            $serialNumbers
                         );
                     }
-                    $this->stockMutationService->reserveUnits(
-                        $product,
-                        $sale->stockLocationType(),
-                        $sale->stockLocationId(),
-                        $serialNumbers
-                    );
                 }
             }
 
@@ -379,7 +385,8 @@ class SaleService
                     $serialNumbers = array_values(array_unique(array_filter(array_map('trim', $serialNumbers))));
                 }
 
-                if ($product->requiresSerialTracking()) {
+                $requiresSerial = $product->requiresSerialTracking();
+                if ($requiresSerial || ! empty($serialNumbers)) {
                     if (count($serialNumbers) !== (int) $detail->quantity) {
                         throw new InvalidArgumentException(__('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku]));
                     }
@@ -941,7 +948,7 @@ class SaleService
 
             $productId = (int) $d->product_id;
             $product = Product::with('category')->find($productId);
-            if (! $product || ! $product->requiresSerialTracking()) {
+            if (! $product) {
                 continue;
             }
 

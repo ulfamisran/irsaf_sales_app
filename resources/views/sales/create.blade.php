@@ -718,17 +718,25 @@
                 const serials = Array.isArray(data.serial_numbers) ? data.serial_numbers : [];
                 const units = Array.isArray(data.units) ? data.units : [];
                 const isTracked = !!data.is_serial_tracked;
+                const hasLegacySerials = !!data.has_legacy_serials;
+                const enableSerials = isTracked || hasLegacySerials;
 
-                rowSerials.set(row, isTracked ? serials : []);
-                rowUnits.set(row, isTracked ? units : []);
-                // Enable inputs when product is serial-tracked (even if zero available, allow manual typing/scanning)
-                setSerialInputsEnabled(row, isTracked);
-                if (!isTracked) {
+                rowSerials.set(row, enableSerials ? serials : []);
+                rowUnits.set(row, enableSerials ? units : []);
+                // Enable when serial-tracked (wajib) atau ada sisa serial aksesoris lama (opsional)
+                setSerialInputsEnabled(row, enableSerials);
+                if (!enableSerials) {
                     serialSelect.innerHTML = '';
                     const qtyInput = row.querySelector('input[name*="[quantity]"]');
                     if (qtyInput) qtyInput.removeAttribute('readonly');
                 } else {
                     renderSerialOptions(row);
+                    if (hasLegacySerials && !isTracked) {
+                        const qtyInput = row.querySelector('input[name*="[quantity]"]');
+                        if (qtyInput && (serialSelect.selectedOptions || []).length === 0) {
+                            qtyInput.removeAttribute('readonly');
+                        }
+                    }
                 }
             } catch (e) {
                 rowSerials.set(row, []);

@@ -180,19 +180,42 @@ class StockMutationService
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
+        $product->loadMissing('category');
+        $categoryRequiresSerial = $product->category?->requires_serial ?? true;
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
+
+        // Aksesoris / kategori non-serial: selalu stok berbasis qty.
+        // Unit berserial lama tetap dipertahankan agar masih bisa dijual (qty atau pilih serial).
+        if (! $categoryRequiresSerial) {
+            if (! empty($serialNumbers)) {
+                $quantity = max($quantity, count($serialNumbers));
+            }
+
+            return DB::transaction(function () use ($product, $locationType, $locationId, $quantity) {
+                $this->syncNonSerialStockFloor($product, $locationType, $locationId);
+
+                $stock = Stock::firstOrCreate(
+                    [
+                        'product_id' => $product->id,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                    ],
+                    ['quantity' => 0]
+                );
+
+                $stock->increment('quantity', $quantity);
+
+                return $stock->fresh();
+            });
+        }
+
         if (! empty($serialNumbers)) {
             return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $purchasePrice, $sellingPrice, $allowSoldSerialReuse);
         }
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $userId) {
-            // Kategori non-serial (mis. Aksesoris) selalu boleh ditambah stoknya via qty saja,
-            // meskipun SKU ini kebetulan punya riwayat ProductUnit dari data lama.
-            $categoryRequiresSerial = $product->category?->requires_serial ?? true;
-
-            // If this product already uses serial-numbered units, require serial numbers.
-            $isSerialTracked = $categoryRequiresSerial && ProductUnit::where('product_id', $product->id)->exists();
-            if ($isSerialTracked) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $quantity) {
+            // Kategori berserial yang sudah punya unit wajib input serial.
+            if (ProductUnit::where('product_id', $product->id)->exists()) {
                 throw new InvalidArgumentException(__('Produk ini memakai nomor serial. Mohon masukkan nomor serial.'));
             }
 
@@ -227,12 +250,53 @@ class StockMutationService
                 throw new InvalidArgumentException(__('Quantity must be positive.'));
             }
 
-            // Non-serial categories (e.g. Aksesoris) always reduce Stock.quantity.
             $product->loadMissing('category');
             $categoryRequiresSerial = $product->category?->requires_serial ?? true;
 
+            // Aksesoris: pastikan sisa unit berserial masuk ke qty, jual FIFO unit lalu kurangi Stock.quantity.
+            if (! $categoryRequiresSerial) {
+                $this->syncNonSerialStockFloor($product, $locationType, $locationId);
+
+                $stock = Stock::firstOrCreate(
+                    [
+                        'product_id' => $product->id,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                    ],
+                    ['quantity' => 0]
+                );
+
+                if ($stock->quantity < $quantity) {
+                    throw new InvalidArgumentException(
+                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
+                    );
+                }
+
+                // Habiskan dulu unit berserial lama (FIFO), sisanya dari stok qty murni.
+                $unitIds = ProductUnit::where('product_id', $product->id)
+                    ->where('location_type', $locationType)
+                    ->where('location_id', $locationId)
+                    ->where('status', ProductUnit::STATUS_IN_STOCK)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->limit($quantity)
+                    ->pluck('id')
+                    ->all();
+
+                if (! empty($unitIds)) {
+                    ProductUnit::whereIn('id', $unitIds)->update([
+                        'status' => ProductUnit::STATUS_SOLD,
+                        'sold_at' => Carbon::now(),
+                    ]);
+                }
+
+                $stock->decrement('quantity', $quantity);
+
+                return $stock->fresh();
+            }
+
             // If this location/product is serial-tracked, reduce by marking units as sold.
-            $isSerialTrackedAtLocation = $categoryRequiresSerial && ProductUnit::where('product_id', $product->id)
+            $isSerialTrackedAtLocation = ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $locationType)
                 ->where('location_id', $locationId)
                 ->exists();
@@ -335,7 +399,27 @@ class StockMutationService
                 'sold_at' => $soldAt,
             ]);
 
-            $this->recalculateStockQuantity($product->id, $locationType, $locationId);
+            $product->loadMissing('category');
+            if (! ($product->category?->requires_serial ?? true)) {
+                // Kategori non-serial: stok qty adalah sumber kebenaran — kurangi sesuai jumlah serial terjual.
+                $stock = Stock::firstOrCreate(
+                    [
+                        'product_id' => $product->id,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
+                    ],
+                    ['quantity' => 0]
+                );
+                $soldCount = count($serialNumbers);
+                if ((int) $stock->quantity < $soldCount) {
+                    throw new InvalidArgumentException(
+                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
+                    );
+                }
+                $stock->decrement('quantity', $soldCount);
+            } else {
+                $this->recalculateStockQuantity($product->id, $locationType, $locationId);
+            }
         });
     }
 
@@ -763,8 +847,13 @@ class StockMutationService
 
     private function recalculateStockQuantity(int $productId, string $locationType, int $locationId): void
     {
-        $isSerialTracked = ProductUnit::where('product_id', $productId)->exists();
-        if (! $isSerialTracked) {
+        $product = Product::with('category')->find($productId);
+        // Jangan timpa stok qty untuk kategori non-serial (mis. Aksesoris).
+        if (! $product || ! ($product->category?->requires_serial ?? true)) {
+            return;
+        }
+
+        if (! ProductUnit::where('product_id', $productId)->exists()) {
             return;
         }
 
@@ -782,6 +871,58 @@ class StockMutationService
             ],
             ['quantity' => $qty]
         );
+    }
+
+    /**
+     * Pastikan Stock.quantity tidak lebih rendah dari sisa unit berserial aksesoris.
+     * Unit yang sempat dinonaktifkan (migrasi qty) dihidupkan lagi agar tetap bisa dijual.
+     */
+    private function syncNonSerialStockFloor(
+        Product $product,
+        string $locationType,
+        int $locationId
+    ): void {
+        $product->loadMissing('category');
+        if ($product->category?->requires_serial ?? true) {
+            return;
+        }
+
+        // Pulihkan unit yang sebelumnya dialihkan ke qty agar masih bisa dipilih/dijual.
+        $absorbedIds = ProductUnit::where('product_id', $product->id)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
+            ->where('status', ProductUnit::STATUS_NOT_IN_STOCK)
+            ->where('notes', 'Dialihkan ke stok qty (kategori non-serial)')
+            ->lockForUpdate()
+            ->pluck('id')
+            ->all();
+
+        if (! empty($absorbedIds)) {
+            ProductUnit::whereIn('id', $absorbedIds)->update([
+                'status' => ProductUnit::STATUS_IN_STOCK,
+                'notes' => null,
+            ]);
+        }
+
+        $unitCount = ProductUnit::where('product_id', $product->id)
+            ->where('location_type', $locationType)
+            ->where('location_id', $locationId)
+            ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
+            ->lockForUpdate()
+            ->count();
+
+        $stock = Stock::firstOrCreate(
+            [
+                'product_id' => $product->id,
+                'location_type' => $locationType,
+                'location_id' => $locationId,
+            ],
+            ['quantity' => 0]
+        );
+
+        if ((int) $stock->quantity < $unitCount) {
+            $stock->update(['quantity' => $unitCount]);
+        }
     }
 
     /**

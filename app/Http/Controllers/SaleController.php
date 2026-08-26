@@ -570,11 +570,12 @@ class SaleController extends Controller
         $product = Product::with('category')->find((int) $validated['product_id']);
         $isSerialTracked = $product?->requiresSerialTracking() ?? false;
 
-        if (! $locId || ! $isSerialTracked) {
+        if (! $locId || ! $product) {
             return response()->json([
                 'serial_numbers' => [],
                 'units' => [],
-                'is_serial_tracked' => $isSerialTracked,
+                'is_serial_tracked' => false,
+                'has_legacy_serials' => false,
             ]);
         }
 
@@ -587,6 +588,18 @@ class SaleController extends Controller
             ->limit(500)
             ->get(['serial_number', 'harga_jual', 'harga_hpp']);
 
+        // Aksesoris non-serial tetap bisa punya sisa unit berserial dari input lama.
+        $hasLegacySerials = ! $isSerialTracked && $units->isNotEmpty();
+
+        if (! $isSerialTracked && ! $hasLegacySerials) {
+            return response()->json([
+                'serial_numbers' => [],
+                'units' => [],
+                'is_serial_tracked' => false,
+                'has_legacy_serials' => false,
+            ]);
+        }
+
         $serials = $units->pluck('serial_number')->all();
         $unitsData = $units->map(fn ($u) => [
             'serial_number' => $u->serial_number,
@@ -598,6 +611,7 @@ class SaleController extends Controller
             'serial_numbers' => $serials,
             'units' => $unitsData,
             'is_serial_tracked' => $isSerialTracked,
+            'has_legacy_serials' => $hasLegacySerials,
         ]);
     }
 

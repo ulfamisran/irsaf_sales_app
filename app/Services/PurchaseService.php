@@ -291,20 +291,24 @@ class PurchaseService
         bool $allowSoldSerialReuse
     ): void {
         foreach ($details as $detail) {
+            $product = Product::with('category')->findOrFail($detail['product_id']);
+            $product->update(['is_active' => true]);
+            $serialNumbers = $detail['serial_numbers'] ?? [];
+            // Kategori non-serial: stok berbasis qty; serial tidak dipakai/disimpan.
+            if (! ($product->category?->requires_serial ?? true)) {
+                $serialNumbers = [];
+            }
+            $unitPrice = round((float) ($detail['unit_price'] ?? 0), 2);
+            $sellingPrice = round((float) ($product->selling_price ?? 0), 2);
+
             PurchaseDetail::create([
                 'purchase_id' => $purchase->id,
                 'product_id' => $detail['product_id'],
                 'quantity' => $detail['quantity'],
                 'unit_price' => $detail['unit_price'],
                 'subtotal' => $detail['subtotal'],
-                'serial_numbers' => ! empty($detail['serial_numbers']) ? implode("\n", $detail['serial_numbers']) : null,
+                'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
             ]);
-
-            $product = Product::findOrFail($detail['product_id']);
-            $product->update(['is_active' => true]);
-            $serialNumbers = $detail['serial_numbers'] ?? [];
-            $unitPrice = round((float) ($detail['unit_price'] ?? 0), 2);
-            $sellingPrice = round((float) ($product->selling_price ?? 0), 2);
 
             $this->stockMutationService->addStock(
                 $product,

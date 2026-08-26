@@ -447,17 +447,25 @@
                 const apiSerials = Array.isArray(data.serial_numbers) ? data.serial_numbers : [];
                 const units = Array.isArray(data.units) ? data.units : [];
                 const isTracked = !!data.is_serial_tracked;
-                const serials = isTracked ? [...new Set([...apiSerials, ...existingSelected])] : [];
+                const hasLegacySerials = !!data.has_legacy_serials;
+                const enableSerials = isTracked || hasLegacySerials;
+                const serials = enableSerials ? [...new Set([...apiSerials, ...existingSelected])] : [];
 
                 rowSerials.set(row, serials);
-                rowUnits.set(row, isTracked ? units : []);
-                setSerialInputsEnabled(row, isTracked);
-                if (!isTracked) {
+                rowUnits.set(row, enableSerials ? units : []);
+                setSerialInputsEnabled(row, enableSerials);
+                if (!enableSerials) {
                     serialSelect.innerHTML = '';
                     const qtyInput = row.querySelector('input[name*="[quantity]"]');
                     if (qtyInput) qtyInput.removeAttribute('readonly');
                 } else {
                     renderSerialOptions(row);
+                    if (hasLegacySerials && !isTracked) {
+                        const qtyInput = row.querySelector('input[name*="[quantity]"]');
+                        if (qtyInput && (serialSelect.selectedOptions || []).length === 0) {
+                            qtyInput.removeAttribute('readonly');
+                        }
+                    }
                 }
             } catch (e) {
                 rowSerials.set(row, []);
