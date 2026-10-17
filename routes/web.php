@@ -450,10 +450,10 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.store');
     Route::get('cash-flows/out/list', [CashFlowController::class, 'outIndex'])
-        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.index');
     Route::get('cash-flows/out/create', [CashFlowController::class, 'createOut'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.create');
     Route::get('cash-flows/out/{cashFlow}/edit', [CashFlowController::class, 'editOut'])
         ->middleware('role:super_admin,admin_pusat')
@@ -465,10 +465,10 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:super_admin,admin_pusat')
         ->name('cash-flows.out.destroy');
     Route::get('cash-flows/out/external/list', [CashFlowController::class, 'outExternalIndex'])
-        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.external.index');
     Route::get('cash-flows/out/external/create', [CashFlowController::class, 'createOutExternal'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.external.create');
     Route::get('cash-flows/out/external/{cashFlow}/edit', [CashFlowController::class, 'editOutExternal'])
         ->middleware('role:super_admin,admin_pusat')
@@ -480,13 +480,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:super_admin,admin_pusat')
         ->name('cash-flows.out.external.destroy');
     Route::post('cash-flows/out/external', [CashFlowController::class, 'storeOutExternal'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.external.store');
     Route::get('cash-flows/out/{cashFlow}', [CashFlowController::class, 'showOut'])
-        ->middleware('role:admin_cabang,super_admin,admin_pusat')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.show');
     Route::post('cash-flows/out', [CashFlowController::class, 'storeOut'])
-        ->middleware('role:admin_cabang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.store');
 
     Route::get('cash-flows/saldo-adjustment', [\App\Http\Controllers\SaldoAdjustmentController::class, 'index'])
