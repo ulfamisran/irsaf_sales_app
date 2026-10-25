@@ -7,8 +7,8 @@
                 <p class="text-sm text-slate-600 mt-1">{{ $unit->product?->sku }} - {{ $unit->product?->brand }} {{ $unit->product?->series }}</p>
             </div>
             <div class="flex gap-2">
-                @if (auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat())
-                    <x-icon-btn-edit :href="route('products.units.edit', [$unit->product, $unit])" :label="__('Edit')" />
+                @if (auth()->user()?->isSuperAdminOrAdminPusat() && $unit->product)
+                    <x-icon-btn-edit :href="route('products.units.edit', [$unit->product, $unit])" :label="__('Update Unit')" />
                 @endif
                 <x-icon-btn-back :href="route('stock-units.index')" :label="__('Kembali')" />
             </div>
@@ -137,5 +137,52 @@
                 @endif
             </div>
         </div>
+
+        @if (auth()->user()?->isSuperAdminOrAdminPusat())
+        <div class="card-modern overflow-hidden mt-6">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">{{ __('Log Perubahan Unit') }}</h3>
+            </div>
+            <div class="p-6 overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Unit') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Perubahan') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Alasan') }}</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        @forelse ($unit->changeLogs as $log)
+                            <tr>
+                                <td class="px-3 py-2 whitespace-nowrap">{{ $log->changed_at?->format('d/m/Y H:i') }}</td>
+                                <td class="px-3 py-2 font-mono text-xs">{{ $log->serial_snapshot ?? $unit->serial_number }}</td>
+                                <td class="px-3 py-2">
+                                    <ul class="space-y-0.5 text-xs text-slate-700">
+                                        @foreach (($log->changes ?? []) as $field => $diff)
+                                            <li>
+                                                <span class="font-medium">{{ $field }}</span>:
+                                                <span class="text-rose-600">{{ is_numeric($diff['old'] ?? null) ? number_format((float) $diff['old'], 0, ',', '.') : ($diff['old'] ?? '-') }}</span>
+                                                →
+                                                <span class="text-emerald-700">{{ is_numeric($diff['new'] ?? null) ? number_format((float) $diff['new'], 0, ',', '.') : ($diff['new'] ?? '-') }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </td>
+                                <td class="px-3 py-2">{{ $log->reason }}</td>
+                                <td class="px-3 py-2">{{ $log->user?->name ?? '-' }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5" class="px-3 py-8 text-center text-slate-500">{{ __('Belum ada log perubahan unit.') }}</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @endif
     </div>
 </x-app-layout>

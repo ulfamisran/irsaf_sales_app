@@ -119,36 +119,34 @@ class ServiceService
                 'description' => $description,
             ]);
 
+            $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
             foreach ($payments as $p) {
                 $amt = round((float) ($p['amount'] ?? 0), 2);
                 if ($amt <= 0) {
                     continue;
                 }
-                ServicePayment::create([
-                    'service_id' => $service->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-            }
-
-            $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
-            foreach (ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get() as $sp) {
-                $pm = $sp->paymentMethod;
+                $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $branchId ?: null,
                     'warehouse_id' => $warehouseId ?: null,
                     'type' => CashFlow::TYPE_IN,
-                    'amount' => $sp->amount,
+                    'amount' => $amt,
                     'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
                     'income_category_id' => $serviceCategory->id,
-                    'payment_method_id' => $sp->payment_method_id,
+                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $entryDate,
                     'user_id' => $userId ?? auth()->id(),
+                ]);
+                ServicePayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'service_id' => $service->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 
@@ -243,40 +241,38 @@ class ServiceService
             $service->update($updates);
 
             ServicePayment::where('service_id', $service->id)->delete();
-            foreach ($payments as $p) {
-                $amt = round((float) ($p['amount'] ?? 0), 2);
-                if ($amt <= 0) {
-                    continue;
-                }
-                ServicePayment::create([
-                    'service_id' => $service->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-            }
-
             CashFlow::where('reference_type', CashFlow::REFERENCE_SERVICE)
                 ->where('reference_id', $service->id)
                 ->delete();
 
             $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
-            foreach (ServicePayment::with('paymentMethod')->where('service_id', $service->id)->get() as $sp) {
-                $pm = $sp->paymentMethod;
+            foreach ($payments as $p) {
+                $amt = round((float) ($p['amount'] ?? 0), 2);
+                if ($amt <= 0) {
+                    continue;
+                }
+                $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $service->branch_id ?: null,
                     'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_IN,
-                    'amount' => $sp->amount,
+                    'amount' => $amt,
                     'description' => $this->serviceCashInDescription($service->invoice_number, $totalPrice, $pmLabel),
                     'reference_type' => CashFlow::REFERENCE_SERVICE,
                     'reference_id' => $service->id,
                     'income_category_id' => $serviceCategory->id,
-                    'payment_method_id' => $sp->payment_method_id,
+                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $entryDate,
                     'user_id' => auth()->id(),
+                ]);
+                ServicePayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'service_id' => $service->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 
@@ -333,19 +329,6 @@ class ServiceService
             $markPickedUp,
             $userId
         ) {
-            foreach ($payments as $p) {
-                $amt = round((float) ($p['amount'] ?? 0), 2);
-                if ($amt <= 0) {
-                    continue;
-                }
-                ServicePayment::create([
-                    'service_id' => $service->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-            }
-
             $txDate = $exitDate ?? $service->entry_date->toDateString();
             $serviceCategory = IncomeCategory::resolveByCode('SERV', 'Service');
             foreach ($payments as $p) {
@@ -356,7 +339,7 @@ class ServiceService
                 $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $service->branch_id ?: null,
                     'warehouse_id' => $service->warehouse_id ?: null,
                     'type' => CashFlow::TYPE_IN,
@@ -368,6 +351,13 @@ class ServiceService
                     'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $txDate,
                     'user_id' => $userId ?? auth()->id(),
+                ]);
+                ServicePayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'service_id' => $service->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 

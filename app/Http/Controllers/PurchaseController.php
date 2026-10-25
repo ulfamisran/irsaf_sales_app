@@ -16,6 +16,7 @@ use App\Models\Service;
 use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
+use App\Services\PurchaseReceivingService;
 use App\Services\PurchaseService;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -31,22 +32,134 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class PurchaseController extends Controller
 {
     public function __construct(
-        protected PurchaseService $purchaseService
+        protected PurchaseService $purchaseService,
+        protected PurchaseReceivingService $receivingService
     ) {}
 
     public function index(Request $request): View
     {
-        $user = $request->user();
         $ctx = $this->buildPurchasesListQuery($request);
-        $query = $ctx['query'];
+        $tab = $request->get('tab', 'daftar');
+        if (! in_array($tab, ['daftar', 'nilai', 'utang', 'penangguhan'], true)) {
+            $tab = 'daftar';
+        }
 
-        $totalUnpaid = (float) (clone $query)->reorder()
-            ->where('status', '!=', Purchase::STATUS_CANCELLED)
-            ->where('total', '>', 0)
-            ->whereColumn('total_paid', '<', 'total')
-            ->sum(DB::raw('total - total_paid'));
+        $totalUnpaid = 0.0;
+        $totalRecognized = 0.0;
+        $purchases = (clone $ctx['query'])->paginate(20)->withQueryString();
 
-        $purchases = $query->paginate(20)->withQueryString();
+        if ($tab === 'nilai') {
+            $nilaiQuery = (clone $ctx['query'])->with([
+                'distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments',
+            ]);
+            $allRows = $nilaiQuery->get()->map(function (Purchase $p) {
+                return (object) [
+                    'purchase' => $p,
+                    'summary' => $this->receivingService->summarize($p),
+                ];
+            });
+
+            if ($request->filled('check_status')) {
+                $checkStatus = (string) $request->check_status;
+                $allRows = $allRows->filter(fn ($r) => ($r->summary['check_status'] ?? '') === $checkStatus)->values();
+            }
+            if ($request->filled('payment_status')) {
+                $payStatus = (string) $request->payment_status;
+                $allRows = $allRows->filter(fn ($r) => ($r->summary['payment_status'] ?? '') === $payStatus)->values();
+            }
+
+            $totalRecognized = (float) $allRows->sum(fn ($r) => (float) $r->summary['recognized_debt']);
+            $totalUnpaid = (float) $allRows->sum(fn ($r) => (float) $r->summary['remaining_recognized']);
+
+            $page = max(1, (int) $request->get('page', 1));
+            $perPage = 20;
+            $slice = $allRows->slice(($page - 1) * $perPage, $perPage)->values();
+            $purchases = new \Illuminate\Pagination\LengthAwarePaginator(
+                $slice,
+                $allRows->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } elseif ($tab === 'utang') {
+            $utangQuery = (clone $ctx['query'])
+                ->where('status', '!=', Purchase::STATUS_CANCELLED)
+                ->with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments']);
+
+            $utangRows = $utangQuery->get()->map(function (Purchase $p) {
+                $summary = $this->receivingService->summarize($p);
+
+                return (object) [
+                    'purchase' => $p,
+                    'summary' => $summary,
+                    'recognized' => (float) $summary['recognized_debt'],
+                    'paid' => (float) $summary['paid'],
+                    'remaining' => (float) $summary['remaining_recognized'],
+                    'units' => $this->receivingService->listRecognizedItems($p),
+                ];
+            })->filter(fn ($r) => (float) $r->remaining > 0.02)->values();
+
+            $totalUnpaid = (float) $utangRows->sum('remaining');
+            $totalRecognized = (float) $utangRows->sum('recognized');
+
+            $page = max(1, (int) $request->get('page', 1));
+            $perPage = 20;
+            $slice = $utangRows->slice(($page - 1) * $perPage, $perPage)->values();
+            $purchases = new \Illuminate\Pagination\LengthAwarePaginator(
+                $slice,
+                $utangRows->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } elseif ($tab === 'penangguhan') {
+            $pendingQuery = (clone $ctx['query'])
+                ->where('status', '!=', Purchase::STATUS_CANCELLED)
+                ->with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments']);
+
+            $pendingRows = $pendingQuery->get()->map(function (Purchase $p) {
+                $deferredItems = $this->receivingService->listDeferredItems($p);
+                $summary = $this->receivingService->summarize($p);
+
+                return (object) [
+                    'purchase' => $p,
+                    'summary' => $summary,
+                    'deferred_items' => $deferredItems,
+                    'deferred_value' => (float) $summary['deferred_value'],
+                ];
+            })->filter(fn ($r) => count($r->deferred_items) > 0)->values();
+
+            $totalUnpaid = (float) $pendingRows->sum('deferred_value');
+            $totalRecognized = 0.0;
+
+            $page = max(1, (int) $request->get('page', 1));
+            $perPage = 20;
+            $slice = $pendingRows->slice(($page - 1) * $perPage, $perPage)->values();
+            $purchases = new \Illuminate\Pagination\LengthAwarePaginator(
+                $slice,
+                $pendingRows->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } else {
+            $daftarQuery = (clone $ctx['query'])->with([
+                'distributor', 'warehouse', 'branch', 'user', 'details.product.category', 'details.units', 'payments',
+            ]);
+            $purchases = $daftarQuery->paginate(20)->withQueryString();
+            $mapped = $purchases->getCollection()->map(function (Purchase $p) {
+                $summary = $this->receivingService->summarize($p);
+
+                return (object) [
+                    'purchase' => $p,
+                    'summary' => $summary,
+                ];
+            });
+            $purchases->setCollection($mapped);
+            $totalRecognized = (float) $mapped->sum(fn ($r) => (float) $r->summary['recognized_debt']);
+            $totalUnpaid = (float) $mapped->sum(fn ($r) => (float) $r->summary['remaining_recognized']);
+        }
+
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $distributors = Distributor::orderBy('name')->get(['id', 'name']);
@@ -60,7 +173,50 @@ class PurchaseController extends Controller
             'filterLocked' => $ctx['filterLocked'],
             'locationLabel' => $ctx['locationLabel'],
             'totalUnpaid' => $totalUnpaid,
+            'totalRecognized' => $totalRecognized,
+            'tab' => $tab,
         ]);
+    }
+
+    public function resolveDeferred(Request $request, Purchase $purchase): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            abort(403, __('Unauthorized.'));
+        }
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && (int) $purchase->branch_id !== (int) $user->branch_id) {
+                abort(403);
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && (int) $purchase->warehouse_id !== (int) $user->warehouse_id) {
+                abort(403);
+            }
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:diterima,diretur'],
+            'unit_id' => ['nullable', 'integer', 'exists:product_units,id'],
+            'purchase_detail_id' => ['nullable', 'integer', 'exists:purchase_details,id'],
+            'qty' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        if (empty($validated['unit_id']) && empty($validated['purchase_detail_id'])) {
+            return back()->with('error', __('Pilih unit atau detail penangguhan.'));
+        }
+
+        try {
+            $this->receivingService->resolveDeferred($purchase, $validated, (int) $user->id);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $msg = $validated['action'] === 'diterima'
+            ? __('Unit diterima (masuk stok).')
+            : __('Unit diretur.');
+
+        return redirect()
+            ->route('purchases.index', ['tab' => 'penangguhan'])
+            ->with('success', $msg);
     }
 
     public function export(Request $request): StreamedResponse
@@ -561,9 +717,20 @@ class PurchaseController extends Controller
             }
         }
 
-        $purchase->load(['distributor', 'warehouse', 'branch', 'user', 'details.product', 'payments.paymentMethod', 'payments.user', 'service']);
+        $purchase->load([
+            'distributor',
+            'warehouse',
+            'branch',
+            'user',
+            'details.product.category',
+            'details.units',
+            'payments.paymentMethod',
+            'payments.user',
+            'service',
+        ]);
+        $receivingSummary = $this->receivingService->summarize($purchase);
 
-        return view('purchases.show', compact('purchase'));
+        return view('purchases.show', compact('purchase', 'receivingSummary'));
     }
 
     public function addPayment(Request $request, Purchase $purchase): RedirectResponse
@@ -580,9 +747,6 @@ class PurchaseController extends Controller
 
         if ($purchase->isCancelled()) {
             return back()->with('error', __('Pembelian ini sudah dibatalkan.'));
-        }
-        if ($purchase->isPaidOff()) {
-            return back()->with('error', __('Pembelian ini sudah lunas.'));
         }
 
         $paymentsInput = $request->input('payments', []);
@@ -604,7 +768,11 @@ class PurchaseController extends Controller
         $locationType = $purchase->warehouse_id ? 'warehouse' : 'branch';
         $locationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
         $kasService = new KasBalanceService;
-        $remaining = max(0, (float) $purchase->total - (float) ($purchase->total_paid ?? 0));
+        // Batas pembayaran = sisa nilai invoice (uang muka boleh sebelum ada utang terakui).
+        $invoiceRemaining = max(0, (float) $purchase->total - (float) ($purchase->total_paid ?? 0));
+        if ($invoiceRemaining <= 0.02) {
+            return back()->with('error', __('Pembayaran sudah mencapai nilai invoice.'));
+        }
         $totalPayment = 0.0;
         $amountPerPm = [];
 
@@ -615,9 +783,9 @@ class PurchaseController extends Controller
             $amountPerPm[$pmId] = ($amountPerPm[$pmId] ?? 0) + $amount;
         }
 
-        if ($totalPayment > $remaining + 0.02) {
-            return back()->withInput()->with('error', __('Total pembayaran tidak boleh melebihi sisa hutang: Rp :sisa', [
-                'sisa' => number_format($remaining, 0, ',', '.'),
+        if ($totalPayment > $invoiceRemaining + 0.02) {
+            return back()->withInput()->with('error', __('Total pembayaran tidak boleh melebihi sisa nilai invoice: Rp :sisa', [
+                'sisa' => number_format($invoiceRemaining, 0, ',', '.'),
             ]));
         }
 
@@ -637,7 +805,15 @@ class PurchaseController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('purchases.show', $purchase)->with('success', __('Pembayaran berhasil dicatat.'));
+        $showParams = ['purchase' => $purchase];
+        if ($request->input('from') === 'debts') {
+            $showParams['from'] = 'debts';
+            $showParams['view'] = 'detail';
+        }
+
+        return redirect()
+            ->route('purchases.show', $showParams)
+            ->with('success', __('Pembayaran berhasil dicatat.'));
     }
 
     public function cancel(Request $request, Purchase $purchase): RedirectResponse

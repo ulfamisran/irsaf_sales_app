@@ -17,7 +17,16 @@
                         {{ __('Ubah pembelian') }}
                     </a>
                 @endif
-                <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali ke Riwayat')" />
+                @if (auth()->user()?->isSuperAdminOrAdminPusat() && ! $purchase->isCancelled())
+                    <a href="{{ route('admin-tx.edit-purchase', $purchase) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
+                        {{ __('Update Transaksi') }}
+                    </a>
+                @endif
+                @if (request('from') === 'debts')
+                    <x-icon-btn-back :href="route('debts.index')" :label="__('Kembali ke Data Utang')" />
+                @else
+                    <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali ke Riwayat')" />
+                @endif
             </div>
         </div>
     </x-slot>
@@ -124,16 +133,44 @@
                         </tfoot>
                     </table>
 
-                    @php $sisaBayar = max(0, (float)$purchase->total - (float)($purchase->total_paid ?? 0)); @endphp
-                    <div class="mt-6 mb-6 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                    @php
+                        $receivingSummary = $receivingSummary ?? app(\App\Services\PurchaseReceivingService::class)->summarize($purchase);
+                        $utangTerakui = (float) ($receivingSummary['recognized_debt'] ?? 0);
+                        $totalDibayar = (float) ($purchase->total_paid ?? 0);
+                        $sisaBayar = max(0, $utangTerakui - $totalDibayar);
+                        $sisaInvoice = max(0, (float) $purchase->total - $totalDibayar);
+                        $isUangMukaMode = $utangTerakui <= 0.02;
+                        $lunasTerakui = $utangTerakui > 0.02 && $sisaBayar <= 0.02;
+                        $canPayMore = ! $purchase->isCancelled() && $sisaInvoice > 0.02;
+                    @endphp
+                    <div id="riwayat-pembayaran" class="mt-6 mb-6 rounded-lg border border-slate-200 bg-slate-50/50 p-4 scroll-mt-24">
                         <p class="text-sm font-semibold text-gray-800 mb-3">{{ __('Riwayat Pembayaran') }}</p>
-                        @if ($purchase->isPaidOff())
-                            <p class="text-xs text-emerald-700 font-medium mb-2">{{ __('Lunas') }}</p>
-                        @else
-                            <div class="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                                <p class="text-sm font-semibold text-amber-800">{{ __('Sisa yang harus dibayar') }}: Rp {{ number_format($sisaBayar, 0, ',', '.') }}</p>
+                        <div class="mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                            <div class="rounded-lg border border-slate-200 bg-white p-3">
+                                <p class="text-xs text-slate-500">{{ __('Nilai Invoice') }}</p>
+                                <p class="font-semibold text-slate-800">Rp {{ number_format($purchase->total, 0, ',', '.') }}</p>
                             </div>
+                            <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                <p class="text-xs text-emerald-700">{{ __('Utang Terakui') }}</p>
+                                <p class="font-semibold text-emerald-800">Rp {{ number_format($utangTerakui, 0, ',', '.') }}</p>
+                            </div>
+                            <div class="rounded-lg border border-slate-200 bg-white p-3">
+                                <p class="text-xs text-slate-500">{{ __('Sudah Dibayar') }}</p>
+                                <p class="font-semibold text-slate-800">Rp {{ number_format($totalDibayar, 0, ',', '.') }}</p>
+                            </div>
+                        </div>
+                        @if ($lunasTerakui)
+                            <p class="text-xs text-emerald-700 font-medium mb-2">{{ __('Lunas terhadap utang terakui') }}</p>
                         @endif
+                        <div class="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                            <p class="text-sm font-semibold text-amber-800">{{ __('Sisa yang harus dibayar') }}: Rp {{ number_format($sisaBayar, 0, ',', '.') }}</p>
+                            <p class="text-xs text-amber-700 mt-1">{{ __('Utang terakui − sudah dibayar') }}</p>
+                            @if ($isUangMukaMode && $canPayMore)
+                                <p class="text-xs text-indigo-700 mt-2">{{ __('Belum ada utang terakui. Pembayaran akan dicatat sebagai uang muka (maks. sisa nilai invoice).') }}</p>
+                            @elseif ($sisaBayar <= 0.02 && $canPayMore)
+                                <p class="text-xs text-indigo-700 mt-2">{{ __('Utang terakui sudah tertutup. Pembayaran tambahan dicatat sebagai uang muka untuk barang yang belum dicek.') }}</p>
+                            @endif
+                        </div>
                         <div class="space-y-2 text-sm text-gray-700">
                             @forelse ($purchase->payments as $p)
                                 <div class="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
@@ -158,16 +195,22 @@
                         @endif
                     </div>
 
-                    @php $showPaymentForm = !$purchase->isPaidOff() && !$purchase->isCancelled() && request('view') !== 'cancel'; @endphp
+                    @php $showPaymentForm = $canPayMore && request('view') !== 'cancel'; @endphp
                     @if ($showPaymentForm)
                         <div id="payment-form-section" class="mt-6 border rounded-lg p-4 bg-slate-50" x-data="purchasePaymentForm" x-init="init()">
                             <div class="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
                                 <p class="text-sm font-semibold text-amber-800">{{ __('Sisa yang harus dibayar') }}: Rp {{ number_format($sisaBayar, 0, ',', '.') }}</p>
+                                @if ($isUangMukaMode)
+                                    <p class="text-xs text-indigo-700 mt-1">{{ __('Mode uang muka — batas pembayaran: Rp :max', ['max' => number_format($sisaInvoice, 0, ',', '.')]) }}</p>
+                                @endif
                             </div>
                             <p class="font-semibold text-slate-800 text-sm">{{ __('Tambah Pembayaran') }}</p>
                             <p class="text-xs text-slate-500 mt-0.5">{{ __('Klik tombol di bawah jika ingin menggunakan lebih dari satu metode pembayaran.') }}</p>
                             <form method="POST" action="{{ route('purchases.add-payment', $purchase) }}" class="mt-3" @submit="normalizeAmountsBeforeSubmit()">
                                 @csrf
+                                @if (request('from') === 'debts')
+                                    <input type="hidden" name="from" value="debts">
+                                @endif
                                 <div id="payment-rows" class="space-y-3"></div>
                                 <div class="flex flex-wrap items-center gap-2 mt-3">
                                     <button type="button" @click="addPaymentRow()" class="inline-flex items-center gap-1 px-2 py-1.5 rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-100 bg-white">
@@ -222,6 +265,7 @@
                 locationType: @json($locationType),
                 locationId: @json($locationId),
                 remaining: {{ $remaining }},
+                sisaTerakui: {{ $sisaBayar ?? 0 }},
                 paymentMethods: [],
                 saldoPerPm: {},
                 paymentIdx: 0,

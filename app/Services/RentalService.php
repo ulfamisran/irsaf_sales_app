@@ -139,38 +139,36 @@ class RentalService
                 );
             }
 
+            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
+            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
+            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
             foreach ($payments as $p) {
                 $amt = round($this->parseMoney($p['amount'] ?? 0), 2);
                 if ($amt <= 0) {
                     continue;
                 }
-                RentalPayment::create([
-                    'rental_id' => $rental->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-            }
-
-            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
-            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
-            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
-            foreach (RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get() as $rp) {
-                $pm = $rp->paymentMethod;
+                $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $cfBranchId,
                     'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
-                    'amount' => $rp->amount,
+                    'amount' => $amt,
                     'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
                     'income_category_id' => $penyewaanCategory->id,
-                    'payment_method_id' => $rp->payment_method_id,
+                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $pickupDate,
                     'user_id' => $userId ?? auth()->id(),
+                ]);
+                RentalPayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'rental_id' => $rental->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 
@@ -218,17 +216,10 @@ class RentalService
                 if ($amt <= 0) {
                     continue;
                 }
-                RentalPayment::create([
-                    'rental_id' => $rental->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-
                 $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $cfBranchId,
                     'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
@@ -240,6 +231,13 @@ class RentalService
                     'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $rental->pickup_date->toDateString(),
                     'user_id' => $userId ?? auth()->id(),
+                ]);
+                RentalPayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'rental_id' => $rental->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 
@@ -379,37 +377,35 @@ class RentalService
                 );
             }
 
+            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
+            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
+            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
             foreach ($payments as $p) {
                 $amt = round($this->parseMoney($p['amount'] ?? 0), 2);
                 if ($amt <= 0) {
                     continue;
                 }
-                RentalPayment::create([
-                    'rental_id' => $rental->id,
-                    'payment_method_id' => (int) $p['payment_method_id'],
-                    'amount' => $amt,
-                    'notes' => $p['notes'] ?? null,
-                ]);
-            }
-
-            $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
-            $cfWarehouseId = $locationType === Stock::LOCATION_WAREHOUSE ? $warehouseId : null;
-            $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
-            foreach (RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get() as $rp) {
-                $pm = $rp->paymentMethod;
+                $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $cfBranchId,
                     'warehouse_id' => $cfWarehouseId,
                     'type' => CashFlow::TYPE_IN,
-                    'amount' => $rp->amount,
+                    'amount' => $amt,
                     'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
                     'reference_type' => CashFlow::REFERENCE_RENTAL,
                     'reference_id' => $rental->id,
                     'income_category_id' => $penyewaanCategory->id,
-                    'payment_method_id' => $rp->payment_method_id,
+                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                     'transaction_date' => $pickupDate,
                     'user_id' => $userId ?? auth()->id(),
+                ]);
+                RentalPayment::create([
+                    'cash_flow_id' => $cashFlow->id,
+                    'rental_id' => $rental->id,
+                    'payment_method_id' => (int) $p['payment_method_id'],
+                    'amount' => $amt,
+                    'notes' => $p['notes'] ?? null,
                 ]);
             }
 
@@ -501,17 +497,10 @@ class RentalService
                     if ($amt <= 0) {
                         continue;
                     }
-                    RentalPayment::create([
-                        'rental_id' => $rental->id,
-                        'payment_method_id' => (int) $p['payment_method_id'],
-                        'amount' => $amt,
-                        'notes' => $p['notes'] ?? null,
-                    ]);
-
                     $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                     $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                    CashFlow::create([
+                    $cashFlow = CashFlow::create([
                         'branch_id' => $cfBranchId,
                         'warehouse_id' => $cfWarehouseId,
                         'type' => CashFlow::TYPE_IN,
@@ -523,6 +512,13 @@ class RentalService
                         'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
                         'transaction_date' => $rental->pickup_date->toDateString(),
                         'user_id' => $userId ?? auth()->id(),
+                    ]);
+                    RentalPayment::create([
+                        'cash_flow_id' => $cashFlow->id,
+                        'rental_id' => $rental->id,
+                        'payment_method_id' => (int) $p['payment_method_id'],
+                        'amount' => $amt,
+                        'notes' => $p['notes'] ?? null,
                     ]);
                 }
             }

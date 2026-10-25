@@ -41,6 +41,14 @@
                                 <x-text-input id="phone" class="block mt-1 w-full" type="text" name="phone" :value="old('phone', $distributor->phone)" />
                                 <x-input-error :messages="$errors->get('phone')" class="mt-2" />
                             </div>
+                            <div>
+                                <x-input-label for="lingkup_vendor" :value="__('Lingkup Vendor')" />
+                                <select id="lingkup_vendor" name="lingkup_vendor" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="eksternal" {{ old('lingkup_vendor', $distributor->lingkup_vendor ?? 'eksternal') === 'eksternal' ? 'selected' : '' }}>{{ __('Eksternal') }}</option>
+                                    <option value="internal" {{ old('lingkup_vendor', $distributor->lingkup_vendor ?? 'eksternal') === 'internal' ? 'selected' : '' }}>{{ __('Internal') }}</option>
+                                </select>
+                                <x-input-error :messages="$errors->get('lingkup_vendor')" class="mt-2" />
+                            </div>
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Update') }}</x-primary-button>
                                 <a href="{{ route('distributors.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Cancel') }}</a>

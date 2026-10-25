@@ -61,6 +61,12 @@
                         <x-input-error :messages="$errors->get('payment_method_id')" class="mt-2" />
                     </div>
 
+                    <div>
+                        <x-input-label for="reason" :value="__('Alasan update')" />
+                        <textarea id="reason" name="reason" rows="3" required class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="{{ __('Wajib diisi untuk jejak audit') }}">{{ old('reason') }}</textarea>
+                        <x-input-error :messages="$errors->get('reason')" class="mt-2" />
+                    </div>
+
                     <div class="flex gap-3 pt-2">
                         <button type="submit" class="inline-flex items-center px-6 py-2.5 bg-indigo-600 border border-transparent rounded-lg font-semibold text-sm text-white hover:bg-indigo-700">
                             {{ __('Simpan Perubahan') }}
@@ -70,6 +76,8 @@
                         </a>
                     </div>
                 </form>
+
+                @include('admin-transaction-update.partials.update-logs', ['logs' => $logs ?? collect()])
             </div>
         </div>
     </div>

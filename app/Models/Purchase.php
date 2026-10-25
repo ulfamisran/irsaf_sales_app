@@ -91,6 +91,22 @@ class Purchase extends Model
 
     public function isPaidOff(): bool
     {
+        // Status lunas berdasarkan utang terakui (hasil cek baik), bukan total invoice.
+        $summary = app(\App\Services\PurchaseReceivingService::class)->summarize($this);
+        $recognized = (float) $summary['recognized_debt'];
+        if ($recognized <= 0.02) {
+            return false;
+        }
+        $paid = (float) $summary['paid'];
+
+        return $paid >= $recognized - 0.02;
+    }
+
+    /**
+     * Legacy: lunas terhadap total invoice (dipakai hanya jika diperlukan).
+     */
+    public function isPaidOffAgainstInvoice(): bool
+    {
         $total = (float) $this->total;
         if ($total <= 0) {
             return true;
@@ -101,6 +117,11 @@ class Purchase extends Model
         }
 
         return $paid >= $total - 0.02;
+    }
+
+    public function units(): HasMany
+    {
+        return $this->hasMany(ProductUnit::class);
     }
 
     public function distributor(): BelongsTo
@@ -136,6 +157,11 @@ class Purchase extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(PurchasePayment::class)->orderBy('payment_date')->orderBy('id');
+    }
+
+    public function receivingLogs(): HasMany
+    {
+        return $this->hasMany(PurchaseReceivingLog::class);
     }
 
     public function service(): BelongsTo

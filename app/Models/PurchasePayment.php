@@ -11,6 +11,7 @@ class PurchasePayment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'cash_flow_id',
         'purchase_id',
         'payment_method_id',
         'amount',

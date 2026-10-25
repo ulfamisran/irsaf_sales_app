@@ -11,9 +11,12 @@ use App\Models\ExpenseCategory;
 use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
 use App\Models\SalePayment;
+use App\Models\TransactionUpdateLog;
 use App\Models\Warehouse;
+use App\Services\AdminTransactionUpdateService;
 use App\Services\KasBalanceService;
 use App\Support\ExcelExporter;
+use InvalidArgumentException;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -348,7 +351,9 @@ class CashFlowController extends Controller
             ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
             : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
 
-        return view('cash-flows.out-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+        $logs = $this->transactionUpdateLogs(TransactionUpdateLog::TYPE_CASH_OUT, (int) $cashFlow->id);
+
+        return view('cash-flows.out-edit', compact('cashFlow', 'paymentMethods', 'locationLabel', 'logs'));
     }
 
     public function updateOut(Request $request, CashFlow $cashFlow): RedirectResponse
@@ -372,6 +377,7 @@ class CashFlowController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['required', 'string', 'max:255'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
 
         if (! $cashFlow->payment_method_id) {
@@ -380,9 +386,6 @@ class CashFlowController extends Controller
             ]);
         }
 
-        $newAmount = (float) $validated['amount'];
-        $oldAmount = (float) $cashFlow->amount;
-        $oldPmId = (int) $cashFlow->payment_method_id;
         $newPmId = (int) $validated['payment_method_id'];
 
         $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
@@ -401,13 +404,16 @@ class CashFlowController extends Controller
             ]);
         }
 
-        // Catatan: validasi saldo sumber kas (overdraft protection) untuk transaksi OUT dihilangkan.
-
-        $cashFlow->transaction_date = $validated['transaction_date'];
-        $cashFlow->amount = $newAmount;
-        $cashFlow->description = $validated['description'];
-        $cashFlow->payment_method_id = $newPmId;
-        $cashFlow->save();
+        try {
+            app(AdminTransactionUpdateService::class)->updateCashFlow(
+                $cashFlow,
+                $validated,
+                (int) $request->user()->id,
+                $validated['reason']
+            );
+        } catch (InvalidArgumentException $e) {
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('cash-flows.out.index')->with('success', __('Pengeluaran berhasil diperbarui.'));
     }
@@ -458,7 +464,9 @@ class CashFlowController extends Controller
             ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
             : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
 
-        return view('cash-flows.out-external-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+        $logs = $this->transactionUpdateLogs(TransactionUpdateLog::TYPE_CASH_OUT, (int) $cashFlow->id);
+
+        return view('cash-flows.out-external-edit', compact('cashFlow', 'paymentMethods', 'locationLabel', 'logs'));
     }
 
     public function updateOutExternal(Request $request, CashFlow $cashFlow): RedirectResponse
@@ -477,6 +485,7 @@ class CashFlowController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['required', 'string', 'max:255'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
 
         if (! $cashFlow->payment_method_id) {
@@ -485,9 +494,6 @@ class CashFlowController extends Controller
             ]);
         }
 
-        $newAmount = (float) $validated['amount'];
-        $oldAmount = (float) $cashFlow->amount;
-        $oldPmId = (int) $cashFlow->payment_method_id;
         $newPmId = (int) $validated['payment_method_id'];
 
         $locationType = $cashFlow->warehouse_id ? 'warehouse' : 'branch';
@@ -506,13 +512,16 @@ class CashFlowController extends Controller
             ]);
         }
 
-        // Catatan: validasi saldo sumber kas (overdraft protection) dihilangkan.
-
-        $cashFlow->transaction_date = $validated['transaction_date'];
-        $cashFlow->amount = $newAmount;
-        $cashFlow->description = $validated['description'];
-        $cashFlow->payment_method_id = $newPmId;
-        $cashFlow->save();
+        try {
+            app(AdminTransactionUpdateService::class)->updateCashFlow(
+                $cashFlow,
+                $validated,
+                (int) $request->user()->id,
+                $validated['reason']
+            );
+        } catch (InvalidArgumentException $e) {
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('cash-flows.out.external.index')->with('success', __('Pengeluaran dana eksternal berhasil diperbarui.'));
     }
@@ -558,7 +567,9 @@ class CashFlowController extends Controller
             ? __('Gudang') . ': ' . ($cashFlow->warehouse?->name ?? '#' . $cashFlow->warehouse_id)
             : __('Cabang') . ': ' . ($cashFlow->branch?->name ?? '#' . $cashFlow->branch_id);
 
-        return view('cash-flows.in-edit', compact('cashFlow', 'paymentMethods', 'locationLabel'));
+        $logs = $this->transactionUpdateLogs(TransactionUpdateLog::TYPE_CASH_IN, (int) $cashFlow->id);
+
+        return view('cash-flows.in-edit', compact('cashFlow', 'paymentMethods', 'locationLabel', 'logs'));
     }
 
     public function showIn(Request $request, CashFlow $cashFlow): View
@@ -598,13 +609,19 @@ class CashFlowController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:1000'],
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
 
-        $cashFlow->transaction_date = $validated['transaction_date'];
-        $cashFlow->amount = (float) $validated['amount'];
-        $cashFlow->description = $validated['description'] ?? null;
-        $cashFlow->payment_method_id = (int) $validated['payment_method_id'];
-        $cashFlow->save();
+        try {
+            app(AdminTransactionUpdateService::class)->updateCashFlow(
+                $cashFlow,
+                $validated,
+                (int) $request->user()->id,
+                $validated['reason']
+            );
+        } catch (InvalidArgumentException $e) {
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('cash-flows.in.index')->with('success', __('Pemasukan lainnya berhasil diperbarui.'));
     }
@@ -1528,5 +1545,15 @@ class CashFlowController extends Controller
         ]);
 
         return redirect()->route('cash-flows.in.index')->with('success', __('Income recorded successfully.'));
+    }
+
+    private function transactionUpdateLogs(string $type, int $id)
+    {
+        return TransactionUpdateLog::with('user')
+            ->where('reference_type', $type)
+            ->where('reference_id', $id)
+            ->orderByDesc('updated_at_action')
+            ->limit(50)
+            ->get();
     }
 }

@@ -17,6 +17,11 @@
                         </a>
                     @endif
                 @endif
+                @if (auth()->user()?->isSuperAdminOrAdminPusat() && $rental->status !== \App\Models\Rental::STATUS_CANCEL)
+                    <a href="{{ route('admin-tx.edit-rental', $rental) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
+                        {{ __('Update Transaksi') }}
+                    </a>
+                @endif
                 <x-icon-btn-back :href="route('rentals.index')" :label="__('Kembali')" />
             </div>
         </div>

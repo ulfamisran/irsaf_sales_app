@@ -301,10 +301,19 @@ class PurchaseService
             $unitPrice = round((float) ($detail['unit_price'] ?? 0), 2);
             $sellingPrice = round((float) ($product->selling_price ?? 0), 2);
 
-            PurchaseDetail::create([
+            // Pembelian Unit: stok menunggu Cek Pembelian Barang.
+            // Sparepart/distribusi: langsung stok (qty_baik = quantity).
+            $requireReceivingCheck = $purchase->jenis_pembelian === Purchase::JENIS_PEMBELIAN_UNIT
+                || $purchase->jenis_pembelian === null
+                || $purchase->jenis_pembelian === '';
+
+            $purchaseDetail = PurchaseDetail::create([
                 'purchase_id' => $purchase->id,
                 'product_id' => $detail['product_id'],
                 'quantity' => $detail['quantity'],
+                'qty_baik' => $requireReceivingCheck ? 0 : (int) $detail['quantity'],
+                'qty_reture' => 0,
+                'qty_pending' => 0,
                 'unit_price' => $detail['unit_price'],
                 'subtotal' => $detail['subtotal'],
                 'serial_numbers' => ! empty($serialNumbers) ? implode("\n", $serialNumbers) : null,
@@ -320,7 +329,10 @@ class PurchaseService
                 $purchaseDate,
                 $unitPrice,
                 $sellingPrice,
-                $allowSoldSerialReuse
+                $allowSoldSerialReuse,
+                (int) $purchase->id,
+                (int) $purchaseDetail->id,
+                $requireReceivingCheck
             );
 
             if ($purchase->isSparepartService()) {
@@ -596,7 +608,7 @@ class PurchaseService
         $warehouseId = $purchase->warehouse_id;
         $pmLabel = $payment->paymentMethod?->display_label ?? __('Pembayaran');
 
-        CashFlow::create([
+        $cashFlow = CashFlow::create([
             'branch_id' => $branchId,
             'warehouse_id' => $warehouseId,
             'type' => CashFlow::TYPE_OUT,
@@ -609,6 +621,7 @@ class PurchaseService
             'transaction_date' => $payment->payment_date,
             'user_id' => $userId,
         ]);
+        $payment->update(['cash_flow_id' => $cashFlow->id]);
     }
 
     /**

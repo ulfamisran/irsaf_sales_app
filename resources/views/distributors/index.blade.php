@@ -64,6 +64,7 @@
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Nama') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lingkup') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Alamat') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No. HP') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
@@ -84,6 +85,13 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $distributor->name }}</td>
+                                <td class="px-4 py-3">
+                                    @if (($distributor->lingkup_vendor ?? 'eksternal') === 'internal')
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">{{ __('Internal') }}</span>
+                                    @else
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">{{ __('Eksternal') }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ Str::limit($distributor->address, 50) }}</td>
                                 <td class="px-4 py-3">{{ $distributor->phone }}</td>
                                 <td class="px-4 py-3 text-right">

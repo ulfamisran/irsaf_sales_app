@@ -11,6 +11,7 @@ class ServicePayment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'cash_flow_id',
         'service_id',
         'payment_method_id',
         'amount',

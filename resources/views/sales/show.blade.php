@@ -25,6 +25,11 @@
                             {{ __('Edit HPP') }}
                         </a>
                 @endif
+                @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status !== \App\Models\Sale::STATUS_CANCEL)
+                    <a href="{{ route('admin-tx.edit-sale', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
+                        {{ __('Update Transaksi') }}
+                    </a>
+                @endif
                 <x-icon-btn-back :href="route('sales.index')" :label="__('Kembali ke Penjualan')" />
             </div>
         </div>

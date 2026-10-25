@@ -11,11 +11,15 @@ use App\Models\Role;
 use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
+use App\Models\ProductUnitChangeLog;
 use App\Repositories\CategoryRepository;
 use App\Repositories\DistributorRepository;
 use App\Repositories\ProductRepository;
+use App\Services\StockMutationService;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ProductController extends Controller
@@ -317,9 +321,22 @@ class ProductController extends Controller
     public function editUnit(Request $request, Product $product, ProductUnit $unit): View
     {
         $this->authorizePusatUnit($request, $product, $unit);
-        $unit->load(['warehouse', 'branch']);
+        $unit->load(['warehouse', 'branch', 'changeLogs.user']);
 
-        return view('products.units.edit', compact('product', 'unit'));
+        $statusOptions = [
+            ProductUnit::STATUS_IN_STOCK => __('In Stock'),
+            ProductUnit::STATUS_KEEP => __('Reserved'),
+            ProductUnit::STATUS_RESERVED => __('Reserved (Damaged)'),
+            ProductUnit::STATUS_SOLD => __('Sold'),
+            ProductUnit::STATUS_IN_RENT => __('In Rent'),
+            ProductUnit::STATUS_INACTIVE => __('Inactive'),
+            ProductUnit::STATUS_CANCEL => __('Cancel'),
+            ProductUnit::STATUS_NOT_IN_STOCK => __('Not in stock'),
+            ProductUnit::STATUS_RETURE => __('Reture'),
+            ProductUnit::STATUS_PENDING => __('Pending'),
+        ];
+
+        return view('products.units.edit', compact('product', 'unit', 'statusOptions'));
     }
 
     /**
@@ -331,22 +348,76 @@ class ProductController extends Controller
         $this->authorizePusatUnit($request, $product, $unit);
 
         $validated = $request->validated();
-        $unit->update([
+        $old = [
+            'serial_number' => (string) $unit->serial_number,
+            'harga_hpp' => round((float) $unit->harga_hpp, 2),
+            'harga_jual' => round((float) $unit->harga_jual, 2),
+            'status' => (string) $unit->status,
+            'notes' => (string) ($unit->notes ?? ''),
+        ];
+
+        $new = [
+            'serial_number' => (string) $validated['serial_number'],
             'harga_hpp' => round((float) $validated['harga_hpp'], 2),
             'harga_jual' => round((float) $validated['harga_jual'], 2),
-            'notes' => $validated['notes'] ?? $unit->notes,
-        ]);
+            'status' => (string) $validated['status'],
+            'notes' => (string) ($validated['notes'] ?? ''),
+        ];
 
-        AuditLog::create([
-            'user_id' => $user?->id,
-            'action' => 'product_unit.update',
-            'reference_type' => 'product_unit',
-            'reference_id' => $unit->id,
-            'description' => 'Update unit ' . $unit->serial_number . ' (produk ' . $product->sku . ')',
-        ]);
+        $changes = [];
+        foreach (['serial_number', 'harga_hpp', 'harga_jual', 'status', 'notes'] as $field) {
+            $oldVal = $old[$field];
+            $newVal = $new[$field];
+            if (is_float($oldVal) || is_float($newVal)) {
+                if (abs((float) $oldVal - (float) $newVal) > 0.001) {
+                    $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
+                }
+            } elseif ((string) $oldVal !== (string) $newVal) {
+                $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
+            }
+        }
+
+        if ($changes === []) {
+            return back()->withInput()->with('error', __('Tidak ada perubahan data unit.'));
+        }
+
+        DB::transaction(function () use ($unit, $new, $old, $changes, $validated, $user, $product) {
+            $unit->update([
+                'serial_number' => $new['serial_number'],
+                'harga_hpp' => $new['harga_hpp'],
+                'harga_jual' => $new['harga_jual'],
+                'status' => $new['status'],
+                'notes' => $validated['notes'] ?? $unit->notes,
+            ]);
+
+            ProductUnitChangeLog::create([
+                'product_unit_id' => $unit->id,
+                'user_id' => $user?->id,
+                'changed_at' => Carbon::now(),
+                'serial_snapshot' => $new['serial_number'],
+                'reason' => (string) $validated['reason'],
+                'changes' => $changes,
+            ]);
+
+            AuditLog::create([
+                'user_id' => $user?->id,
+                'action' => 'product_unit.update',
+                'reference_type' => 'product_unit',
+                'reference_id' => $unit->id,
+                'description' => 'Update unit '.$old['serial_number'].' → '.$new['serial_number'].' (produk '.$product->sku.')',
+            ]);
+
+            if (isset($changes['status'])) {
+                app(StockMutationService::class)->recalculateStockQuantityIfExists(
+                    (int) $unit->product_id,
+                    (string) $unit->location_type,
+                    (int) $unit->location_id
+                );
+            }
+        });
 
         return redirect()
-            ->route('products.show', $product)
+            ->route('stock-units.show', $unit)
             ->with('success', __('Unit :serial berhasil diperbarui.', ['serial' => $unit->serial_number]));
     }
 

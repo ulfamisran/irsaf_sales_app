@@ -185,7 +185,7 @@ class StockUnitController extends Controller
     public function show(Request $request, ProductUnit $unit): View
     {
         $user = $request->user();
-        $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user']);
+        $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user', 'changeLogs.user']);
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
@@ -516,6 +516,23 @@ class StockUnitController extends Controller
                             ->orWhere('series', 'like', "%{$search}%");
                     });
             });
+        }
+
+        if ($request->filled('date_from')) {
+            $listBase->whereDate('received_date', '>=', $request->date_from);
+            $countBase->whereDate('received_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $listBase->whereDate('received_date', '<=', $request->date_to);
+            $countBase->whereDate('received_date', '<=', $request->date_to);
+        }
+
+        if ($request->filled('jenis_barang')) {
+            $jenis = (string) $request->jenis_barang;
+            if (in_array($jenis, ['baru', 'bekas'], true)) {
+                $listBase->whereHas('product', fn ($q) => $q->where('laptop_type', $jenis));
+                $countBase->whereHas('product', fn ($q) => $q->where('laptop_type', $jenis));
+            }
         }
     }
 }

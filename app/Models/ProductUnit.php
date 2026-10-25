@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ProductUnit extends Model
@@ -25,12 +26,19 @@ class ProductUnit extends Model
     public const STATUS_INACTIVE = 'inactive';
     public const STATUS_CANCEL = 'cancel';
     /**
-     * Unit tidak dihitung sebagai stok tersedia (mis. setelah pembelian dibatalkan).
+     * Unit tidak dihitung sebagai stok tersedia (mis. setelah pembelian dibatalkan / belum lolos cek).
      */
     public const STATUS_NOT_IN_STOCK = 'not_in_stock';
+    public const STATUS_RETURE = 'reture';
+    public const STATUS_PENDING = 'pending';
+
+    public const CHECK_UNCHECKED = 'unchecked';
+    public const CHECK_CHECKED = 'checked';
 
     protected $fillable = [
         'product_id',
+        'purchase_id',
+        'purchase_detail_id',
         'user_id',
         'harga_hpp',
         'harga_jual',
@@ -38,6 +46,9 @@ class ProductUnit extends Model
         'location_type',
         'location_id',
         'status',
+        'check_status',
+        'checked_at',
+        'checked_by',
         'received_date',
         'sold_at',
         'notes',
@@ -50,12 +61,28 @@ class ProductUnit extends Model
             'harga_jual' => 'decimal:2',
             'received_date' => 'date',
             'sold_at' => 'datetime',
+            'checked_at' => 'datetime',
         ];
     }
 
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function purchase(): BelongsTo
+    {
+        return $this->belongsTo(Purchase::class);
+    }
+
+    public function purchaseDetail(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseDetail::class);
+    }
+
+    public function checkedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'checked_by');
     }
 
     public function user(): BelongsTo
@@ -86,6 +113,11 @@ class ProductUnit extends Model
     public function damagedGood(): HasOne
     {
         return $this->hasOne(DamagedGood::class)->whereNull('reactivated_at');
+    }
+
+    public function changeLogs(): HasMany
+    {
+        return $this->hasMany(ProductUnitChangeLog::class)->orderByDesc('changed_at')->orderByDesc('id');
     }
 }
 

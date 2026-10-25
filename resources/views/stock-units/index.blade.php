@@ -71,6 +71,22 @@
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                         <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
+                            <input type="date" name="date_from" value="{{ request('date_from') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
+                            <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Jenis Barang') }}</label>
+                            <select name="jenis_barang" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">{{ __('Semua') }}</option>
+                                <option value="baru" {{ request('jenis_barang') === 'baru' ? 'selected' : '' }}>{{ __('Baru') }}</option>
+                                <option value="bekas" {{ request('jenis_barang') === 'bekas' ? 'selected' : '' }}>{{ __('Bekas') }}</option>
+                            </select>
+                        </div>
+                        <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Kategori Produk') }}</label>
                             <select name="category_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">{{ __('Semua') }}</option>
@@ -79,6 +95,8 @@
                                 @endforeach
                             </select>
                         </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Produk') }}</label>
                             <select name="product_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -102,7 +120,7 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div class="flex gap-2 md:justify-end">
+                        <div class="md:col-span-2 flex gap-2 md:justify-end">
                             <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -255,16 +273,16 @@
                                         @endif
                                     </td>
                                     <td class="px-4 py-3">
-                                        <div class="flex items-center gap-3">
-                                            <x-icon-btn-view :href="route('stock-units.show', $u)" :label="__('Detail')" />
-                                            @if ((auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat()) && $p)
-                                                <a href="{{ route('products.units.edit', [$p, $u]) }}"
-                                                   class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 transition-colors"
-                                                   title="{{ __('Edit Unit') }}">
-                                                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <x-icon-btn-view :href="route('stock-units.show', $u)" :label="__('Lihat Unit')" />
+                                            @if (auth()->user()?->isSuperAdminOrAdminPusat())
+                                                <a href="{{ route('products.units.edit', [$u->product_id, $u]) }}"
+                                                   class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                                                   title="{{ __('Update Unit') }}">
+                                                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                                     </svg>
-                                                    {{ __('Edit Unit') }}
+                                                    {{ __('Update Unit') }}
                                                 </a>
                                             @endif
                                         </div>

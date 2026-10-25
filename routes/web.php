@@ -28,6 +28,7 @@ use App\Http\Controllers\StockInOutController;
 use App\Http\Controllers\StockUnitController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WarehouseController;
+use App\Http\Controllers\AdminTransactionUpdateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -170,6 +171,23 @@ Route::middleware('auth')->group(function () {
             ->name('sales.edit-hpp');
         Route::patch('sales/{sale}/hpp', [SaleController::class, 'updateHpp'])
             ->name('sales.update-hpp');
+
+        Route::get('sales/{sale}/admin-update', [AdminTransactionUpdateController::class, 'editSale'])
+            ->name('admin-tx.edit-sale');
+        Route::put('sales/{sale}/admin-update', [AdminTransactionUpdateController::class, 'updateSale'])
+            ->name('admin-tx.update-sale');
+        Route::get('services/{service}/admin-update', [AdminTransactionUpdateController::class, 'editService'])
+            ->name('admin-tx.edit-service');
+        Route::put('services/{service}/admin-update', [AdminTransactionUpdateController::class, 'updateService'])
+            ->name('admin-tx.update-service');
+        Route::get('rentals/{rental}/admin-update', [AdminTransactionUpdateController::class, 'editRental'])
+            ->name('admin-tx.edit-rental');
+        Route::put('rentals/{rental}/admin-update', [AdminTransactionUpdateController::class, 'updateRental'])
+            ->name('admin-tx.update-rental');
+        Route::get('purchases/{purchase}/admin-update', [AdminTransactionUpdateController::class, 'editPurchase'])
+            ->name('admin-tx.edit-purchase');
+        Route::put('purchases/{purchase}/admin-update', [AdminTransactionUpdateController::class, 'updatePurchase'])
+            ->name('admin-tx.update-purchase');
     });
     Route::resource('products', ProductController::class)
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat');
@@ -228,8 +246,14 @@ Route::middleware('auth')->group(function () {
         ->name('stock-mutations.cancel');
 
     Route::get('stock-inout', [StockInOutController::class, 'index'])
-        ->middleware('role:admin_cabang,admin_gudang')
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-inout.index');
+    Route::get('stock-inout/export', [StockInOutController::class, 'export'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-inout.export');
+    Route::get('stock-inout/export-pdf', [StockInOutController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-inout.export-pdf');
     Route::get('damaged-goods', [DamagedGoodController::class, 'index'])
         ->middleware('role:admin_cabang,super_admin,admin_pusat')
         ->name('damaged-goods.index');
@@ -295,12 +319,34 @@ Route::middleware('auth')->group(function () {
     Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');
+    Route::post('purchases/{purchase}/resolve-deferred', [PurchaseController::class, 'resolveDeferred'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.resolve-deferred');
     Route::post('purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])
         ->middleware('role:admin_gudang,super_admin,admin_pusat')
         ->name('purchases.cancel');
     Route::resource('purchases', PurchaseController::class)
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+
+    Route::get('purchase-receiving', [\App\Http\Controllers\PurchaseReceivingController::class, 'index'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.index');
+    Route::get('purchase-receiving/logs/{log}/edit', [\App\Http\Controllers\PurchaseReceivingController::class, 'editLog'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.logs.edit');
+    Route::put('purchase-receiving/logs/{log}', [\App\Http\Controllers\PurchaseReceivingController::class, 'updateLog'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.logs.update');
+    Route::get('purchase-receiving/{purchase}/history', [\App\Http\Controllers\PurchaseReceivingController::class, 'history'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.history');
+    Route::get('purchase-receiving/{purchase}', [\App\Http\Controllers\PurchaseReceivingController::class, 'show'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.show');
+    Route::post('purchase-receiving/{purchase}', [\App\Http\Controllers\PurchaseReceivingController::class, 'store'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchase-receiving.store');
 
     Route::get('data-by-location/distributors', [\App\Http\Controllers\DataByLocationController::class, 'distributors'])
         ->name('data-by-location.distributors');
@@ -415,6 +461,12 @@ Route::middleware('auth')->group(function () {
     Route::get('debts', [DebtController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('debts.index');
+    Route::get('debts/export', [DebtController::class, 'export'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('debts.export');
+    Route::get('debts/export-pdf', [DebtController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('debts.export-pdf');
     Route::get('debts/{purchase}/payment-history', [DebtController::class, 'paymentHistory'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('debts.payment-history');

@@ -18,6 +18,7 @@ class DistributorRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'address' => ['nullable', 'string'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'lingkup_vendor' => ['required', 'in:internal,eksternal'],
         ];
 
         $user = $this->user();

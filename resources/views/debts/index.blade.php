@@ -1,13 +1,27 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Data Utang') }}</x-slot>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Data Utang') }}</h2>
+        <div class="flex flex-wrap justify-between items-center gap-3">
+            <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Data Utang') }}</h2>
+            <div class="flex gap-2">
+                <a href="{{ route('debts.export', request()->query()) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+                    {{ __('Download Excel') }}
+                </a>
+                <a href="{{ route('debts.export-pdf', request()->query()) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700">
+                    {{ __('Download PDF') }}
+                </a>
+            </div>
+        </div>
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
                 <form method="GET" action="{{ route('debts.index') }}" class="flex flex-wrap gap-4 items-end">
+                    <div class="min-w-[220px] flex-1">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
+                        <input type="text" name="q" value="{{ $search ?? request('q') }}" placeholder="{{ __('No. Invoice / Distributor') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
                     @if(($canFilterLocation ?? false) || ($filterLocked ?? false))
                         @php
                             $branchSelectDisabled = $filterLocked ?? false;
@@ -60,10 +74,26 @@
                         </div>
                     @endif
                     <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
+                        <input type="date" name="date_from" value="{{ $dateFrom ?? request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
+                        <input type="date" name="date_to" value="{{ $dateTo ?? request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Utang') }}</label>
                         <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="outstanding" {{ ($statusFilter ?? 'outstanding') === 'outstanding' ? 'selected' : '' }}>{{ __('Outstanding (Belum Lunas)') }}</option>
                             <option value="lunas" {{ ($statusFilter ?? '') === 'lunas' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lingkup Utang') }}</label>
+                        <select name="lingkup" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="" {{ ($lingkupFilter ?? '') === '' ? 'selected' : '' }}>{{ __('Semua') }}</option>
+                            <option value="eksternal" {{ ($lingkupFilter ?? '') === 'eksternal' ? 'selected' : '' }}>{{ __('Utang Eksternal') }}</option>
+                            <option value="internal" {{ ($lingkupFilter ?? '') === 'internal' ? 'selected' : '' }}>{{ __('Utang Internal') }}</option>
                         </select>
                     </div>
                     <div class="flex gap-2">
@@ -89,9 +119,21 @@
         @endif
 
         @if (($statusFilter ?? 'outstanding') === 'outstanding')
-            <div class="card-modern p-6 mb-6">
-                <p class="text-sm text-slate-600">{{ __('Total Utang Belum Terbayar') }}</p>
-                <p class="text-2xl font-bold text-red-600">{{ number_format($totalUnpaid, 0, ',', '.') }}</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="card-modern p-5">
+                    <p class="text-sm text-slate-600">{{ __('Total Utang Belum Terbayar') }}</p>
+                    <p class="text-2xl font-bold text-red-600 mt-1">{{ number_format($totalUnpaid ?? 0, 0, ',', '.') }}</p>
+                </div>
+                <div class="card-modern p-5 border border-amber-200 bg-amber-50/40">
+                    <p class="text-sm text-amber-800">{{ __('Utang Eksternal') }}</p>
+                    <p class="text-xs text-amber-700 mt-0.5">{{ __('Vendor lingkup eksternal') }}</p>
+                    <p class="text-2xl font-bold text-amber-800 mt-1">{{ number_format($totalUnpaidEksternal ?? 0, 0, ',', '.') }}</p>
+                </div>
+                <div class="card-modern p-5 border border-sky-200 bg-sky-50/40">
+                    <p class="text-sm text-sky-800">{{ __('Utang Internal') }}</p>
+                    <p class="text-xs text-sky-700 mt-0.5">{{ __('Vendor lingkup internal') }}</p>
+                    <p class="text-2xl font-bold text-sky-800 mt-1">{{ number_format($totalUnpaidInternal ?? 0, 0, ',', '.') }}</p>
+                </div>
             </div>
         @endif
 
@@ -103,11 +145,13 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('No. Invoice') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Distributor') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lingkup') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jatuh Tempo') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Nilai Invoice') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Utang Terakui') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Terbayar') }}</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Sisa Utang') }}</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Sisa Utang Terakui') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -125,6 +169,13 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $row->purchase->distributor?->name ?? '-' }}</td>
+                                <td class="px-4 py-3">
+                                    @if (!empty($row->is_internal))
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">{{ __('Internal') }}</span>
+                                    @else
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">{{ __('Eksternal') }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ $row->purchase->purchase_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3 {{ $row->is_due_soon ? 'font-semibold text-red-600' : '' }}">
                                     {{ $row->due_date?->format('d/m/Y') ?? '-' }}
@@ -132,41 +183,28 @@
                                         <span class="text-xs">({{ $row->days_until_due }} hari)</span>
                                     @endif
                                 </td>
-                                <td class="px-4 py-3 text-right">{{ number_format($row->purchase->total, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right">{{ number_format($row->invoice_total ?? $row->purchase->total, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right text-emerald-700 font-medium">{{ number_format($row->recognized ?? 0, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($row->purchase->total_paid ?? 0, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-semibold text-red-600">{{ number_format($row->remaining, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3">
-                                    <div class="flex flex-wrap gap-2 justify-center">
-                                        @if ($row->remaining > 0)
-                                            <a href="{{ route('purchases.show', ['purchase' => $row->purchase, 'view' => 'detail']) }}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
-                                                {{ __('Detail & Bayar') }}
-                                            </a>
-                                        @endif
-                                        <button type="button" class="btn-history inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-100 text-indigo-700 text-sm font-medium hover:bg-indigo-200" data-purchase-id="{{ $row->purchase->id }}">
-                                            {{ __('Riwayat Bayar') }}
-                                        </button>
-                                    </div>
+                                <td class="px-4 py-3 text-center">
+                                    <a href="{{ route('purchases.show', ['purchase' => $row->purchase, 'from' => 'debts', 'view' => 'detail']) }}#riwayat-pembayaran"
+                                       class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                        </svg>
+                                        {{ __('Bayar') }}
+                                    </a>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data utang.') }}</td>
+                                <td colspan="11" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data utang.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
                 <div class="mt-4">{{ $purchases->links() }}</div>
-            </div>
-        </div>
-    </div>
-
-    {{-- Modal Riwayat Pembayaran --}}
-    <div id="history-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" id="history-modal-backdrop"></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div id="history-modal-content" class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                {{-- Content loaded via fetch --}}
             </div>
         </div>
     </div>
@@ -213,32 +251,4 @@
     </script>
     @endpush
     @endif
-
-    @push('scripts')
-    <script>
-        const baseUrl = '{{ url("") }}';
-        const historyModal = document.getElementById('history-modal');
-        const historyModalBackdrop = document.getElementById('history-modal-backdrop');
-
-        document.querySelectorAll('.btn-history').forEach(btn => {
-            btn.addEventListener('click', async function() {
-                const purchaseId = this.dataset.purchaseId;
-                const response = await fetch(baseUrl + '/debts/' + purchaseId + '/payment-history');
-                if (!response.ok) return;
-                const html = await response.text();
-                const container = document.getElementById('history-modal-content');
-                if (container) {
-                    container.innerHTML = html;
-                    document.getElementById('modal-close')?.addEventListener('click', closeHistoryModal);
-                }
-                historyModal?.classList.remove('hidden');
-            });
-        });
-
-        historyModalBackdrop?.addEventListener('click', closeHistoryModal);
-        function closeHistoryModal() {
-            historyModal?.classList.add('hidden');
-        }
-    </script>
-    @endpush
 </x-app-layout>

@@ -176,7 +176,10 @@ class StockMutationService
         ?string $receivedDate = null,
         ?float $purchasePrice = null,
         ?float $sellingPrice = null,
-        bool $allowSoldSerialReuse = false
+        bool $allowSoldSerialReuse = false,
+        ?int $purchaseId = null,
+        ?int $purchaseDetailId = null,
+        bool $requireReceivingCheck = false
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
@@ -184,14 +187,14 @@ class StockMutationService
         $categoryRequiresSerial = $product->category?->requires_serial ?? true;
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
 
-        // Aksesoris / kategori non-serial: selalu stok berbasis qty.
-        // Unit berserial lama tetap dipertahankan agar masih bisa dijual (qty atau pilih serial).
+        // Aksesoris / kategori non-serial: stok qty.
+        // Jika wajib cek penerimaan: jangan naikkan qty sampai lolos cek "baik".
         if (! $categoryRequiresSerial) {
             if (! empty($serialNumbers)) {
                 $quantity = max($quantity, count($serialNumbers));
             }
 
-            return DB::transaction(function () use ($product, $locationType, $locationId, $quantity) {
+            return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $requireReceivingCheck) {
                 $this->syncNonSerialStockFloor($product, $locationType, $locationId);
 
                 $stock = Stock::firstOrCreate(
@@ -203,17 +206,32 @@ class StockMutationService
                     ['quantity' => 0]
                 );
 
-                $stock->increment('quantity', $quantity);
+                if (! $requireReceivingCheck) {
+                    $stock->increment('quantity', $quantity);
+                }
 
                 return $stock->fresh();
             });
         }
 
         if (! empty($serialNumbers)) {
-            return $this->addStockUnits($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $purchasePrice, $sellingPrice, $allowSoldSerialReuse);
+            return $this->addStockUnits(
+                $product,
+                $locationType,
+                $locationId,
+                $serialNumbers,
+                $receivedDate,
+                $userId,
+                $purchasePrice,
+                $sellingPrice,
+                $allowSoldSerialReuse,
+                $purchaseId,
+                $purchaseDetailId,
+                $requireReceivingCheck
+            );
         }
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $quantity) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $quantity, $requireReceivingCheck) {
             // Kategori berserial yang sudah punya unit wajib input serial.
             if (ProductUnit::where('product_id', $product->id)->exists()) {
                 throw new InvalidArgumentException(__('Produk ini memakai nomor serial. Mohon masukkan nomor serial.'));
@@ -228,7 +246,9 @@ class StockMutationService
                 ['quantity' => 0]
             );
 
-            $stock->increment('quantity', $quantity);
+            if (! $requireReceivingCheck) {
+                $stock->increment('quantity', $quantity);
+            }
 
             return $stock->fresh();
         });
@@ -757,16 +777,25 @@ class StockMutationService
         ?int $userId = null,
         ?float $purchasePrice = null,
         ?float $sellingPrice = null,
-        bool $allowSoldSerialReuse = false
+        bool $allowSoldSerialReuse = false,
+        ?int $purchaseId = null,
+        ?int $purchaseDetailId = null,
+        bool $requireReceivingCheck = false
     ): Stock {
         $this->validateLocation($locationType, $locationId);
 
         $receivedDate = $receivedDate ?: Carbon::now()->toDateString();
         $hpp = $purchasePrice !== null ? round((float) $purchasePrice, 2) : (float) ($product->purchase_price ?? 0);
         $jual = $sellingPrice !== null ? round((float) $sellingPrice, 2) : (float) ($product->selling_price ?? 0);
-        $unitStatus = $jual > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
+        if ($requireReceivingCheck) {
+            $unitStatus = ProductUnit::STATUS_NOT_IN_STOCK;
+            $checkStatus = ProductUnit::CHECK_UNCHECKED;
+        } else {
+            $unitStatus = $jual > 0 ? ProductUnit::STATUS_IN_STOCK : ProductUnit::STATUS_INACTIVE;
+            $checkStatus = ProductUnit::CHECK_CHECKED;
+        }
 
-        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus, $allowSoldSerialReuse) {
+        return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus, $checkStatus, $allowSoldSerialReuse, $purchaseId, $purchaseDetailId, $requireReceivingCheck) {
             $existingUnits = ProductUnit::whereIn('serial_number', $serialNumbers)
                 ->lockForUpdate()
                 ->get(['id', 'serial_number', 'status', 'product_id', 'location_type', 'location_id']);
@@ -775,7 +804,9 @@ class StockMutationService
             foreach ($existingUnits as $unit) {
                 if ($unit->status === ProductUnit::STATUS_SOLD
                     || $unit->status === ProductUnit::STATUS_NOT_IN_STOCK
-                    || $unit->status === ProductUnit::STATUS_CANCEL) {
+                    || $unit->status === ProductUnit::STATUS_CANCEL
+                    || $unit->status === ProductUnit::STATUS_RETURE
+                    || $unit->status === ProductUnit::STATUS_PENDING) {
                     continue;
                 }
                 $blockedSerials[] = $unit->serial_number;
@@ -795,35 +826,34 @@ class StockMutationService
                     );
                 }
 
+                $payload = [
+                    'product_id' => $product->id,
+                    'user_id' => $userId,
+                    'harga_hpp' => $hpp,
+                    'harga_jual' => $jual,
+                    'location_type' => $locationType,
+                    'location_id' => $locationId,
+                    'status' => $unitStatus,
+                    'check_status' => $checkStatus,
+                    'received_date' => $receivedDate,
+                    'sold_at' => null,
+                    'notes' => null,
+                    'purchase_id' => $purchaseId,
+                    'purchase_detail_id' => $purchaseDetailId,
+                    'checked_at' => $requireReceivingCheck ? null : Carbon::now(),
+                    'checked_by' => $requireReceivingCheck ? null : $userId,
+                ];
+
                 if ($existingUnit) {
                     $oldProductId = (int) $existingUnit->product_id;
                     $oldLocationType = (string) $existingUnit->location_type;
                     $oldLocationId = (int) $existingUnit->location_id;
-                    $existingUnit->update([
-                        'product_id' => $product->id,
-                        'user_id' => $userId,
-                        'harga_hpp' => $hpp,
-                        'harga_jual' => $jual,
-                        'location_type' => $locationType,
-                        'location_id' => $locationId,
-                        'status' => $unitStatus,
-                        'received_date' => $receivedDate,
-                        'sold_at' => null,
-                        'notes' => null,
-                    ]);
+                    $existingUnit->update($payload);
                     $this->recalculateStockQuantity($oldProductId, $oldLocationType, $oldLocationId);
                 } else {
-                    ProductUnit::create([
-                        'product_id' => $product->id,
-                        'user_id' => $userId,
-                        'harga_hpp' => $hpp,
-                        'harga_jual' => $jual,
+                    ProductUnit::create(array_merge($payload, [
                         'serial_number' => $sn,
-                        'location_type' => $locationType,
-                        'location_id' => $locationId,
-                        'status' => $unitStatus,
-                        'received_date' => $receivedDate,
-                    ]);
+                    ]));
                 }
             }
 

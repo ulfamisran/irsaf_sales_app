@@ -437,7 +437,7 @@ class SaleService
                 $pm = $sp->paymentMethod;
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                CashFlow::create([
+                $cashFlow = CashFlow::create([
                     'branch_id' => $sale->branch_id,
                     'warehouse_id' => $sale->warehouse_id,
                     'type' => CashFlow::TYPE_IN,
@@ -450,6 +450,7 @@ class SaleService
                     'transaction_date' => $saleDate,
                     'user_id' => $userId ?? auth()->id(),
                 ]);
+                $sp->update(['cash_flow_id' => $cashFlow->id]);
             }
 
             // Proses tukar tambah: buat produk & unit baru, default nonaktif
@@ -613,7 +614,7 @@ class SaleService
             $pmLabel = $pm ? $pm->display_label : __('Payment');
             $penjualanCategory = IncomeCategory::resolveByCode('SALE', 'Penjualan');
 
-            CashFlow::create([
+            $cashFlow = CashFlow::create([
                 'branch_id' => $sale->branch_id,
                 'warehouse_id' => $sale->warehouse_id,
                 'type' => CashFlow::TYPE_IN,
@@ -626,6 +627,7 @@ class SaleService
                 'transaction_date' => $transactionDate,
                 'user_id' => $userId ?? auth()->id(),
             ]);
+            $payment->update(['cash_flow_id' => $cashFlow->id]);
 
             $newTotalPaid = round((float) $sale->total_paid + $amount, 2);
             $sale->update(['total_paid' => $newTotalPaid]);

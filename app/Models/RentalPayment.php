@@ -11,6 +11,7 @@ class RentalPayment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'cash_flow_id',
         'rental_id',
         'payment_method_id',
         'amount',

@@ -16,12 +16,30 @@ class Distributor extends Model
     public const PLACEMENT_GUDANG = 'gudang';
     public const PLACEMENT_SEMUA = 'semua';
 
+    public const LINGKUP_INTERNAL = 'internal';
+    public const LINGKUP_EKSTERNAL = 'eksternal';
+
     /**
      * Distributor digunakan oleh seluruh cabang dan gudang.
      */
     public function isGlobal(): bool
     {
         return $this->branch_id === null && $this->warehouse_id === null;
+    }
+
+    public function isInternal(): bool
+    {
+        return ($this->lingkup_vendor ?? self::LINGKUP_EKSTERNAL) === self::LINGKUP_INTERNAL;
+    }
+
+    public function isEksternal(): bool
+    {
+        return ! $this->isInternal();
+    }
+
+    public function lingkupLabel(): string
+    {
+        return $this->isInternal() ? __('Internal') : __('Eksternal');
     }
 
     protected $fillable = [
@@ -31,6 +49,7 @@ class Distributor extends Model
         'name',
         'address',
         'phone',
+        'lingkup_vendor',
     ];
 
     public function branch(): BelongsTo
