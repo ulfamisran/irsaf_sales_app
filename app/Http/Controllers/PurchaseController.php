@@ -469,17 +469,7 @@ class PurchaseController extends Controller
 
         $categories = Category::orderBy('name')->get(['id', 'name']);
 
-        $openServicesInitial = collect();
-        if ($defaultLocationType === 'branch' && $defaultLocationId) {
-            $openServicesInitial = Service::query()
-                ->with(['customer:id,name'])
-                ->where('branch_id', $defaultLocationId)
-                ->where('status', Service::STATUS_OPEN)
-                ->orderByDesc('entry_date')
-                ->orderByDesc('id')
-                ->limit(200)
-                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id']);
-        }
+        $openServicesInitial = $this->openServicesForPurchaseLocation($defaultLocationType, (int) $defaultLocationId);
 
         return view('purchases.create', compact(
             'warehouses',
@@ -567,20 +557,11 @@ class PurchaseController extends Controller
 
         $categories = Category::orderBy('name')->get(['id', 'name']);
 
-        $openServicesInitial = collect();
-        if ($defaultLocationType === 'branch' && $defaultLocationId) {
-            $openServicesInitial = Service::query()
-                ->with(['customer:id,name'])
-                ->where('branch_id', $defaultLocationId)
-                ->where(function ($q) use ($purchase) {
-                    $q->where('status', Service::STATUS_OPEN)
-                        ->when($purchase->service_id, fn ($q2) => $q2->orWhere('id', $purchase->service_id));
-                })
-                ->orderByDesc('entry_date')
-                ->orderByDesc('id')
-                ->limit(200)
-                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id', 'status']);
-        }
+        $openServicesInitial = $this->openServicesForPurchaseLocation(
+            $defaultLocationType,
+            (int) $defaultLocationId,
+            $purchase->service_id ? (int) $purchase->service_id : null
+        );
 
         $isEdit = true;
         $editPurchase = $purchase;
@@ -919,25 +900,15 @@ class PurchaseController extends Controller
         $categoryId = $request->filled('category_id') ? (int) $request->category_id : null;
         $products = $this->getProductsForPurchase($locationType, $locationId, $categoryId);
 
-        $openServices = collect();
-        if ($locationType === 'branch') {
-            $openServices = Service::query()
-                ->with(['customer:id,name'])
-                ->where('branch_id', $locationId)
-                ->where('status', Service::STATUS_OPEN)
-                ->orderByDesc('entry_date')
-                ->orderByDesc('id')
-                ->limit(200)
-                ->get(['id', 'invoice_number', 'laptop_type', 'customer_id'])
-                ->map(fn (Service $s) => [
-                    'id' => $s->id,
-                    'invoice_number' => $s->invoice_number,
-                    'label' => $s->invoice_number
-                        .' — '.($s->laptop_type ?? '')
-                        .($s->customer ? ' ('.$s->customer->name.')' : ''),
-                ])
-                ->values();
-        }
+        $openServices = $this->openServicesForPurchaseLocation($locationType, $locationId)
+            ->map(fn (Service $s) => [
+                'id' => $s->id,
+                'invoice_number' => $s->invoice_number,
+                'label' => $s->invoice_number
+                    .' — '.($s->laptop_type ?? '')
+                    .($s->customer ? ' ('.$s->customer->name.')' : ''),
+            ])
+            ->values();
 
         return response()->json([
             'payment_methods' => $paymentMethods,
@@ -1073,6 +1044,34 @@ class PurchaseController extends Controller
         })->values();
 
         return response()->json(['results' => $results]);
+    }
+
+    /**
+     * Invoice service berstatus open di lokasi pembelian (gudang atau cabang).
+     */
+    private function openServicesForPurchaseLocation(?string $locationType, int $locationId, ?int $includeServiceId = null)
+    {
+        if ($locationId <= 0 || ! in_array($locationType, ['warehouse', 'branch'], true)) {
+            return collect();
+        }
+
+        return Service::query()
+            ->with(['customer:id,name'])
+            ->when(
+                $locationType === 'warehouse',
+                fn ($q) => $q->where('warehouse_id', $locationId),
+                fn ($q) => $q->where('branch_id', $locationId)
+            )
+            ->where(function ($q) use ($includeServiceId) {
+                $q->where('status', Service::STATUS_OPEN);
+                if ($includeServiceId) {
+                    $q->orWhere('id', $includeServiceId);
+                }
+            })
+            ->orderByDesc('entry_date')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get(['id', 'invoice_number', 'laptop_type', 'customer_id', 'status']);
     }
 
     /**

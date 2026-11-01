@@ -135,7 +135,7 @@
                                             {{ \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO }}
                                         </option>
                                     </select>
-                                    <p class="mt-1 text-xs text-slate-600">{{ __('Untuk servis: buat invoice service (Open), lalu catat sparepart di sini dengan jenis ini dan pilih nomor invoice service sebagai referensi. Stok masuk ke cabang yang sama.') }}</p>
+                                    <p class="mt-1 text-xs text-slate-600">{{ __('Untuk servis: buat invoice service (Open), lalu catat sparepart di sini dengan jenis Pembelian Sparepart Service dan pilih nomor invoice service sebagai referensi. Invoice dan stok mengikuti lokasi yang sama, baik gudang maupun cabang.') }}</p>
                                     <x-input-error :messages="$errors->get('jenis_pembelian')" class="mt-2" />
                                 </div>
                                 <div id="service-invoice-row" class="{{ old('jenis_pembelian') === \App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE ? '' : 'hidden' }}">
@@ -307,7 +307,6 @@
         const baseUrl = '{{ url("") }}';
         const purchaseSerialSearchUrl = baseUrl + purchaseSerialSearchPath;
         const JENIS_SPAREPART_SERVICE = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE);
-        const JENIS_SPAREPART_SERVICE_LAPTOP_TOKO = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO);
         const serviceInvoicePlaceholder = @json($serviceInvoicePlaceholder);
         const isEdit = @json($isEdit);
         let itemIdx = {{ ($isEdit && $editPurchase) ? $editPurchase->details->count() : 1 }};
@@ -323,20 +322,10 @@
 
         function syncPurchaseJenisServiceUi() {
             if (isEdit) return;
-            const locType = document.querySelector('input[name="location_type"]:checked')?.value;
             const jenisSel = document.getElementById('jenis_pembelian');
             const serviceRow = document.getElementById('service-invoice-row');
             const serviceSel = document.getElementById('service_id');
             if (!jenisSel || !serviceRow || !serviceSel) return;
-            if (locType === 'warehouse') {
-                if (jenisSel.value === JENIS_SPAREPART_SERVICE || jenisSel.value === JENIS_SPAREPART_SERVICE_LAPTOP_TOKO) {
-                    jenisSel.value = @json(\App\Models\Purchase::JENIS_PEMBELIAN_UNIT);
-                }
-                serviceRow.classList.add('hidden');
-                serviceSel.value = '';
-                serviceSel.removeAttribute('required');
-                return;
-            }
             const isSparepartSvc = jenisSel.value === JENIS_SPAREPART_SERVICE;
             serviceRow.classList.toggle('hidden', !isSparepartSvc);
             if (isSparepartSvc) {

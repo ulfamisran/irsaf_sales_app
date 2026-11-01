@@ -61,9 +61,6 @@ class PurchaseService
         }
 
         if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
-            if ($locationType !== Stock::LOCATION_BRANCH) {
-                throw new InvalidArgumentException(__('Pembelian Sparepart Service hanya dapat dilakukan ke lokasi Cabang.'));
-            }
             if (! $serviceId) {
                 throw new InvalidArgumentException(__('Pilih nomor invoice service sebagai referensi.'));
             }
@@ -71,13 +68,8 @@ class PurchaseService
             if (! $service || $service->status !== Service::STATUS_OPEN) {
                 throw new InvalidArgumentException(__('Invoice service tidak valid atau sudah tidak berstatus open.'));
             }
-            if ((int) $service->branch_id !== $locationId) {
-                throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
-            }
+            $this->assertSparepartServiceMatchesLocation($service, $locationType, $locationId);
         } else {
-            if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO && $locationType !== Stock::LOCATION_BRANCH) {
-                throw new InvalidArgumentException(__('Pembelian Sparepart Service Laptop Toko hanya dapat dilakukan ke lokasi Cabang.'));
-            }
             $serviceId = null;
         }
 
@@ -204,9 +196,6 @@ class PurchaseService
         $serviceId = $purchase->service_id;
 
         if ($jenisPembelian === Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
-            if ($locationType !== Stock::LOCATION_BRANCH) {
-                throw new InvalidArgumentException(__('Pembelian Sparepart Service hanya dapat dilakukan ke lokasi Cabang.'));
-            }
             if (! $serviceId) {
                 throw new InvalidArgumentException(__('Pilih nomor invoice service sebagai referensi.'));
             }
@@ -214,9 +203,7 @@ class PurchaseService
             if (! $service || $service->status !== Service::STATUS_OPEN) {
                 throw new InvalidArgumentException(__('Invoice service tidak valid atau sudah tidak berstatus open.'));
             }
-            if ((int) $service->branch_id !== $locationId) {
-                throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
-            }
+            $this->assertSparepartServiceMatchesLocation($service, $locationType, $locationId);
         }
 
         [$details, $total] = $this->buildDetails($items);
@@ -700,6 +687,21 @@ class PurchaseService
             }
         } else {
             throw new InvalidArgumentException(__('Tipe lokasi tidak valid.'));
+        }
+    }
+
+    private function assertSparepartServiceMatchesLocation(Service $service, string $locationType, int $locationId): void
+    {
+        if ($locationType === Stock::LOCATION_WAREHOUSE) {
+            if ((int) $service->warehouse_id !== $locationId) {
+                throw new InvalidArgumentException(__('Gudang pembelian harus sama dengan gudang invoice service.'));
+            }
+
+            return;
+        }
+
+        if ((int) $service->branch_id !== $locationId) {
+            throw new InvalidArgumentException(__('Cabang pembelian harus sama dengan cabang invoice service.'));
         }
     }
 

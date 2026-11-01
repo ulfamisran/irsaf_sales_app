@@ -167,20 +167,13 @@ class PurchaseRequest extends FormRequest
             $this->addDuplicateSerialMessages($validator);
 
             $jenis = (string) $this->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
-            if (in_array($jenis, [
-                Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE,
-                Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE_LAPTOP_TOKO,
-            ], true) && $this->input('location_type') !== 'branch') {
-                $validator->errors()->add(
-                    'jenis_pembelian',
-                    __('Jenis pembelian sparepart service hanya untuk lokasi Cabang.')
-                );
-            }
-
             if ($jenis !== Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
                 return;
             }
-            $branchId = (int) ($this->input('branch_id') ?? 0);
+            $locationType = (string) $this->input('location_type');
+            $locationId = $locationType === 'warehouse'
+                ? (int) ($this->input('warehouse_id') ?? 0)
+                : (int) ($this->input('branch_id') ?? 0);
             $serviceId = (int) ($this->input('service_id') ?? 0);
             if ($serviceId <= 0) {
                 return;
@@ -194,7 +187,13 @@ class PurchaseRequest extends FormRequest
             if ($svc->status !== Service::STATUS_OPEN) {
                 $validator->errors()->add('service_id', __('Invoice service harus berstatus open.'));
             }
-            if ($branchId > 0 && (int) $svc->branch_id !== $branchId) {
+            if ($locationId <= 0) {
+                return;
+            }
+            if ($locationType === 'warehouse' && (int) $svc->warehouse_id !== $locationId) {
+                $validator->errors()->add('service_id', __('Invoice service harus dari gudang yang sama dengan lokasi pembelian.'));
+            }
+            if ($locationType === 'branch' && (int) $svc->branch_id !== $locationId) {
                 $validator->errors()->add('service_id', __('Invoice service harus dari cabang yang sama dengan lokasi pembelian.'));
             }
         });
