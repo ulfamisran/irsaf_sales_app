@@ -56,8 +56,8 @@ class PurchaseReceivingService
             $requiresSerial = $product?->category?->requires_serial ?? true;
 
             $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
-            if ($requiresSerial || $serialsOnDetail !== []) {
-                $units = $unitsByDetail[(int) $detail->id] ?? collect();
+            $units = $unitsByDetail[(int) $detail->id] ?? collect();
+            if ($requiresSerial || $serialsOnDetail !== [] || $units->isNotEmpty()) {
 
                 foreach ($units as $unit) {
                     $hpp = $this->unitDebtAmount($unit, $unitPrice);
@@ -348,38 +348,29 @@ class PurchaseReceivingService
                 if (! $unit) {
                     throw new InvalidArgumentException(__('Unit tidak ditemukan.'));
                 }
-                if (in_array($unit->status, [
-                    ProductUnit::STATUS_SOLD,
-                    ProductUnit::STATUS_KEEP,
-                    ProductUnit::STATUS_IN_RENT,
-                    ProductUnit::STATUS_RESERVED,
-                ], true)) {
-                    throw new InvalidArgumentException(
-                        __('Serial :sn tidak dapat diubah karena status stok saat ini: :status.', [
-                            'sn' => $unit->serial_number,
-                            'status' => $unit->status,
-                        ])
-                    );
-                }
-
                 $newStatus = match ($newResult) {
                     PurchaseReceivingLog::RESULT_BAIK => ProductUnit::STATUS_IN_STOCK,
                     PurchaseReceivingLog::RESULT_RETURE => ProductUnit::STATUS_RETURE,
                     PurchaseReceivingLog::RESULT_PENDING => ProductUnit::STATUS_PENDING,
                 };
 
+                // Serial yang sudah sold/keep/disewa/dll tetap pada status stok terakhir.
+                // Hasil cek tetap tersimpan.
+                $keepCurrentStockStatus = ! $this->checkResultMayReplaceStockStatus((string) $unit->status);
                 $unit->update([
-                    'status' => $newStatus,
+                    'status' => $keepCurrentStockStatus ? $unit->status : $newStatus,
                     'check_status' => ProductUnit::CHECK_CHECKED,
                     'checked_at' => $now,
                     'checked_by' => $userId,
                 ]);
 
-                $this->stockMutationService->recalculateStockQuantityIfExists(
-                    (int) $unit->product_id,
-                    (string) $unit->location_type,
-                    (int) $unit->location_id
-                );
+                if (! $keepCurrentStockStatus) {
+                    $this->stockMutationService->recalculateStockQuantityIfExists(
+                        (int) $unit->product_id,
+                        (string) $unit->location_type,
+                        (int) $unit->location_id
+                    );
+                }
             } else {
                 $detail = PurchaseDetail::whereKey($log->purchase_detail_id)->lockForUpdate()->first();
                 if (! $detail) {
@@ -658,9 +649,9 @@ class PurchaseReceivingService
                 $unitPrice = round((float) $detail->subtotal / (int) $detail->quantity, 2);
             }
             $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
+            $units = $unitsByDetail[(int) $detail->id] ?? collect();
 
-            if ($requiresSerial || $serialsOnDetail !== []) {
-                $units = $unitsByDetail[(int) $detail->id] ?? collect();
+            if ($requiresSerial || $serialsOnDetail !== [] || $units->isNotEmpty()) {
                 foreach ($units as $unit) {
                     if (! $this->unitCountsAsRecognizedDebt($unit)) {
                         continue;
@@ -818,11 +809,20 @@ class PurchaseReceivingService
         $serials = array_values(array_unique($serials));
         if ($serials !== []) {
             $knownIds = $units->pluck('id')->all();
+            $serialKeys = array_values(array_filter(array_map(
+                fn (string $sn) => $this->serialKey($sn),
+                $serials
+            )));
             $legacy = ProductUnit::query()
-                ->whereIn('serial_number', $serials)
                 ->when($knownIds !== [], fn ($q) => $q->whereNotIn('id', $knownIds))
-                ->where(function ($q) use ($purchase) {
-                    $q->whereNull('purchase_id')->orWhere('purchase_id', $purchase->id);
+                ->where(function ($q) use ($serials, $serialKeys) {
+                    $q->whereIn('serial_number', $serials);
+                    foreach ($serialKeys as $key) {
+                        $q->orWhereRaw(
+                            "UPPER(REPLACE(REPLACE(REPLACE(TRIM(serial_number), '-', ''), ' ', ''), '.', '')) = ?",
+                            [$key]
+                        );
+                    }
                 })
                 ->get();
             $units = $units->concat($legacy);
@@ -834,22 +834,21 @@ class PurchaseReceivingService
             $detailId = (int) $detail->id;
             $serialLookup = [];
             foreach ($this->parseDetailSerials($detail->serial_numbers) as $sn) {
-                $serialLookup[strtoupper($sn)] = true;
+                $key = $this->serialKey($sn);
+                if ($key !== '') {
+                    $serialLookup[$key] = true;
+                }
             }
 
-            $matched = $units->filter(function (ProductUnit $unit) use ($detail, $detailId, $detailIds, $serialLookup, &$used) {
+            $matched = $units->filter(function (ProductUnit $unit) use ($detailId, $detailIds, $serialLookup, &$used) {
                 if (isset($used[$unit->id])) {
                     return false;
                 }
                 if ((int) $unit->purchase_detail_id === $detailId) {
                     return true;
                 }
-                $key = strtoupper(trim((string) $unit->serial_number));
-                $serialMatches = $key !== '' && isset($serialLookup[$key]);
-                if (! $serialMatches) {
-                    return false;
-                }
-                if ($unit->purchase_id !== null && (int) $unit->purchase_id !== (int) $detail->purchase_id) {
+                $key = $this->serialKey((string) $unit->serial_number);
+                if ($key === '' || ! isset($serialLookup[$key])) {
                     return false;
                 }
                 if ($unit->purchase_detail_id && in_array((int) $unit->purchase_detail_id, $detailIds, true)) {
@@ -865,6 +864,51 @@ class PurchaseReceivingService
             $byDetail[$detailId] = $matched;
         }
 
+        foreach ($units as $unit) {
+            if (isset($used[(int) $unit->id])) {
+                continue;
+            }
+            if ((int) $unit->purchase_id !== (int) $purchase->id) {
+                continue;
+            }
+            $targetId = null;
+            foreach ($purchase->details as $detail) {
+                if ((int) $detail->product_id === (int) $unit->product_id) {
+                    $targetId = (int) $detail->id;
+                    break;
+                }
+            }
+            if ($targetId === null && $purchase->details->count() === 1) {
+                $targetId = (int) $purchase->details->first()->id;
+            }
+            if ($targetId === null || ! isset($byDetail[$targetId])) {
+                continue;
+            }
+            $byDetail[$targetId]->push($unit);
+            $used[(int) $unit->id] = true;
+        }
+
         return $byDetail;
+    }
+
+    /**
+     * Status yang memang dihasilkan oleh cek barang. Status lain (sold, keep, sewa, dan sejenisnya) tidak ditimpa.
+     */
+    private function checkResultMayReplaceStockStatus(string $status): bool
+    {
+        return in_array($status, [
+            ProductUnit::STATUS_IN_STOCK,
+            ProductUnit::STATUS_NOT_IN_STOCK,
+            ProductUnit::STATUS_RETURE,
+            ProductUnit::STATUS_PENDING,
+        ], true);
+    }
+
+    private function serialKey(string $serial): string
+    {
+        $normalized = strtoupper(trim($serial));
+        $normalized = preg_replace('/[^A-Z0-9]/', '', $normalized) ?? '';
+
+        return $normalized;
     }
 }

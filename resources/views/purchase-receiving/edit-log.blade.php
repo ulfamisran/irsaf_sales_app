@@ -45,7 +45,7 @@
                         <x-input-label for="notes" :value="__('Catatan (opsional)')" />
                         <textarea id="notes" name="notes" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('notes', $log->notes) }}</textarea>
                     </div>
-                    <p class="text-xs text-slate-500">{{ __('Perubahan dari/ke Baik akan menyesuaikan stok otomatis. Serial yang sudah terjual/keep tidak dapat diubah.') }}</p>
+                    <p class="text-xs text-slate-500">{{ __('Perubahan dari/ke Baik akan menyesuaikan stok otomatis. Jika serial sudah terjual, keep, atau status stok lain, hasil cek tetap tersimpan dan status stok tidak diubah.') }}</p>
                     <div class="flex justify-end gap-2">
                         <a href="{{ route('purchase-receiving.index', ['tab' => 'riwayat']) }}" class="px-4 py-2.5 rounded-lg bg-gray-200 text-gray-700 text-sm font-semibold">{{ __('Batal') }}</a>
                         <button type="submit" class="px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">{{ __('Simpan Perubahan') }}</button>
