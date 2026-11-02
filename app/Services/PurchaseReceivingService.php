@@ -49,21 +49,25 @@ class PurchaseReceivingService
 
         foreach ($purchase->details as $detail) {
             $unitPrice = round((float) $detail->unit_price, 2);
+            if ($unitPrice <= 0 && (int) $detail->quantity > 0) {
+                $unitPrice = round((float) $detail->subtotal / (int) $detail->quantity, 2);
+            }
             $product = $detail->product;
             $requiresSerial = $product?->category?->requires_serial ?? true;
 
-            if ($requiresSerial) {
+            $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
+            if ($requiresSerial || $serialsOnDetail !== []) {
                 $units = $unitsByDetail[(int) $detail->id] ?? collect();
 
                 foreach ($units as $unit) {
                     $hpp = $this->unitDebtAmount($unit, $unitPrice);
-                    if ($unit->check_status === ProductUnit::CHECK_UNCHECKED) {
+                    if ($this->unitCountsAsRecognizedDebt($unit)) {
+                        // Diterima baik: utang = harga invoice, tetap dihitung saat in_stock maupun sold.
+                        $hasChecked = true;
+                        $recognized += $unitPrice;
+                    } elseif ($unit->check_status === ProductUnit::CHECK_UNCHECKED) {
                         $unchecked += $hpp;
                         $hasUnchecked = true;
-                    } elseif ($this->unitCountsAsRecognizedDebt($unit)) {
-                        // Diterima baik: tetap utang meski kemudian in_stock atau sold.
-                        $hasChecked = true;
-                        $recognized += $hpp;
                     } elseif ($this->normalizedUnitStatus($unit) === ProductUnit::STATUS_RETURE) {
                         $hasChecked = true;
                         $returnValue += $hpp;
@@ -650,20 +654,23 @@ class PurchaseReceivingService
             $requiresSerial = $detail->product?->category?->requires_serial ?? true;
             $productLabel = trim(($detail->product->sku ?? '').' '.($detail->product->brand ?? '').' '.($detail->product->series ?? '')) ?: __('Produk');
             $unitPrice = round((float) $detail->unit_price, 2);
+            if ($unitPrice <= 0 && (int) $detail->quantity > 0) {
+                $unitPrice = round((float) $detail->subtotal / (int) $detail->quantity, 2);
+            }
+            $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
 
-            if ($requiresSerial) {
+            if ($requiresSerial || $serialsOnDetail !== []) {
                 $units = $unitsByDetail[(int) $detail->id] ?? collect();
                 foreach ($units as $unit) {
                     if (! $this->unitCountsAsRecognizedDebt($unit)) {
                         continue;
                     }
-                    $hpp = $this->unitDebtAmount($unit, $unitPrice);
                     $items[] = [
                         'type' => 'serial',
                         'label' => $productLabel,
                         'serial' => (string) $unit->serial_number,
                         'qty' => 1,
-                        'value' => $hpp,
+                        'value' => $unitPrice,
                     ];
                 }
             } elseif ((int) $detail->qty_baik > 0) {
@@ -747,10 +754,7 @@ class PurchaseReceivingService
 
     private function unitCountsAsRecognizedDebt(ProductUnit $unit): bool
     {
-        if ((string) $unit->check_status === ProductUnit::CHECK_UNCHECKED) {
-            return false;
-        }
-
+        // in_stock dan sold tetap utang. Flag cek tidak boleh menggugurkan unit yang sudah masuk stok lalu terjual.
         return in_array($this->normalizedUnitStatus($unit), $this->recognizedDebtStatuses(), true);
     }
 
@@ -833,25 +837,26 @@ class PurchaseReceivingService
                 $serialLookup[strtoupper($sn)] = true;
             }
 
-            $matched = $units->filter(function (ProductUnit $unit) use ($detail, $detailId, $serialLookup, &$used) {
+            $matched = $units->filter(function (ProductUnit $unit) use ($detail, $detailId, $detailIds, $serialLookup, &$used) {
                 if (isset($used[$unit->id])) {
                     return false;
                 }
                 if ((int) $unit->purchase_detail_id === $detailId) {
                     return true;
                 }
-                if ($unit->purchase_detail_id) {
+                $key = strtoupper(trim((string) $unit->serial_number));
+                $serialMatches = $key !== '' && isset($serialLookup[$key]);
+                if (! $serialMatches) {
                     return false;
                 }
                 if ($unit->purchase_id !== null && (int) $unit->purchase_id !== (int) $detail->purchase_id) {
                     return false;
                 }
-                if ((int) $unit->product_id !== (int) $detail->product_id) {
+                if ($unit->purchase_detail_id && in_array((int) $unit->purchase_detail_id, $detailIds, true)) {
                     return false;
                 }
-                $key = strtoupper(trim((string) $unit->serial_number));
 
-                return $key !== '' && isset($serialLookup[$key]);
+                return true;
             })->values();
 
             foreach ($matched as $unit) {
