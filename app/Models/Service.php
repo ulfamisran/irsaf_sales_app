@@ -71,6 +71,24 @@ class Service extends Model
         return $this->belongsTo(Warehouse::class);
     }
 
+    /**
+     * Lokasi stok service: gudang atau cabang.
+     *
+     * @return array{0: string, 1: int}|null
+     */
+    public function stockLocation(): ?array
+    {
+        if (($this->location_type ?? self::LOCATION_BRANCH) === self::LOCATION_WAREHOUSE) {
+            return $this->warehouse_id
+                ? [Stock::LOCATION_WAREHOUSE, (int) $this->warehouse_id]
+                : null;
+        }
+
+        return $this->branch_id
+            ? [Stock::LOCATION_BRANCH, (int) $this->branch_id]
+            : null;
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

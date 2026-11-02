@@ -110,8 +110,9 @@ class ServiceController extends Controller
         $paymentMethodTotals = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
             ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->whereRaw('1 = 0'))
-            ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('services.warehouse_id', $user->warehouse_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->location_type === 'warehouse' && $request->filled('warehouse_id'), fn ($q) => $q->where('services.warehouse_id', $request->warehouse_id))
+            ->when($user->isSuperAdminOrAdminPusat() && $request->location_type !== 'warehouse' && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('services.entry_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
             ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
@@ -296,7 +297,7 @@ class ServiceController extends Controller
         $customers = $branchIdForData
             ? Customer::query()->where('branch_id', $branchIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
             : ($warehouseIdForData
-                ? Customer::query()->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
+                ? Customer::query()->where('warehouse_id', $warehouseIdForData)->where('is_active', true)->orderBy('name')->limit(500)->get(['id', 'name', 'phone'])
                 : collect());
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -304,8 +305,10 @@ class ServiceController extends Controller
             ->orderBy('jenis_pembayaran')->orderBy('nama_bank')->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $materialProducts = $branchIdForData
-            ? $this->getInStockProductsForBranch($branchIdForData)
-            : collect();
+            ? $this->getInStockProductsForLocation(Stock::LOCATION_BRANCH, (int) $branchIdForData)
+            : ($warehouseIdForData
+                ? $this->getInStockProductsForLocation(Stock::LOCATION_WAREHOUSE, (int) $warehouseIdForData)
+                : collect());
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
@@ -375,16 +378,7 @@ class ServiceController extends Controller
 
     public function show(Service $service): View
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($service->location_type === 'warehouse') {
-                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
-                    abort(403, __('Unauthorized.'));
-                }
-            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->authorizeServiceAccess($service);
 
         $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
@@ -410,25 +404,12 @@ class ServiceController extends Controller
 
     public function edit(Service $service): View
     {
-        $user = auth()->user();
-        $canEdit = $user->isSuperAdminOrAdminPusat()
-            || $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]);
-        if (! $canEdit) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($service->location_type === 'warehouse') {
-                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
-                    abort(403, __('Unauthorized.'));
-                }
-            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->authorizeServiceAccess($service);
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
         }
 
+        $user = auth()->user();
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
             : ($user->branch_id ? Branch::whereKey($user->branch_id)->get() : collect());
@@ -447,27 +428,26 @@ class ServiceController extends Controller
             ->orderBy('nama_bank')
             ->orderBy('id')
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
-        $materialProducts = $service->branch_id
-            ? $this->getInStockProductsForBranch((int) $service->branch_id)
+        $stockLocation = $service->stockLocation();
+        $materialProducts = $stockLocation
+            ? $this->getInStockProductsForLocation($stockLocation[0], $stockLocation[1])
             : collect();
 
-        $branchIds = $branches->pluck('id')->toArray();
-        $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
+        $kasBalanceService = new KasBalanceService();
+        $saldoMapBranch = [];
+        if (($service->location_type ?? 'branch') === 'warehouse' && $service->warehouse_id) {
+            $saldoMapBranch[(int) $service->warehouse_id] = $kasBalanceService->getSaldoPerPaymentMethodForWarehouse((int) $service->warehouse_id);
+        } else {
+            $saldoMapBranch = $kasBalanceService->getSaldoPerBranchAndPm($branches->pluck('id')->toArray());
+        }
 
         return view('services.edit', compact('service', 'branches', 'warehouses', 'customers', 'paymentMethods', 'saldoMapBranch', 'materialProducts'));
     }
 
     public function update(ServiceRequest $request, Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
         $user = $request->user();
-        $canEdit = $user->isSuperAdminOrAdminPusat()
-            || $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]);
-        if (! $canEdit) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
 
         try {
             $customerId = $this->resolveCustomerId($request);
@@ -516,10 +496,8 @@ class ServiceController extends Controller
 
     public function addPayment(Request $request, Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
         $user = $request->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
 
         $validated = $request->validate([
             'payments' => ['required', 'array', 'min:1'],
@@ -549,10 +527,8 @@ class ServiceController extends Controller
 
     public function addMaterials(Request $request, Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
         $user = $request->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
         }
@@ -579,10 +555,7 @@ class ServiceController extends Controller
 
     public function deleteMaterial(Service $service, ServiceMaterial $material): RedirectResponse
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeServiceAccess($service);
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
         }
@@ -604,10 +577,7 @@ class ServiceController extends Controller
 
     public function complete(Request $request, Service $service): RedirectResponse
     {
-        $user = $request->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeServiceAccess($service);
 
         $validated = $request->validate([
             'exit_date' => ['nullable', 'date'],
@@ -629,10 +599,7 @@ class ServiceController extends Controller
 
     public function markPickedUp(Service $service): RedirectResponse
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdmin() && $user->branch_id && $service->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        $this->authorizeServiceAccess($service);
 
         try {
             $this->serviceService->markPickedUp($service);
@@ -682,16 +649,7 @@ class ServiceController extends Controller
 
     public function invoice(Service $service): View
     {
-        $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($service->location_type === 'warehouse') {
-                if ($user->warehouse_id && $service->warehouse_id !== $user->warehouse_id) {
-                    abort(403, __('Unauthorized.'));
-                }
-            } elseif ($user->branch_id && $service->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->authorizeServiceAccess($service);
 
         $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
@@ -729,6 +687,27 @@ class ServiceController extends Controller
         return $customers;
     }
 
+    private function authorizeServiceAccess(Service $service): void
+    {
+        $user = auth()->user();
+        if ($user->isSuperAdminOrAdminPusat()) {
+            return;
+        }
+
+        if (($service->location_type ?? Service::LOCATION_BRANCH) === Service::LOCATION_WAREHOUSE) {
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && (int) $user->warehouse_id === (int) $service->warehouse_id) {
+                return;
+            }
+            abort(403, __('Unauthorized.'));
+        }
+
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && (int) $user->branch_id === (int) $service->branch_id) {
+            return;
+        }
+
+        abort(403, __('Unauthorized.'));
+    }
+
     private function resolveCustomerId(Request $request): ?int
     {
         if ($request->filled('customer_id')) {
@@ -741,20 +720,31 @@ class ServiceController extends Controller
         }
 
         $user = $request->user();
-        $branchId = $user->isSuperAdmin()
-            ? (int) $request->branch_id
-            : (int) $user->branch_id;
-
-        $customer = Customer::create([
+        $locationType = (string) $request->input('location_type', 'branch');
+        $customer = [
             'name' => $name,
             'phone' => $request->input('customer_new_phone'),
             'address' => $request->input('customer_new_address'),
             'is_active' => true,
-            'placement_type' => $branchId ? 'cabang' : null,
-            'branch_id' => $branchId ?: null,
-        ]);
+        ];
 
-        return (int) $customer->id;
+        if ($locationType === 'warehouse') {
+            $warehouseId = $user->isSuperAdmin()
+                ? (int) $request->warehouse_id
+                : (int) ($user->warehouse_id ?: $request->warehouse_id);
+            $customer['placement_type'] = Customer::PLACEMENT_GUDANG;
+            $customer['warehouse_id'] = $warehouseId ?: null;
+            $customer['branch_id'] = null;
+        } else {
+            $branchId = $user->isSuperAdmin()
+                ? (int) $request->branch_id
+                : (int) ($user->branch_id ?: $request->branch_id);
+            $customer['placement_type'] = $branchId ? Customer::PLACEMENT_CABANG : null;
+            $customer['branch_id'] = $branchId ?: null;
+            $customer['warehouse_id'] = null;
+        }
+
+        return (int) Customer::create($customer)->id;
     }
 
     /**
@@ -763,7 +753,11 @@ class ServiceController extends Controller
     private function storeMaterials(Service $service, array $materials, bool $replace = false, ?int $userId = null): void
     {
         $stockService = app(StockMutationService::class);
-        $branchId = (int) $service->branch_id;
+        $stockLocation = $service->stockLocation();
+        if (! $stockLocation) {
+            throw new InvalidArgumentException(__('Lokasi service tidak valid.'));
+        }
+        [$locationType, $locationId] = $stockLocation;
         $txDate = now()->toDateString();
 
         if ($replace) {
@@ -783,8 +777,8 @@ class ServiceController extends Controller
                 }
                 $stockService->addStock(
                     $product,
-                    Stock::LOCATION_BRANCH,
-                    $branchId,
+                    $locationType,
+                    $locationId,
                     $oldQty,
                     $userId ?? auth()->id(),
                     null,
@@ -793,10 +787,10 @@ class ServiceController extends Controller
                 StockMutation::create([
                     'invoice_number' => $service->invoice_number,
                     'product_id' => $product->id,
-                    'from_location_type' => Stock::LOCATION_BRANCH,
-                    'from_location_id' => $branchId,
-                    'to_location_type' => Stock::LOCATION_BRANCH,
-                    'to_location_id' => $branchId,
+                    'from_location_type' => $locationType,
+                    'from_location_id' => $locationId,
+                    'to_location_type' => $locationType,
+                    'to_location_id' => $locationId,
                     'quantity' => $oldQty,
                     'biaya_distribusi_per_unit' => 0,
                     'distribution_payment_method_id' => null,
@@ -827,11 +821,10 @@ class ServiceController extends Controller
                 continue;
             }
 
-            // Material service dari stok cabang: stok berkurang saat dipakai.
             $stockService->reduceStock(
                 $product,
-                Stock::LOCATION_BRANCH,
-                $branchId,
+                $locationType,
+                $locationId,
                 $qty
             );
 
@@ -852,10 +845,10 @@ class ServiceController extends Controller
             StockMutation::create([
                 'invoice_number' => $service->invoice_number,
                 'product_id' => $product->id,
-                'from_location_type' => Stock::LOCATION_BRANCH,
-                'from_location_id' => $branchId,
-                'to_location_type' => Stock::LOCATION_BRANCH,
-                'to_location_id' => $branchId,
+                'from_location_type' => $locationType,
+                'from_location_id' => $locationId,
+                'to_location_type' => $locationType,
+                'to_location_id' => $locationId,
                 'quantity' => $qty,
                 'biaya_distribusi_per_unit' => 0,
                 'distribution_payment_method_id' => null,
@@ -958,11 +951,20 @@ class ServiceController extends Controller
 
     private function getInStockProductsForBranch(int $branchId)
     {
+        return $this->getInStockProductsForLocation(Stock::LOCATION_BRANCH, $branchId);
+    }
+
+    private function getInStockProductsForLocation(string $locationType, int $locationId)
+    {
+        if ($locationId <= 0) {
+            return collect();
+        }
+
         return Product::query()
-            ->join('stocks', function ($join) use ($branchId) {
+            ->join('stocks', function ($join) use ($locationType, $locationId) {
                 $join->on('stocks.product_id', '=', 'products.id')
-                    ->where('stocks.location_type', Stock::LOCATION_BRANCH)
-                    ->where('stocks.location_id', $branchId)
+                    ->where('stocks.location_type', $locationType)
+                    ->where('stocks.location_id', $locationId)
                     ->where('stocks.quantity', '>', 0);
             })
             ->leftJoin('categories', 'categories.id', '=', 'products.category_id')

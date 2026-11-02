@@ -12,6 +12,7 @@ use App\Models\Service;
 use App\Models\ServiceMaterial;
 use App\Models\ServicePayment;
 use App\Models\Stock;
+use App\Models\Warehouse;
 use App\Models\StockMutation;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -73,6 +74,9 @@ class ServiceService
         $branch = $branchId ? Branch::find($branchId) : null;
         if ($locationType === 'branch' && ! $branch) {
             throw new InvalidArgumentException(__('Cabang tidak ditemukan.'));
+        }
+        if ($locationType === 'warehouse' && (! $warehouseId || ! Warehouse::find($warehouseId))) {
+            throw new InvalidArgumentException(__('Gudang tidak ditemukan.'));
         }
         $targetStatus = $isRelease ? Service::STATUS_COMPLETED : Service::STATUS_OPEN;
 
@@ -584,42 +588,49 @@ class ServiceService
         }
 
         $date = $mutationDate ?: now()->toDateString();
-        $branchId = (int) $service->branch_id;
         $consumedByProduct = [];
 
         foreach ($purchases as $purchase) {
+            [$locationType, $locationId] = $this->purchaseStockLocation($purchase);
             foreach ($purchase->details as $detail) {
                 $productId = (int) $detail->product_id;
                 $qty = (int) $detail->quantity;
                 if ($productId <= 0 || $qty <= 0) {
                     continue;
                 }
-                if (! isset($consumedByProduct[$productId])) {
-                    $consumedByProduct[$productId] = [
+                $key = $locationType.'|'.$locationId.'|'.$productId;
+                if (! isset($consumedByProduct[$key])) {
+                    $consumedByProduct[$key] = [
+                        'product_id' => $productId,
+                        'location_type' => $locationType,
+                        'location_id' => $locationId,
                         'qty' => 0,
                         'purchase_invoice_numbers' => [],
                     ];
                 }
-                $consumedByProduct[$productId]['qty'] += $qty;
-                $consumedByProduct[$productId]['purchase_invoice_numbers'][$purchase->invoice_number] = true;
+                $consumedByProduct[$key]['qty'] += $qty;
+                $consumedByProduct[$key]['purchase_invoice_numbers'][$purchase->invoice_number] = true;
             }
         }
 
-        foreach ($consumedByProduct as $productId => $payload) {
+        foreach ($consumedByProduct as $payload) {
             $qty = (int) ($payload['qty'] ?? 0);
             if ($qty <= 0) {
                 continue;
             }
 
-            $product = Product::find($productId);
+            $product = Product::find((int) $payload['product_id']);
             if (! $product) {
                 continue;
             }
 
+            $locationType = (string) $payload['location_type'];
+            $locationId = (int) $payload['location_id'];
+
             $this->stockMutationService->reduceStock(
                 $product,
-                Stock::LOCATION_BRANCH,
-                $branchId,
+                $locationType,
+                $locationId,
                 $qty
             );
 
@@ -627,10 +638,10 @@ class ServiceService
             StockMutation::create([
                 'invoice_number' => $service->invoice_number,
                 'product_id' => $product->id,
-                'from_location_type' => Stock::LOCATION_BRANCH,
-                'from_location_id' => $branchId,
-                'to_location_type' => Stock::LOCATION_BRANCH,
-                'to_location_id' => $branchId,
+                'from_location_type' => $locationType,
+                'from_location_id' => $locationId,
+                'to_location_type' => $locationType,
+                'to_location_id' => $locationId,
                 'quantity' => $qty,
                 'biaya_distribusi_per_unit' => 0,
                 'distribution_payment_method_id' => null,
@@ -640,6 +651,27 @@ class ServiceService
                 'user_id' => $userId ?? auth()->id(),
             ]);
         }
+    }
+
+    /**
+     * @return array{0: string, 1: int}
+     */
+    private function purchaseStockLocation(Purchase $purchase): array
+    {
+        $locationType = (string) ($purchase->location_type ?: '');
+        if ($locationType === Stock::LOCATION_WAREHOUSE || ($locationType === '' && $purchase->warehouse_id)) {
+            $locationId = (int) $purchase->warehouse_id;
+            if ($locationId > 0) {
+                return [Stock::LOCATION_WAREHOUSE, $locationId];
+            }
+        }
+
+        $locationId = (int) $purchase->branch_id;
+        if ($locationId > 0) {
+            return [Stock::LOCATION_BRANCH, $locationId];
+        }
+
+        throw new InvalidArgumentException(__('Lokasi stok pembelian sparepart tidak valid.'));
     }
 
     private function generateInvoiceNumber(): string
