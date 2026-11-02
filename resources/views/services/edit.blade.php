@@ -51,7 +51,7 @@
                                 <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300">
                                     <option value="">{{ __('Pilih Pelanggan') }}</option>
                                     @foreach ($customers as $c)
-                                        <option value="{{ $c->id }}" {{ old('customer_id', $service->customer_id) == $c->id ? 'selected' : '' }}>
+                                        <option value="{{ $c->id }}" @selected((int) old('customer_id', $service->customer_id) === (int) $c->id)>
                                             {{ $c->name }}{{ $c->phone ? ' - '.$c->phone : '' }}
                                         </option>
                                     @endforeach

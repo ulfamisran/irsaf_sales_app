@@ -436,11 +436,9 @@ class ServiceController extends Controller
             ? Warehouse::orderBy('name')->get()
             : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
 
-        $customers = Customer::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->limit(500)
-            ->get(['id', 'name', 'phone']);
+        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
+
+        $customers = $this->customersForServiceForm($service);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -452,8 +450,6 @@ class ServiceController extends Controller
         $materialProducts = $service->branch_id
             ? $this->getInStockProductsForBranch((int) $service->branch_id)
             : collect();
-
-        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         $branchIds = $branches->pluck('id')->toArray();
         $saldoMapBranch = (new KasBalanceService)->getSaldoPerBranchAndPm($branchIds);
@@ -700,6 +696,37 @@ class ServiceController extends Controller
         $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         return view('services.invoice', compact('service'));
+    }
+
+    /**
+     * Pelanggan di lokasi service, plus pelanggan yang sudah tersimpan agar tetap terpilih di form edit.
+     */
+    private function customersForServiceForm(Service $service)
+    {
+        $query = Customer::query()->orderBy('name');
+
+        if (($service->location_type ?? 'branch') === Service::LOCATION_WAREHOUSE && $service->warehouse_id) {
+            $query->where('warehouse_id', $service->warehouse_id);
+        } elseif ($service->branch_id) {
+            $query->where('branch_id', $service->branch_id);
+        }
+
+        $customers = $query
+            ->where('is_active', true)
+            ->limit(500)
+            ->get(['id', 'name', 'phone']);
+
+        $currentId = (int) ($service->customer_id ?? 0);
+        if ($currentId > 0 && ! $customers->contains(fn ($c) => (int) $c->id === $currentId)) {
+            $current = $service->relationLoaded('customer') && $service->customer
+                ? $service->customer
+                : Customer::query()->find($currentId, ['id', 'name', 'phone']);
+            if ($current) {
+                $customers->prepend($current);
+            }
+        }
+
+        return $customers;
     }
 
     private function resolveCustomerId(Request $request): ?int
