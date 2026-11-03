@@ -308,7 +308,7 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        @if ($canManageAccess)
+                        @if ($canManageAccess && \Illuminate\Support\Facades\Route::has('role-access.index'))
                             <li><x-sidebar-nav-link :href="route('role-access.index')" :active="request()->routeIs('role-access.*')">Akses Modul</x-sidebar-nav-link></li>
                         @endif
                         @if ($see('landing-page'))

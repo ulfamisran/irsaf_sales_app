@@ -7,6 +7,7 @@ use App\Support\ModuleAccessCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class ModuleAccessService
 {
@@ -99,18 +100,26 @@ class ModuleAccessService
         }
 
         $set = [];
+        $loadedFromTable = false;
         if ($this->tablesReady()) {
-            $roleIds = $user->roles()->pluck('roles.id');
-            if ($roleIds->isNotEmpty()) {
-                $rows = DB::table('role_module_permissions as p')
-                    ->join('app_modules as m', 'm.id', '=', 'p.module_id')
-                    ->whereIn('p.role_id', $roleIds)
-                    ->get(['m.slug', 'p.action']);
-                foreach ($rows as $row) {
-                    $set[$row->slug.'|'.$row->action] = true;
+            try {
+                $roleIds = $user->roles()->pluck('roles.id');
+                if ($roleIds->isNotEmpty()) {
+                    $rows = DB::table('role_module_permissions as p')
+                        ->join('app_modules as m', 'm.id', '=', 'p.module_id')
+                        ->whereIn('p.role_id', $roleIds)
+                        ->get(['m.slug', 'p.action']);
+                    foreach ($rows as $row) {
+                        $set[$row->slug.'|'.$row->action] = true;
+                    }
                 }
+                $loadedFromTable = true;
+            } catch (Throwable $e) {
+                report($e);
             }
-        } else {
+        }
+
+        if (! $loadedFromTable) {
             $names = $user->roles()->pluck('name');
             foreach ($names as $name) {
                 foreach (ModuleAccessCatalog::grantsForRole((string) $name) as $slug => $actions) {

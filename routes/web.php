@@ -51,7 +51,7 @@ Route::get('/dashboard', function (Request $request) {
 
     // Safety limit to avoid overly large charts
     $maxDays = 120;
-    $days = $start->diffInDays($end) + 1;
+    $days = (int) round($start->diffInDays($end)) + 1;
     if ($days > $maxDays) {
         $start = (clone $end)->subDays($maxDays - 1);
         $days = $maxDays;
