@@ -215,7 +215,7 @@
         </div>
     </div>
 
-    @if (auth()->user()?->isSuperAdmin() && in_array($service->status, [\App\Models\Service::STATUS_OPEN, \App\Models\Service::STATUS_COMPLETED], true))
+    @if (auth()->user()?->canModule('services', 'cancel') && in_array($service->status, [\App\Models\Service::STATUS_OPEN, \App\Models\Service::STATUS_COMPLETED], true))
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             <div class="mt-10 border border-red-200 rounded-lg p-4 bg-red-50/40">
                 <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>

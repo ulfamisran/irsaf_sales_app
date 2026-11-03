@@ -233,7 +233,7 @@ class StockMutationController extends Controller
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $canFilterLocation = $user->isSuperAdminOrAdminPusat();
-        $canCancelDistribution = $user->isSuperAdminOrAdminPusat();
+        $canCancelDistribution = $user->canModule('stock-mutations', 'cancel');
 
         return view('stock-mutations.index', compact(
             'activeTab',

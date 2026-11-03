@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\Branch;
 use App\Models\Warehouse;
+use App\Services\ModuleAccessService;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 
@@ -16,6 +17,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Override Filesystem untuk hosting yang menonaktifkan exec()
         $this->app->singleton(\Illuminate\Filesystem\Filesystem::class, \App\Filesystem\Filesystem::class);
+        $this->app->singleton(ModuleAccessService::class);
     }
 
     /**

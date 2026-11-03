@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\ModuleAccessService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -125,6 +126,11 @@ class User extends Authenticatable
     public function isSuperAdminOrAdminPusat(): bool
     {
         return $this->isSuperAdmin() || $this->isAdminPusat();
+    }
+
+    public function canModule(string $slug, string $action = 'select'): bool
+    {
+        return app(ModuleAccessService::class)->allows($this, $slug, $action);
     }
 
     /**

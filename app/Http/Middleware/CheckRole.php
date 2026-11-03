@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Role;
+use App\Services\ModuleAccessService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,6 +22,18 @@ class CheckRole
 
         if ($request->user()->isStrictSuperAdmin()) {
             return $next($request);
+        }
+
+        $access = app(ModuleAccessService::class);
+        if ($access->tablesReady()) {
+            $resolved = $access->resolve($request);
+            if ($resolved !== null) {
+                if (! $access->allows($request->user(), $resolved['module'], $resolved['action'])) {
+                    abort(403, __('Anda tidak punya akses untuk aksi ini.'));
+                }
+
+                return $next($request);
+            }
         }
 
         if ($request->user()->isAdminPusat()) {

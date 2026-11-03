@@ -10,7 +10,7 @@
                 <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Invoice') }}
                 </a>
-                @if (auth()->user()?->isSuperAdmin() && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
+                @if (auth()->user()?->canModule('rentals', 'update') && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
                     @if ($rental->status === \App\Models\Rental::STATUS_OPEN)
                         <a href="{{ route('rentals.edit', $rental) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
                             {{ __('Edit') }}
@@ -209,7 +209,7 @@
             </div>
         @endif
 
-        @if (auth()->user()?->isSuperAdmin() && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
+        @if (auth()->user()?->canModule('rentals', 'cancel') && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
             <div class="mt-10 border border-red-200 rounded-lg p-4 bg-red-50/40">
                 <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
                 <form method="POST" action="{{ route('rentals.cancel', $rental) }}" onsubmit="return confirm('{{ $rental->status === \App\Models\Rental::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penyewaan ini?') : __('Batalkan penyewaan ini?') }}')">

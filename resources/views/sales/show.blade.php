@@ -456,7 +456,7 @@
                         </script>
                     @endif
 
-                    @if (auth()->user()?->isSuperAdminOrAdminPusat() && in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, \App\Models\Sale::STATUS_RELEASED], true))
+                    @if (auth()->user()?->canModule('sales', 'cancel') && in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, \App\Models\Sale::STATUS_RELEASED], true))
                         <div class="mt-20 border border-red-200 rounded-lg p-4 bg-red-50/40">
                             <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
                             <form method="POST" action="{{ route('sales.cancel', $sale) }}" onsubmit="return confirm('{{ $sale->status === \App\Models\Sale::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penjualan ini?') : __('Batalkan penjualan ini? Unit akan kembali IN STOCK. Data tetap tersimpan dengan status Dibatalkan.') }}')">

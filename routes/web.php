@@ -141,9 +141,13 @@ Route::get('/dashboard', function (Request $request) {
         'chartDateFrom' => $start->toDateString(),
         'chartDateTo' => $end->toDateString(),
     ]);
-})->middleware(['auth', 'verified'])->name('dashboard');
+})->middleware(['auth', 'verified', 'module.access'])->name('dashboard');
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'module.access'])->group(function () {
+    Route::get('role-access', [\App\Http\Controllers\RoleAccessController::class, 'index'])->name('role-access.index');
+    Route::get('role-access/{role}/edit', [\App\Http\Controllers\RoleAccessController::class, 'edit'])->name('role-access.edit');
+    Route::put('role-access/{role}', [\App\Http\Controllers\RoleAccessController::class, 'update'])->name('role-access.update');
+
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');

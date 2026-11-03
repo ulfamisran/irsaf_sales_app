@@ -529,7 +529,7 @@
                                         @if ($p->canBeEdited())
                                             <x-icon-btn-edit :href="route('purchases.edit', $p)" :label="__('Ubah')" />
                                         @endif
-                                        @if (!$p->isCancelled() && (auth()->user()->isSuperAdminOrAdminPusat() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG])))
+                                        @if (!$p->isCancelled() && auth()->user()->canModule('purchases', 'cancel'))
                                             <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'cancel']) }}" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
