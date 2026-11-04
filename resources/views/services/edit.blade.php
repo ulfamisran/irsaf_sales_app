@@ -41,8 +41,17 @@
                                     @endif
                                 </div>
                                 <div>
+                                    @php
+                                        $canPickTransactionDate = auth()->user()?->isSuperAdminOrAdminPusat() ?? false;
+                                        $lockedEntryDate = old('entry_date', $service->entry_date->toDateString());
+                                    @endphp
                                     <x-input-label for="entry_date" :value="__('Tanggal Masuk')" />
-                                    <x-text-input id="entry_date" class="block mt-1 w-full" type="date" name="entry_date" :value="old('entry_date', $service->entry_date->toDateString())" required />
+                                    @if ($canPickTransactionDate)
+                                        <x-text-input id="entry_date" class="block mt-1 w-full" type="date" name="entry_date" :value="$lockedEntryDate" required />
+                                    @else
+                                        <x-text-input id="entry_date" class="block mt-1 w-full bg-slate-100" type="date" :value="$service->entry_date->toDateString()" disabled />
+                                        <input type="hidden" name="entry_date" value="{{ $service->entry_date->toDateString() }}">
+                                    @endif
                                 </div>
                             </div>
 

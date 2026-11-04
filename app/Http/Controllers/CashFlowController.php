@@ -113,6 +113,7 @@ class CashFlowController extends Controller
             $query->whereDate('transaction_date', '<=', $request->date_to);
         }
         CatatRange::apply($query, $request, 'cash_flows.created_at');
+        CatatRange::applyBackdate($query, $request, 'cash_flows.transaction_date', 'cash_flows.created_at');
 
         $expenses = $query->paginate(20)->withQueryString();
 
@@ -743,6 +744,7 @@ class CashFlowController extends Controller
             $query->whereDate('transaction_date', '<=', $request->date_to);
         }
         CatatRange::apply($query, $request, 'cash_flows.created_at');
+        CatatRange::applyBackdate($query, $request, 'cash_flows.transaction_date', 'cash_flows.created_at');
         if ($request->filled('income_category_id')) {
             $query->where('income_category_id', $request->income_category_id);
         }

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class RentalRequest extends FormRequest
@@ -10,6 +11,16 @@ class RentalRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $user = $this->user();
+        if ($user && ! $user->isSuperAdminOrAdminPusat() && $this->routeIs('rentals.store')) {
+            $this->merge([
+                'pickup_date' => Carbon::now('Asia/Makassar')->toDateString(),
+            ]);
+        }
     }
 
     public function rules(): array

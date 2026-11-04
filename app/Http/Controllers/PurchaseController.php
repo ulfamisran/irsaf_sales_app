@@ -303,6 +303,7 @@ class PurchaseController extends Controller
             $query->whereDate('purchase_date', '<=', $request->date_to);
         }
         CatatRange::apply($query, $request, 'purchases.created_at');
+        CatatRange::applyBackdate($query, $request, 'purchases.purchase_date', 'purchases.created_at');
         if ($request->filled('distributor_id')) {
             $query->where('distributor_id', $request->distributor_id);
         }

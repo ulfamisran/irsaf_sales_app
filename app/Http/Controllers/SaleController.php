@@ -827,6 +827,7 @@ class SaleController extends Controller
             $query->whereDate('sale_date', '<=', $request->date_to);
         }
         CatatRange::apply($query, $request, 'sales.created_at');
+        CatatRange::applyBackdate($query, $request, 'sales.sale_date', 'sales.created_at');
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {

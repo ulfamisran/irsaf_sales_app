@@ -90,6 +90,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-catat-range-filter backdate />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,6 +165,8 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Pembayaran') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -199,6 +202,8 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 text-right">{{ number_format($svc->total_service_price, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3"><x-wita-datetime :value="$svc->created_at" /></td>
+                                <td class="px-4 py-3"><x-wita-datetime :value="$svc->updated_at" /></td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
                                         <a href="{{ route('services.invoice', $svc) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900" title="{{ __('Invoice') }}">
@@ -211,7 +216,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data service.') }}</td>
+                                <td colspan="11" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data service.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

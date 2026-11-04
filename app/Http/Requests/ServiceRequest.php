@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class ServiceRequest extends FormRequest
@@ -10,6 +11,26 @@ class ServiceRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $user = $this->user();
+        if (! $user || $user->isSuperAdminOrAdminPusat()) {
+            return;
+        }
+
+        if ($this->routeIs('services.store')) {
+            $this->merge([
+                'entry_date' => Carbon::now('Asia/Makassar')->toDateString(),
+            ]);
+        } elseif ($this->routeIs('services.update')) {
+            $service = $this->route('service');
+            $this->merge([
+                'entry_date' => $service?->entry_date?->toDateString()
+                    ?? Carbon::now('Asia/Makassar')->toDateString(),
+            ]);
+        }
     }
 
     public function rules(): array

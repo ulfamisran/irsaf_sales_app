@@ -78,7 +78,7 @@
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                             <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
-                        <x-catat-range-filter class="md:col-span-2" />
+                        <x-catat-range-filter backdate class="md:col-span-2" />
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Jenis Barang') }}</label>
                             <select name="jenis_barang" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">

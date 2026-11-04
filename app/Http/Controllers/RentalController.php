@@ -13,6 +13,7 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Services\RentalService;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
@@ -80,6 +81,8 @@ class RentalController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'rentals.created_at');
+        CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
 
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {
@@ -116,6 +119,10 @@ class RentalController extends Controller
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('rentals.pickup_date', '<=', $request->date_to))
             ->when($request->filled('return_status'), fn ($q) => $q->where('rentals.return_status', $request->return_status))
             ->whereIn('rentals.status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
+            ->when(true, function ($q) use ($request) {
+                CatatRange::apply($q, $request, 'rentals.created_at');
+                CatatRange::applyBackdate($q, $request, 'rentals.pickup_date', 'rentals.created_at');
+            })
             ->selectRaw('rental_payments.payment_method_id, SUM(rental_payments.amount) as total')
             ->groupBy('rental_payments.payment_method_id')
             ->pluck('total', 'rental_payments.payment_method_id');
@@ -164,6 +171,8 @@ class RentalController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'rentals.created_at');
+        CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {
                 $query->where('warehouse_id', $request->warehouse_id);
@@ -235,6 +244,8 @@ class RentalController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'rentals.created_at');
+        CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
         if ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {
                 $query->where('warehouse_id', $request->warehouse_id);
@@ -322,6 +333,12 @@ class RentalController extends Controller
     {
         try {
             $customerId = $this->resolveCustomerId($request);
+            $user = $request->user();
+            if (! $user->isSuperAdminOrAdminPusat()) {
+                $request->merge([
+                    'pickup_date' => \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
+                ]);
+            }
 
             $rental = $this->rentalService->create(
                 $request->location_type,

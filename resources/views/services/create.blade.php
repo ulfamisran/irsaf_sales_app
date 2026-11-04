@@ -67,8 +67,17 @@
                                     <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
                                 </div>
                                 <div>
+                                    @php
+                                        $canPickTransactionDate = auth()->user()?->isSuperAdminOrAdminPusat() ?? false;
+                                        $todayTransactionDate = \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString();
+                                    @endphp
                                     <x-input-label for="entry_date" :value="__('Tanggal Masuk')" />
-                                    <x-text-input id="entry_date" class="block mt-1 w-full" type="date" name="entry_date" :value="old('entry_date', date('Y-m-d'))" required />
+                                    @if ($canPickTransactionDate)
+                                        <x-text-input id="entry_date" class="block mt-1 w-full" type="date" name="entry_date" :value="old('entry_date', $todayTransactionDate)" required />
+                                    @else
+                                        <x-text-input id="entry_date" class="block mt-1 w-full bg-slate-100" type="date" :value="$todayTransactionDate" disabled />
+                                        <input type="hidden" name="entry_date" value="{{ $todayTransactionDate }}">
+                                    @endif
                                     <x-input-error :messages="$errors->get('entry_date')" class="mt-2" />
                                 </div>
                             </div>

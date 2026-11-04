@@ -101,7 +101,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
-                    <x-catat-range-filter class="md:col-span-2" />
+                    <x-catat-range-filter backdate class="md:col-span-2" />
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     <div>

@@ -279,6 +279,7 @@ class ProductController extends Controller
             $query->where('serial_number', 'like', '%'.$request->serial.'%');
         }
         CatatRange::apply($query, $request, 'product_units.created_at');
+        CatatRange::applyBackdate($query, $request, 'product_units.received_date', 'product_units.created_at');
 
         $units = $query->paginate(25)->withQueryString();
 

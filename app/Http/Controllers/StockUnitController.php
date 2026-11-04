@@ -529,6 +529,8 @@ class StockUnitController extends Controller
         }
         CatatRange::apply($listBase, $request, 'product_units.created_at');
         CatatRange::apply($countBase, $request, 'product_units.created_at');
+        CatatRange::applyBackdate($listBase, $request, 'product_units.received_date', 'product_units.created_at');
+        CatatRange::applyBackdate($countBase, $request, 'product_units.received_date', 'product_units.created_at');
 
         if ($request->filled('jenis_barang')) {
             $jenis = (string) $request->jenis_barang;

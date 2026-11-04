@@ -119,7 +119,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Serial') }}</label>
                         <input type="text" name="serial" value="{{ request('serial') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="SN..." />
                     </div>
-                    <x-catat-range-filter />
+                    <x-catat-range-filter backdate />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             {{ __('Filter') }}

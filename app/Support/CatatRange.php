@@ -21,6 +21,24 @@ class CatatRange
         );
     }
 
+    public static function applyBackdate(EloquentBuilder|QueryBuilder $query, Request $request, string $transactionColumn, string $recordedColumn): void
+    {
+        $user = $request->user();
+        if (! $request->boolean('backdate') || ! $user || ! $user->isSuperAdminOrAdminPusat()) {
+            return;
+        }
+        foreach ([$transactionColumn, $recordedColumn] as $column) {
+            if (! preg_match('/^[A-Za-z0-9_.]+$/', $column)) {
+                return;
+            }
+        }
+
+        $query->whereNotNull($transactionColumn)
+            ->whereRaw(
+                "DATE({$transactionColumn}) < DATE(DATE_ADD({$recordedColumn}, INTERVAL (8 * 60 - TIMESTAMPDIFF(MINUTE, UTC_TIMESTAMP(), NOW())) MINUTE))"
+            );
+    }
+
     public static function applyBetween(EloquentBuilder|QueryBuilder $query, ?string $from, ?string $to, string $column = 'created_at'): void
     {
         $start = self::bound($from, true);

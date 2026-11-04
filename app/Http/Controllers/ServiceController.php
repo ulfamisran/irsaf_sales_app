@@ -19,6 +19,7 @@ use App\Models\AuditLog;
 use App\Services\ServiceService;
 use App\Services\KasBalanceService;
 use App\Services\StockMutationService;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
@@ -88,6 +89,8 @@ class ServiceController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'services.created_at');
+        CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         $serviceTotals = (clone $query)
             ->whereIn('status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
@@ -117,6 +120,10 @@ class ServiceController extends Controller
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
             ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
             ->whereIn('services.status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
+            ->when(true, function ($q) use ($request) {
+                CatatRange::apply($q, $request, 'services.created_at');
+                CatatRange::applyBackdate($q, $request, 'services.entry_date', 'services.created_at');
+            })
             ->selectRaw('service_payments.payment_method_id, SUM(service_payments.amount) as total')
             ->groupBy('service_payments.payment_method_id')
             ->pluck('total', 'service_payments.payment_method_id');
@@ -173,6 +180,8 @@ class ServiceController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'services.created_at');
+        CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
@@ -244,6 +253,8 @@ class ServiceController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
             });
         }
+        CatatRange::apply($query, $request, 'services.created_at');
+        CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
@@ -343,6 +354,11 @@ class ServiceController extends Controller
             $customerId = $this->resolveCustomerId($request);
             $status = $request->input('status', 'open');
             $isRelease = $status === 'release';
+            if (! $user->isSuperAdminOrAdminPusat()) {
+                $request->merge([
+                    'entry_date' => \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
+                ]);
+            }
 
             $materialsInput = $isRelease ? ($request->input('materials', []) ?? []) : [];
             $materialsTotal = $isRelease ? $this->sumMaterialsTotalPrice($materialsInput) : 0.0;
@@ -456,6 +472,12 @@ class ServiceController extends Controller
             $materialsTotal = is_array($materialsInput) ? $this->sumMaterialsTotalPrice($materialsInput) : null;
 
             $markAsReleased = (bool) $request->input('mark_release');
+            if (! $user->isSuperAdminOrAdminPusat()) {
+                $request->merge([
+                    'entry_date' => $service->entry_date?->toDateString()
+                        ?? \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
+                ]);
+            }
 
             $this->serviceService->update(
                 $service,

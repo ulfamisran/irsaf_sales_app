@@ -33,8 +33,17 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
+                                    @php
+                                        $canPickTransactionDate = auth()->user()?->isSuperAdminOrAdminPusat() ?? false;
+                                        $todayTransactionDate = \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString();
+                                    @endphp
                                     <x-input-label for="pickup_date" :value="__('Tanggal Pengambilan')" />
-                                    <x-text-input id="pickup_date" class="block mt-1 w-full" type="date" name="pickup_date" :value="old('pickup_date', date('Y-m-d'))" required />
+                                    @if ($canPickTransactionDate)
+                                        <x-text-input id="pickup_date" class="block mt-1 w-full" type="date" name="pickup_date" :value="old('pickup_date', $todayTransactionDate)" required />
+                                    @else
+                                        <x-text-input id="pickup_date" class="block mt-1 w-full bg-slate-100" type="date" :value="$todayTransactionDate" disabled />
+                                        <input type="hidden" name="pickup_date" value="{{ $todayTransactionDate }}">
+                                    @endif
                                     <x-input-error :messages="$errors->get('pickup_date')" class="mt-2" />
                                 </div>
                                 <div>
