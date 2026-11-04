@@ -16,6 +16,16 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$sale->created_at" /></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Ubah') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$sale->updated_at" /></p>
+                        </div>
+                    </div>
                     <form method="POST" action="{{ route('sales.update', $sale) }}" id="sale-form">
                         @csrf
                         @method('PATCH')

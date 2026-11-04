@@ -98,6 +98,14 @@
                         <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Input Oleh') }}</p>
                         <p class="font-medium text-slate-800">{{ $unit->user?->name ?? '-' }}</p>
                     </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Tanggal Catat') }}</p>
+                        <p class="font-medium text-slate-800"><x-wita-datetime :value="$unit->created_at" /></p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Tanggal Ubah') }}</p>
+                        <p class="font-medium text-slate-800"><x-wita-datetime :value="$unit->updated_at" /></p>
+                    </div>
                 </div>
             </div>
         </div>

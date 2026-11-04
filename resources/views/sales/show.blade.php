@@ -73,6 +73,16 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$sale->created_at" /></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Ubah') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$sale->updated_at" /></p>
+                        </div>
+                    </div>
                     @if ($sale->status === \App\Models\Sale::STATUS_CANCEL)
                         <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
                             <p class="text-sm font-semibold text-rose-700">{{ __('Informasi Pembatalan') }}</p>

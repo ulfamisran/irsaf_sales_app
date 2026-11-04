@@ -42,6 +42,10 @@
                             @endphp
                             {{ $locLabel }}: {{ $locName }}
                         </dd>
+                        <dt class="text-slate-500">{{ __('Tanggal Catat') }}</dt>
+                        <dd><x-wita-datetime :value="$unit->created_at" /></dd>
+                        <dt class="text-slate-500">{{ __('Tanggal Ubah') }}</dt>
+                        <dd><x-wita-datetime :value="$unit->updated_at" /></dd>
                     </dl>
                     <p class="mt-3 text-xs text-amber-700">{{ __('Perubahan harga/serial/status tidak mengubah nilai transaksi penjualan yang sudah released. Wajib isi alasan perubahan.') }}</p>
                 </div>

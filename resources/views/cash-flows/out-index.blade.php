@@ -78,6 +78,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-catat-range-filter />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,6 +146,8 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sumber Dana') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                     </tr>
                     </thead>
@@ -166,6 +169,8 @@
                                 -{{ number_format($exp->amount, 0, ',', '.') }}
                             </td>
                             <td class="px-4 py-3">{{ $exp->user?->name }}</td>
+                            <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$exp->created_at" /></td>
+                            <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$exp->updated_at" /></td>
                             <td class="px-4 py-3 text-center">
                                 <a href="{{ route('cash-flows.out.show', $exp) }}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-100 text-indigo-700 text-sm font-medium hover:bg-indigo-200" title="{{ __('Lihat Detail') }}">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -188,7 +193,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
+                            <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pengeluaran.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

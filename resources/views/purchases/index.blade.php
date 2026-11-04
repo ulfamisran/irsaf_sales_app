@@ -101,6 +101,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-catat-range-filter class="md:col-span-2" />
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     <div>
@@ -476,6 +477,8 @@
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Terbayar') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -523,6 +526,8 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $p->user?->name ?? '-' }}</td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$p->created_at" /></td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$p->updated_at" /></td>
                                 <td class="px-4 py-3">
                                     <div class="flex flex-wrap gap-2 justify-center items-center">
                                         <x-icon-btn-view :href="route('purchases.show', ['purchase' => $p, 'view' => 'detail'])" :label="__('Detail')" />
@@ -542,7 +547,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="11" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
+                                <td colspan="13" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

@@ -15,6 +15,7 @@ use App\Models\TransactionUpdateLog;
 use App\Models\Warehouse;
 use App\Services\AdminTransactionUpdateService;
 use App\Services\KasBalanceService;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use InvalidArgumentException;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -111,6 +112,7 @@ class CashFlowController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('transaction_date', '<=', $request->date_to);
         }
+        CatatRange::apply($query, $request, 'cash_flows.created_at');
 
         $expenses = $query->paginate(20)->withQueryString();
 
@@ -740,6 +742,7 @@ class CashFlowController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('transaction_date', '<=', $request->date_to);
         }
+        CatatRange::apply($query, $request, 'cash_flows.created_at');
         if ($request->filled('income_category_id')) {
             $query->where('income_category_id', $request->income_category_id);
         }

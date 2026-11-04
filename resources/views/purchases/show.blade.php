@@ -94,6 +94,14 @@
                             <p class="text-sm text-gray-500">{{ __('Dibuat Oleh') }}</p>
                             <p class="font-medium">{{ $purchase->user?->name ?? '-' }}</p>
                         </div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$purchase->created_at" /></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Ubah') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$purchase->updated_at" /></p>
+                        </div>
                         @if ($purchase->description)
                             <div class="md:col-span-2">
                                 <p class="text-sm text-gray-500">{{ __('Deskripsi') }}</p>

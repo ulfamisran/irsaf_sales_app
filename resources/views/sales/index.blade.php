@@ -73,6 +73,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
+                    <x-catat-range-filter />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -150,6 +151,8 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Metode (Bank)') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -210,6 +213,8 @@
                                 </td>
                                 <td class="px-4 py-3">{{ $sale->user?->name }}</td>
                                 <td class="px-4 py-3 text-right">{{ number_format($sale->total, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$sale->created_at" /></td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$sale->updated_at" /></td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
                                         <x-icon-btn-view :href="route('sales.show', $sale)" />
@@ -234,7 +239,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penjualan.') }}</td>
+                                <td colspan="12" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data penjualan.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

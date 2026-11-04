@@ -18,6 +18,7 @@ use App\Models\SaleDetail;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
 use App\Services\SaleService;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
@@ -817,6 +818,7 @@ class SaleController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('sale_date', '<=', $request->date_to);
         }
+        CatatRange::apply($query, $request, 'sales.created_at');
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {

@@ -10,6 +10,16 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$product->created_at" /></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">{{ __('Tanggal Ubah') }}</p>
+                            <p class="font-medium"><x-wita-datetime :value="$product->updated_at" /></p>
+                        </div>
+                    </div>
                     <form method="POST" action="{{ route('products.update', $product) }}">
                         @csrf
                         @method('PATCH')

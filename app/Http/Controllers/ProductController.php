@@ -16,6 +16,7 @@ use App\Repositories\CategoryRepository;
 use App\Repositories\DistributorRepository;
 use App\Repositories\ProductRepository;
 use App\Services\StockMutationService;
+use App\Support\CatatRange;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -66,6 +67,8 @@ class ProductController extends Controller
             'status' => $request->get('status'),
             'location_type' => $locationType,
             'location_id' => $locationId,
+            'catat_from' => $request->get('catat_from'),
+            'catat_to' => $request->get('catat_to'),
         ];
         if ($locationType === Product::LOCATION_BRANCH && $locationId) {
             $filters['branch_id'] = $locationId;
@@ -275,6 +278,7 @@ class ProductController extends Controller
         if ($request->filled('serial')) {
             $query->where('serial_number', 'like', '%'.$request->serial.'%');
         }
+        CatatRange::apply($query, $request, 'product_units.created_at');
 
         $units = $query->paginate(25)->withQueryString();
 

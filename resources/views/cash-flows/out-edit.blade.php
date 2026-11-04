@@ -18,6 +18,16 @@
 
         <div class="card-modern overflow-hidden">
             <div class="p-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Catat') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->created_at" /></p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Ubah') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->updated_at" /></p>
+                    </div>
+                </div>
                 <form method="POST" action="{{ route('cash-flows.out.update', $cashFlow) }}" class="space-y-5">
                     @csrf
                     @method('PUT')

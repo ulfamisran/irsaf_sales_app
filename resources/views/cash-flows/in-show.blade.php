@@ -20,8 +20,8 @@
                         <p class="font-medium">{{ $cashFlow->transaction_date->format('d/m/Y') }}</p>
                     </div>
                     <div>
-                        <p class="text-sm text-slate-500">{{ __('Waktu Input') }}</p>
-                        <p class="font-medium">{{ $cashFlow->created_at?->format('d/m/Y H:i') ?? '-' }}</p>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Catat') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->created_at" /></p>
                     </div>
                     <div>
                         <p class="text-sm text-slate-500">{{ __('Lokasi') }}</p>
@@ -48,6 +48,10 @@
                     <div>
                         <p class="text-sm text-slate-500">{{ __('Dibuat Oleh') }}</p>
                         <p class="font-medium">{{ $cashFlow->user?->name ?? '-' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Ubah') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->updated_at" /></p>
                     </div>
                     @if ($cashFlow->description)
                         <div class="md:col-span-2">

@@ -48,6 +48,14 @@
                         <p class="text-sm text-slate-500">{{ __('Dibuat Oleh') }}</p>
                         <p class="font-medium">{{ $cashFlow->user?->name ?? '-' }}</p>
                     </div>
+                    <div>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Catat') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->created_at" /></p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-500">{{ __('Tanggal Ubah') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$cashFlow->updated_at" /></p>
+                    </div>
                     @if ($referenceLabel)
                         <div class="md:col-span-2">
                             <p class="text-sm text-slate-500">{{ __('Referensi') }}</p>

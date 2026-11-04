@@ -78,6 +78,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                     </div>
+                    <x-catat-range-filter />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,6 +145,8 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Deskripsi') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Jumlah') }}</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                         <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                     </tr>
                     </thead>
@@ -164,6 +167,8 @@
                                 +{{ number_format($inc->amount, 0, ',', '.') }}
                             </td>
                             <td class="px-4 py-3">{{ $inc->user?->name }}</td>
+                            <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$inc->created_at" /></td>
+                            <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$inc->updated_at" /></td>
                             <td class="px-4 py-3 text-center">
                                 @if (auth()->user()?->isSuperAdminOrAdminPusat())
                                     <div class="flex items-center justify-center gap-2">
@@ -179,7 +184,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
+                            <td colspan="9" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pemasukan lainnya.') }}</td>
                         </tr>
                     @endforelse
                     </tbody>

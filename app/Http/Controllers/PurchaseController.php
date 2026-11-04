@@ -18,6 +18,7 @@ use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use App\Services\PurchaseReceivingService;
 use App\Services\PurchaseService;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
@@ -301,6 +302,7 @@ class PurchaseController extends Controller
         if ($request->filled('date_to')) {
             $query->whereDate('purchase_date', '<=', $request->date_to);
         }
+        CatatRange::apply($query, $request, 'purchases.created_at');
         if ($request->filled('distributor_id')) {
             $query->where('distributor_id', $request->distributor_id);
         }

@@ -81,6 +81,7 @@
                             </select>
                         </div>
                     </template>
+                    <x-catat-range-filter />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,6 +115,8 @@
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Gudang') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Stok Cabang') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -143,6 +146,8 @@
                                         </span>
                                     @endif
                                 </td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$product->created_at" /></td>
+                                <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$product->updated_at" /></td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex flex-col items-end gap-2">
                                         @php
@@ -198,7 +203,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="15" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
+                                <td colspan="17" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data produk.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

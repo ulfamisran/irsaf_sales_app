@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Product;
+use App\Support\CatatRange;
 use App\Models\ProductUnit;
 use App\Models\Stock;
 use Illuminate\Database\Eloquent\Collection;
@@ -49,6 +50,13 @@ class ProductRepository
             $query->where('location_type', $filters['location_type'])
                 ->where('location_id', (int) $filters['location_id']);
         }
+
+        CatatRange::applyBetween(
+            $query,
+            ! empty($filters['catat_from']) ? (string) $filters['catat_from'] : null,
+            ! empty($filters['catat_to']) ? (string) $filters['catat_to'] : null,
+            'products.created_at'
+        );
 
         // Stok ready = total stok di cabang (ready untuk dijual)
         $query->selectSub(function ($q) use ($filters) {

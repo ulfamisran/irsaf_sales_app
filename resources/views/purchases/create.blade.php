@@ -20,6 +20,18 @@
     @endphp
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            @if ($isEdit && $editPurchase)
+                <div class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-slate-200 bg-white p-4">
+                    <div>
+                        <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$editPurchase->created_at" /></p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500">{{ __('Tanggal Ubah') }}</p>
+                        <p class="font-medium"><x-wita-datetime :value="$editPurchase->updated_at" /></p>
+                    </div>
+                </div>
+            @endif
             @if (session('error'))
                 <div class="mb-4 rounded-md bg-red-50 p-4 text-red-800">{{ session('error') }}</div>
             @endif

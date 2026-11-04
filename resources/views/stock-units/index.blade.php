@@ -78,6 +78,7 @@
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Sampai Tanggal') }}</label>
                             <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
+                        <x-catat-range-filter class="md:col-span-2" />
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Jenis Barang') }}</label>
                             <select name="jenis_barang" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -181,6 +182,8 @@
                             <th class="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase w-28">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sold') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -209,7 +212,7 @@
                                 <td class="px-4 py-3 text-slate-700">{{ $product->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">—</td>
                                 <td class="px-4 py-3">—</td>
-                                <td colspan="5" class="px-4 py-3 text-slate-700">
+                                <td colspan="7" class="px-4 py-3 text-slate-700">
                                     <span class="font-semibold">{{ __('In Stock') }}: {{ (int) ($inStockCounts[$product->id] ?? 0) }}</span>
                                 </td>
                             </tr>
@@ -272,6 +275,8 @@
                                             -
                                         @endif
                                     </td>
+                                    <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$u->created_at" /></td>
+                                    <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$u->updated_at" /></td>
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <x-icon-btn-view :href="route('stock-units.show', $u)" :label="__('Lihat Unit')" />
@@ -290,12 +295,12 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="14" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
+                                    <td colspan="16" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
                                 </tr>
                             @endforelse
                         @empty
                             <tr>
-                                <td colspan="14" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
+                                <td colspan="16" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

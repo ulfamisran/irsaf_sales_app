@@ -12,6 +12,7 @@ use App\Models\SaleDetail;
 use App\Models\SaleTradeIn;
 use App\Models\Stock;
 use App\Models\Warehouse;
+use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -526,6 +527,8 @@ class StockUnitController extends Controller
             $listBase->whereDate('received_date', '<=', $request->date_to);
             $countBase->whereDate('received_date', '<=', $request->date_to);
         }
+        CatatRange::apply($listBase, $request, 'product_units.created_at');
+        CatatRange::apply($countBase, $request, 'product_units.created_at');
 
         if ($request->filled('jenis_barang')) {
             $jenis = (string) $request->jenis_barang;
