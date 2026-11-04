@@ -79,8 +79,17 @@
                                     <p id="products_status" class="mt-1 text-xs text-slate-500"></p>
                                 </div>
                                 <div>
+                                    @php
+                                        $canPickSaleDate = auth()->user()?->isSuperAdminOrAdminPusat() ?? false;
+                                        $todaySaleDate = \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString();
+                                    @endphp
                                     <x-input-label for="sale_date" :value="__('Sale Date')" />
-                                    <x-text-input id="sale_date" class="block mt-1 w-full" type="date" name="sale_date" :value="old('sale_date', date('Y-m-d'))" required />
+                                    @if ($canPickSaleDate)
+                                        <x-text-input id="sale_date" class="block mt-1 w-full" type="date" name="sale_date" :value="old('sale_date', $todaySaleDate)" required />
+                                    @else
+                                        <x-text-input id="sale_date" class="block mt-1 w-full bg-slate-100" type="date" :value="$todaySaleDate" disabled />
+                                        <input type="hidden" name="sale_date" value="{{ $todaySaleDate }}">
+                                    @endif
                                     <x-input-error :messages="$errors->get('sale_date')" class="mt-2" />
                                 </div>
                             </div>

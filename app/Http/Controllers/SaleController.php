@@ -258,6 +258,11 @@ class SaleController extends Controller
             $tradeIns = $request->input('trade_ins', []);
             $tradeIns = is_array($tradeIns) ? array_filter($tradeIns, fn ($t) => ! empty(trim((string) ($t['sku'] ?? ''))) && ! empty(trim((string) ($t['brand'] ?? ''))) && (int) ($t['category_id'] ?? 0) > 0 && ! empty(trim((string) ($t['serial_number'] ?? ''))) && (float) ($t['trade_in_value'] ?? 0) > 0) : [];
             $allowSoldSerialReuse = $request->boolean('confirm_reuse_sold_serials');
+            if (! $user->isSuperAdminOrAdminPusat()) {
+                $request->merge([
+                    'sale_date' => \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
+                ]);
+            }
 
             if ($status === Sale::STATUS_RELEASED) {
                 $sale = $this->saleService->createReleasedSale(
@@ -501,10 +506,13 @@ class SaleController extends Controller
 
         try {
             $payments = $validated['payments'] ?? [];
+            $saleDate = $user->isSuperAdminOrAdminPusat()
+                ? $validated['sale_date']
+                : \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString();
             $sale = $this->saleService->releaseSale(
                 $sale,
                 is_array($payments) ? $payments : [],
-                $validated['sale_date'],
+                $saleDate,
                 $user->id
             );
         } catch (\InvalidArgumentException $e) {

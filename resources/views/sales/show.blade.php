@@ -380,8 +380,17 @@
                                 @csrf
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
+                                        @php
+                                            $canPickSaleDate = auth()->user()?->isSuperAdminOrAdminPusat() ?? false;
+                                            $todaySaleDate = \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString();
+                                        @endphp
                                         <x-input-label for="release_sale_date" :value="__('Tanggal')" />
-                                        <x-text-input id="release_sale_date" class="block mt-1 w-full" type="date" name="sale_date" :value="old('sale_date', $sale->sale_date->toDateString())" required />
+                                        @if ($canPickSaleDate)
+                                            <x-text-input id="release_sale_date" class="block mt-1 w-full" type="date" name="sale_date" :value="old('sale_date', $sale->sale_date->toDateString())" required />
+                                        @else
+                                            <x-text-input id="release_sale_date" class="block mt-1 w-full bg-slate-100" type="date" :value="$todaySaleDate" disabled />
+                                            <input type="hidden" name="sale_date" value="{{ $todaySaleDate }}">
+                                        @endif
                                         <x-input-error :messages="$errors->get('sale_date')" class="mt-2" />
                                     </div>
                                 </div>
