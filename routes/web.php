@@ -20,11 +20,14 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RentalController;
+use App\Http\Controllers\TransactionVerificationController;
+use App\Http\Controllers\VerificationCutoffController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
 use App\Http\Controllers\StockMonitoringController;
 use App\Http\Controllers\StockInOutController;
+use App\Http\Controllers\MovementHistoryController;
 use App\Http\Controllers\StockUnitController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WarehouseController;
@@ -63,7 +66,7 @@ Route::get('/dashboard', function (Request $request) {
 
     $isBranchUser = $user
         && ! $user->isSuperAdmin()
-        && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR])
+        && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG])
         && $user->branch_id;
 
     // 1) Pergerakan jumlah barang masuk dan barang terjual
@@ -143,7 +146,10 @@ Route::get('/dashboard', function (Request $request) {
     ]);
 })->middleware(['auth', 'verified', 'module.access'])->name('dashboard');
 
-Route::middleware(['auth', 'module.access'])->group(function () {
+Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
+    Route::get('verification-cutoff', [VerificationCutoffController::class, 'edit'])->name('verification-cutoff.edit');
+    Route::put('verification-cutoff', [VerificationCutoffController::class, 'update'])->name('verification-cutoff.update');
+
     Route::get('role-access', [\App\Http\Controllers\RoleAccessController::class, 'index'])->name('role-access.index');
     Route::get('role-access/{role}/edit', [\App\Http\Controllers\RoleAccessController::class, 'edit'])->name('role-access.edit');
     Route::put('role-access/{role}', [\App\Http\Controllers\RoleAccessController::class, 'update'])->name('role-access.update');
@@ -215,6 +221,9 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('stock-units/export-pdf', [StockUnitController::class, 'exportPdf'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.export-pdf');
+    Route::get('stock-units/pergerakan', [MovementHistoryController::class, 'index'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-units.movement');
     Route::get('stock-units/{unit}', [StockUnitController::class, 'show'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.show');
@@ -484,6 +493,13 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('cash-flows/export-pdf', [CashFlowController::class, 'exportPdf'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.export-pdf');
+    Route::get('verification', [TransactionVerificationController::class, 'index'])
+        ->name('verification.index');
+    Route::post('verification/accept', [TransactionVerificationController::class, 'accept'])
+        ->name('verification.accept');
+    Route::post('verification/reject', [TransactionVerificationController::class, 'reject'])
+        ->name('verification.reject');
+
     Route::get('cash-flows/in', [CashFlowController::class, 'inIndex'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.index');
@@ -505,6 +521,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('cash-flows/in', [CashFlowController::class, 'storeIn'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.store');
+    Route::post('cash-flows/in/{cashFlow}/cancel', [CashFlowController::class, 'cancelIn'])
+        ->name('cash-flows.in.cancel');
     Route::get('cash-flows/out/list', [CashFlowController::class, 'outIndex'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.index');
@@ -544,6 +562,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('cash-flows/out', [CashFlowController::class, 'storeOut'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.store');
+    Route::post('cash-flows/out/{cashFlow}/cancel', [CashFlowController::class, 'cancelOut'])
+        ->name('cash-flows.out.cancel');
 
     Route::get('cash-flows/saldo-adjustment', [\App\Http\Controllers\SaldoAdjustmentController::class, 'index'])
         ->middleware('role:super_admin,admin_pusat')
@@ -665,6 +685,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
         Route::get('users/create', [UserManagementController::class, 'create'])->name('users.create');
         Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
         Route::get('users/{user}/edit', [UserManagementController::class, 'edit'])->name('users.edit');
+        Route::post('users/{user}/public-ips', [UserManagementController::class, 'storePublicIp'])->name('users.public-ips.store');
+        Route::delete('users/{user}/public-ips/{publicIp}', [UserManagementController::class, 'destroyPublicIp'])->name('users.public-ips.destroy');
         Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
         Route::put('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('users.toggle-active');

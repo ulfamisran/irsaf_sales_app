@@ -46,7 +46,7 @@ class StockMutationController extends Controller
 
         $accessConstraint = null;
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $accessConstraint = function ($q) use ($branchId) {
                     $q->where(function ($q2) use ($branchId) {
@@ -62,7 +62,7 @@ class StockMutationController extends Controller
                 $locationType = 'branch';
                 $locationId = $branchId;
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $accessConstraint = function ($q) use ($warehouseId) {
                     $q->where(function ($q2) use ($warehouseId) {
@@ -588,7 +588,7 @@ class StockMutationController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -601,7 +601,7 @@ class StockMutationController extends Controller
         $defaultFromLocationId = old('from_location_id');
         $fromLocationLabel = null;
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             $lockFromLocation = true;
             if ($user->warehouse_id) {
                 $defaultFromLocationType = Stock::LOCATION_WAREHOUSE;
@@ -630,7 +630,7 @@ class StockMutationController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -687,7 +687,7 @@ class StockMutationController extends Controller
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -721,7 +721,7 @@ class StockMutationController extends Controller
     public function store(StockMutationRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -729,7 +729,7 @@ class StockMutationController extends Controller
             $fromLocationType = $request->from_location_type;
             $fromLocationId = (int) $request->from_location_id;
 
-            if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+            if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
                 if ($user->warehouse_id) {
                     $fromLocationType = Stock::LOCATION_WAREHOUSE;
                     $fromLocationId = (int) $user->warehouse_id;

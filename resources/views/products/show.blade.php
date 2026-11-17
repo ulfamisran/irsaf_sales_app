@@ -12,9 +12,9 @@
                     $canEditProduct = $isPusat
                         || (
                             ! $product->hasSoldUnits()
-                            && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG])
+                            && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])
                         );
-                    if ($canEditProduct && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id) {
+                    if ($canEditProduct && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()?->branch_id) {
                         $canEditProduct = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
                     }
                 @endphp
@@ -180,7 +180,7 @@
                                         $canDeleteUnit = $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK
                                             && (auth()->user()?->isSuperAdmin()
                                                 || auth()->user()?->isAdminPusat()
-                                                || (auth()->user()?->hasRole(\App\Models\Role::ADMIN_CABANG) && auth()->user()?->branch_id && $u->location_type === \App\Models\Stock::LOCATION_BRANCH && (int) $u->location_id === (int) auth()->user()->branch_id));
+                                                || (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]) && auth()->user()?->branch_id && $u->location_type === \App\Models\Stock::LOCATION_BRANCH && (int) $u->location_id === (int) auth()->user()->branch_id));
                                     @endphp
                                     <div class="flex items-center gap-2">
                                         @if ($canEditUnit)

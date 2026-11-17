@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Distributor') }}</h2>
-            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_PUSAT]))
+            @if (auth()->user()->isSuperAdmin() || auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG, \App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_PUSAT]))
                 <x-icon-btn-add :href="route('distributors.create')" :label="__('Tambah Distributor')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>

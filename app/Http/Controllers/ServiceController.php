@@ -49,7 +49,7 @@ class ServiceController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
@@ -99,7 +99,7 @@ class ServiceController extends Controller
         $totalService = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->total_service_price);
         $totalMaterialExpense = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->materials_total_price);
         $totalServiceNet = $totalService - $totalMaterialExpense;
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
         $pmWarehouseId = $this->isWarehouseStaff($user) ? (int) $user->warehouse_id : null;
@@ -112,7 +112,7 @@ class ServiceController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
             ->when($this->isWarehouseStaff($user), fn ($q) => $q->where('services.warehouse_id', $user->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->location_type === 'warehouse' && $request->filled('warehouse_id'), fn ($q) => $q->where('services.warehouse_id', $request->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->location_type !== 'warehouse' && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
@@ -143,7 +143,7 @@ class ServiceController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($this->isWarehouseStaff($user)) {
                 $query->where('warehouse_id', $user->warehouse_id);
@@ -184,7 +184,7 @@ class ServiceController extends Controller
         CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $b = Branch::find($user->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             } elseif ($this->isWarehouseStaff($user)) {
@@ -216,7 +216,7 @@ class ServiceController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($this->isWarehouseStaff($user)) {
                 $query->where('warehouse_id', $user->warehouse_id);
@@ -257,7 +257,7 @@ class ServiceController extends Controller
         CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $b = Branch::find($user->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             } elseif ($this->isWarehouseStaff($user)) {
@@ -718,7 +718,7 @@ class ServiceController extends Controller
     private function isWarehouseStaff($user): bool
     {
         return (bool) $user->warehouse_id && (
-            $user->hasRole(Role::ADMIN_GUDANG)
+            $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])
             || ($user->hasRole(Role::KASIR) && ! $user->branch_id)
         );
     }
@@ -737,7 +737,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && (int) $user->branch_id === (int) $service->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && (int) $user->branch_id === (int) $service->branch_id) {
             return;
         }
 

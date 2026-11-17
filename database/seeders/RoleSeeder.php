@@ -38,6 +38,16 @@ class RoleSeeder extends Seeder
                 'display_name' => 'Kasir',
                 'description' => 'Cashier',
             ],
+            [
+                'name' => Role::KEPALA_CABANG,
+                'display_name' => 'Kepala Cabang',
+                'description' => 'Verifikasi dan akses admin cabang serta kasir pada cabangnya',
+            ],
+            [
+                'name' => Role::KEPALA_GUDANG,
+                'display_name' => 'Kepala Gudang',
+                'description' => 'Verifikasi dan akses admin gudang serta kasir pada gudangnya',
+            ],
         ];
 
         foreach ($roles as $role) {

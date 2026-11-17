@@ -71,6 +71,7 @@ class ModuleAccessCatalog
         ['slug' => 'daily-reports', 'name' => 'Laporan Harian', 'group' => 'Analitik', 'sort' => 330],
         ['slug' => 'landing-page', 'name' => 'Kelola Landing Page', 'group' => 'Pengaturan', 'sort' => 340],
         ['slug' => 'users', 'name' => 'Kelola User', 'group' => 'Pengaturan', 'sort' => 350],
+        ['slug' => 'verification', 'name' => 'Verifikasi Transaksi', 'group' => 'Transaksi', 'sort' => 215],
     ];
 
     /**
@@ -102,6 +103,7 @@ class ModuleAccessCatalog
             'sales.' => 'sales',
             'services.' => 'services',
             'rentals.' => 'rentals',
+            'verification.' => 'verification',
             'debts.' => 'debts',
             'cash-flows.out.external.' => 'cash-out-external',
             'cash-flows.out.' => 'cash-out',
@@ -320,6 +322,25 @@ class ModuleAccessCatalog
             'sales' => $transact,
             'services' => $service,
         ]);
+
+        $map[Role::KEPALA_CABANG] = $map[Role::ADMIN_CABANG];
+        foreach ($map[Role::KASIR] as $slug => $actions) {
+            foreach ($actions as $action) {
+                $map[Role::KEPALA_CABANG][$slug][$action] = $action;
+            }
+        }
+        $map[Role::KEPALA_GUDANG] = $map[Role::ADMIN_GUDANG];
+        foreach ($map[Role::KASIR] as $slug => $actions) {
+            foreach ($actions as $action) {
+                $map[Role::KEPALA_GUDANG][$slug][$action] = $action;
+            }
+        }
+        foreach (self::actionKeys() as $action) {
+            $map[Role::KEPALA_CABANG]['verification'][$action] = $action;
+            $map[Role::KEPALA_GUDANG]['verification'][$action] = $action;
+            $map[Role::SUPER_ADMIN]['verification'][$action] = $action;
+            $map[Role::ADMIN_PUSAT]['verification'][$action] = $action;
+        }
 
         return $map;
     }

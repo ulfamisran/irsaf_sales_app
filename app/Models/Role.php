@@ -22,6 +22,8 @@ class Role extends Model
     public const ADMIN_CABANG = 'admin_cabang';
     public const ADMIN_GUDANG = 'admin_gudang';
     public const KASIR = 'kasir';
+    public const KEPALA_CABANG = 'kepala_cabang';
+    public const KEPALA_GUDANG = 'kepala_gudang';
 
     /**
      * Get the users that have this role.

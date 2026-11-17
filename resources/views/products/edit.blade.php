@@ -34,7 +34,7 @@
                                 <x-input-error :messages="$errors->get('category_id')" class="mt-2" />
                             </div>
                             {{-- Lokasi Produk: pilihan Gudang/Cabang, pre-fill dari data sebelumnya. Distributor di bawah, dimuat sesuai lokasi. --}}
-                            @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id)
+                            @if (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()?->branch_id)
                             <div id="location-edit-block">
                                 <div>
                                     <x-locked-location label="{{ __('Lokasi Cabang') }}" :value="__('Cabang') . ': ' . (($branches->firstWhere('id', auth()->user()?->branch_id))?->name ?? __('Cabang Anda'))" />

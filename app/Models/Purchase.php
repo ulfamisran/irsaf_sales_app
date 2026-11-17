@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Purchase extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const STATUS_ACTIVE = 'active';
     public const STATUS_CANCELLED = 'cancelled';
@@ -33,7 +35,11 @@ class Purchase extends Model
         'termin',
         'due_date',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'status',
+        'cancel_reason',
+        'cancel_user_id',
         'stock_mutation_id',
         'service_id',
     ];

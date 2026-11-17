@@ -50,7 +50,7 @@ class StockInOutController extends Controller
     private function buildReport(Request $request): array
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG, Role::KASIR])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG, Role::KASIR])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -74,12 +74,12 @@ class StockInOutController extends Controller
         $effectiveLocationId = isset($validated['location_id']) ? (int) $validated['location_id'] : null;
 
         if (! $canFilterLocation) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $filterLocked = true;
                 $effectiveLocationType = Stock::LOCATION_BRANCH;
                 $effectiveLocationId = (int) $user->branch_id;
                 $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $filterLocked = true;
                 $effectiveLocationType = Stock::LOCATION_WAREHOUSE;
                 $effectiveLocationId = (int) $user->warehouse_id;

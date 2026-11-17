@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Services\ModuleAccessService;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Foundation\Console\ServeCommand;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -25,6 +26,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (PHP_OS_FAMILY === 'Windows' && ! in_array('SystemRoot', ServeCommand::$passthroughVariables, true)) {
+            ServeCommand::$passthroughVariables[] = 'SystemRoot';
+        }
+
         Relation::morphMap([
             'warehouse' => Warehouse::class,
             'branch' => Branch::class,

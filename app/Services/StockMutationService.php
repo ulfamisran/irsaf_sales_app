@@ -148,6 +148,25 @@ class StockMutationService
         });
     }
 
+    private function insufficientStockMessage(Product $product, int $requested, int $available): string
+    {
+        $label = trim(implode(' ', array_filter([
+            $product->sku,
+            $product->brand,
+            $product->series,
+        ], fn ($part) => is_string($part) && trim($part) !== '')));
+
+        if ($label === '') {
+            $label = 'produk #'.$product->id;
+        }
+
+        return __('Stok tidak cukup untuk :product. Diminta :requested, tersedia :available.', [
+            'product' => $label,
+            'requested' => $requested,
+            'available' => $available,
+        ]);
+    }
+
     private function validateLocation(string $locationType, int $locationId): void
     {
         if ($locationType === Stock::LOCATION_WAREHOUSE) {
@@ -287,9 +306,7 @@ class StockMutationService
                 );
 
                 if ($stock->quantity < $quantity) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, (int) $stock->quantity));
                 }
 
                 // Habiskan dulu unit berserial lama (FIFO), sisanya dari stok qty murni.
@@ -333,9 +350,7 @@ class StockMutationService
                     ->all();
 
                 if (count($unitIds) < $quantity) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => count($unitIds)])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, count($unitIds)));
                 }
 
                 ProductUnit::whereIn('id', $unitIds)->update([
@@ -365,9 +380,7 @@ class StockMutationService
             );
 
             if ($stock->quantity < $quantity) {
-                throw new InvalidArgumentException(
-                    __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                );
+                throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, (int) $stock->quantity));
             }
 
             $stock->decrement('quantity', $quantity);
@@ -432,9 +445,7 @@ class StockMutationService
                 );
                 $soldCount = count($serialNumbers);
                 if ((int) $stock->quantity < $soldCount) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $soldCount, (int) $stock->quantity));
                 }
                 $stock->decrement('quantity', $soldCount);
             } else {

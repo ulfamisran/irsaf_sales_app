@@ -27,11 +27,11 @@ class IncomingGoodsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
@@ -104,11 +104,11 @@ class IncomingGoodsController extends Controller
     public function create(Request $request): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
@@ -150,7 +150,7 @@ class IncomingGoodsController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
 
         $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : $request->input('location_type');
         $locationId = $isBranchUser ? (int) $user->branch_id : (int) $request->input('location_id');
@@ -191,11 +191,11 @@ class IncomingGoodsController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         if ($isBranchUser && ! $user->branch_id) {
             abort(403, __('User branch not set.'));
         }
@@ -283,10 +283,10 @@ class IncomingGoodsController extends Controller
     public function show(Request $request, IncomingGood $incomingGood): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
@@ -308,10 +308,10 @@ class IncomingGoodsController extends Controller
     public function detail(Request $request, IncomingGood $incomingGood): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG]);
+        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }

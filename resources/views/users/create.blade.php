@@ -87,6 +87,8 @@
                                 <label for="is_active" class="text-sm text-slate-700">{{ __('Aktif') }}</label>
                             </div>
 
+                            <p class="text-sm text-slate-500">{{ __('User baru otomatis didaftarkan dengan * sehingga dapat mencatat transaksi dari perangkat mana pun. Pembatasan IP diatur di halaman edit user.') }}</p>
+
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Save') }}</x-primary-button>
                                 <a href="{{ route('users.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Cancel') }}</a>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Rental extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const STATUS_OPEN = 'open';
     public const STATUS_RELEASED = 'released';
@@ -31,6 +33,8 @@ class Rental extends Model
         'location_type',
         'customer_id',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'pickup_date',
         'return_date',
         'total_days',

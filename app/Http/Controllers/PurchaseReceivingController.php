@@ -24,7 +24,7 @@ class PurchaseReceivingController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -255,10 +255,10 @@ class PurchaseReceivingController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $filterLocked = true;
                 $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $filterLocked = true;
                 $locationLabel = __('Gudang').': '.(Warehouse::find($user->warehouse_id)?->name ?? '');
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
@@ -279,9 +279,9 @@ class PurchaseReceivingController extends Controller
     {
         $user = $request->user();
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
             } else {
                 abort(403, __('User branch or warehouse not set.'));
@@ -318,14 +318,14 @@ class PurchaseReceivingController extends Controller
             abort(404);
         }
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && (int) $purchase->branch_id !== (int) $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && (int) $purchase->branch_id !== (int) $user->branch_id) {
                 abort(403);
             }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG]) && (int) $purchase->warehouse_id !== (int) $user->warehouse_id) {
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && (int) $purchase->warehouse_id !== (int) $user->warehouse_id) {
                 abort(403);
             }
         }

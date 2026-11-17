@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\LoginLog;
+use App\Support\ClientIp;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,6 +29,14 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $request->session()->regenerate();
+
+        $agent = trim((string) $request->userAgent());
+        LoginLog::create([
+            'user_id' => $request->user()?->id,
+            'ip_publik' => ClientIp::resolve($request),
+            'user_agent' => $agent !== '' ? mb_substr($agent, 0, 500) : null,
+            'logged_in_at' => now(),
+        ]);
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

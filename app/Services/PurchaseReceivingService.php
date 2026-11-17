@@ -7,7 +7,9 @@ use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseDetail;
 use App\Models\PurchaseReceivingLog;
+use App\Models\Role;
 use App\Models\Stock;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -171,6 +173,46 @@ class PurchaseReceivingService
     public function purchaseNeedsCheck(Purchase $purchase): bool
     {
         return $this->summarize($purchase)['needs_check'];
+    }
+
+    public function pendingCount(User $user): int
+    {
+        $key = 'purchase_receiving.pending_count.'.$user->id;
+        if (request()->attributes->has($key)) {
+            return (int) request()->attributes->get($key);
+        }
+
+        $query = Purchase::query()
+            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->where(function ($inner) {
+                $inner->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
+                    ->orWhereNull('jenis_pembelian')
+                    ->orWhere('jenis_pembelian', '');
+            })
+            ->where(function ($inner) {
+                $inner->whereHas('details.units', fn ($units) => $units->where('check_status', ProductUnit::CHECK_UNCHECKED))
+                    ->orWhereHas('details', function ($details) {
+                        $details->whereRaw('COALESCE(quantity, 0) > COALESCE(qty_baik, 0) + COALESCE(qty_reture, 0) + COALESCE(qty_pending, 0)')
+                            ->whereDoesntHave('units');
+                    });
+            });
+
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+                $query->where('warehouse_id', $user->warehouse_id);
+            } else {
+                request()->attributes->set($key, 0);
+
+                return 0;
+            }
+        }
+
+        $count = $query->count();
+        request()->attributes->set($key, $count);
+
+        return $count;
     }
 
     /**

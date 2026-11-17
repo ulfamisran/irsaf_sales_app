@@ -7,6 +7,7 @@ use App\Services\ModuleAccessService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -63,6 +64,41 @@ class User extends Authenticatable
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'role_user')->withTimestamps();
+    }
+
+    public function publicIps(): HasMany
+    {
+        return $this->hasMany(UserPublicIp::class)->orderBy('ip_address');
+    }
+
+    public function publicIpSummary(): string
+    {
+        $ips = $this->publicIps;
+        if ($ips->isEmpty()) {
+            return __('Belum ada');
+        }
+        if ($ips->contains(fn (UserPublicIp $row) => $row->isAnyDevice())) {
+            return __('Semua perangkat');
+        }
+
+        $addresses = $ips->pluck('ip_address');
+        $shown = $addresses->take(2)->implode(', ');
+        $extra = $addresses->count() - 2;
+
+        return $extra > 0 ? $shown.' +'.$extra : $shown;
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (User $user): void {
+            if ($user->publicIps()->exists()) {
+                return;
+            }
+
+            $user->publicIps()->create([
+                'ip_address' => UserPublicIp::ANY,
+            ]);
+        });
     }
 
     /**

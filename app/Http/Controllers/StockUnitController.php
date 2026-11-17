@@ -91,13 +91,13 @@ class StockUnitController extends Controller
         $locationId = null;
         $locationLabel = null;
         if (! $canFilterLocation) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationType = 'branch';
                 $locationId = (int) $user->branch_id;
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
                 $locationType = 'warehouse';
@@ -189,11 +189,11 @@ class StockUnitController extends Controller
         $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user', 'changeLogs.user']);
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                     abort(403, __('Unauthorized.'));
                 }
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 if ($unit->location_type !== Stock::LOCATION_WAREHOUSE || (int) $unit->location_id !== (int) $user->warehouse_id) {
                     abort(403, __('Unauthorized.'));
                 }
@@ -453,12 +453,12 @@ class StockUnitController extends Controller
     private function applyFilters(Request $request, $user, $listBase, $countBase): void
     {
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $listBase->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', (int) $user->branch_id);
                 $countBase->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', (int) $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $listBase->where('location_type', Stock::LOCATION_WAREHOUSE)
                     ->where('location_id', (int) $user->warehouse_id);
                 $countBase->where('location_type', Stock::LOCATION_WAREHOUSE)

@@ -16,8 +16,8 @@
 
                     @php
                         $canChooseLocation = auth()->user()->isSuperAdminOrAdminPusat();
-                        $lockedToBranch = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && auth()->user()->branch_id;
-                        $lockedToWarehouse = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()->warehouse_id;
+                        $lockedToBranch = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && auth()->user()->branch_id;
+                        $lockedToWarehouse = auth()->user()->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()->warehouse_id;
                         $defaultLocationType = old('location_type', $lockedToWarehouse ? 'warehouse' : 'branch');
                     @endphp
 

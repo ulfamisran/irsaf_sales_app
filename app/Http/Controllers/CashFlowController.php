@@ -15,6 +15,7 @@ use App\Models\TransactionUpdateLog;
 use App\Models\Warehouse;
 use App\Services\AdminTransactionUpdateService;
 use App\Services\KasBalanceService;
+use App\Services\CashFlowCancelService;
 use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use InvalidArgumentException;
@@ -40,12 +41,44 @@ class CashFlowController extends Controller
         return $id ? (int) $id : null;
     }
 
+    public function cancelIn(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        return $this->cancelStandaloneCash($request, $cashFlow, CashFlow::TYPE_IN, 'cash-in', 'cash-flows.in.index');
+    }
+
+    public function cancelOut(Request $request, CashFlow $cashFlow): RedirectResponse
+    {
+        return $this->cancelStandaloneCash($request, $cashFlow, CashFlow::TYPE_OUT, 'cash-out', 'cash-flows.out.index');
+    }
+
+    private function cancelStandaloneCash(Request $request, CashFlow $cashFlow, string $type, string $module, string $route): RedirectResponse
+    {
+        if (! $request->user()->canModule($module, 'cancel')) {
+            abort(403, __('Anda tidak punya akses untuk aksi ini.'));
+        }
+        if ($cashFlow->type !== $type) {
+            abort(404);
+        }
+        $validated = $request->validate([
+            'cancel_reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        try {
+            app(CashFlowCancelService::class)->cancel($cashFlow, (int) $request->user()->id, $validated['cancel_reason']);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route($route)->with('success', __('Kas berhasil dibatalkan.'));
+    }
+
     public function outIndex(Request $request): View
     {
         $user = $request->user();
 
         $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'paymentMethod'])
             ->where('type', CashFlow::TYPE_OUT)
+            ->whereNull('cancelled_at')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
         // Exclude Reversal (transaksi cancel) - tidak dihitung & ditampilkan di pengeluaran
@@ -79,13 +112,13 @@ class CashFlowController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $lockedBranchId = (int) $user->branch_id;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $lockedWarehouseId = (int) $user->warehouse_id;
@@ -119,10 +152,10 @@ class CashFlowController extends Controller
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
         $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
@@ -132,10 +165,10 @@ class CashFlowController extends Controller
         }
 
         $totalOut = (float) (clone $query)->sum('amount');
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id
             ? (int) $user->warehouse_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
         $paymentMethods = PaymentMethod::query()
@@ -161,6 +194,7 @@ class CashFlowController extends Controller
 
         $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'paymentMethod'])
             ->where('type', CashFlow::TYPE_OUT)
+            ->whereNull('cancelled_at')
             ->when($externalExpenseCategoryId, fn ($q) => $q->where('expense_category_id', $externalExpenseCategoryId))
             ->when(! $externalExpenseCategoryId, fn ($q) => $q->whereRaw('1 = 0'))
             ->orderByDesc('transaction_date')
@@ -193,13 +227,13 @@ class CashFlowController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $lockedBranchId = (int) $user->branch_id;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $lockedWarehouseId = (int) $user->warehouse_id;
@@ -228,16 +262,16 @@ class CashFlowController extends Controller
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
         $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         $totalOut = (float) (clone $query)->sum('amount');
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id
             ? (int) $user->warehouse_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
 
@@ -292,8 +326,8 @@ class CashFlowController extends Controller
             ? Warehouse::orderBy('name')->get(['id', 'name'])
             : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? (int) $user->branch_id : null;
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? (int) $user->branch_id : null;
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -583,11 +617,11 @@ class CashFlowController extends Controller
 
         $user = $request->user();
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($cashFlow->branch_id != $user->branch_id) {
                     abort(403);
                 }
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 if ($cashFlow->warehouse_id != $user->warehouse_id) {
                     abort(403);
                 }
@@ -647,11 +681,11 @@ class CashFlowController extends Controller
         }
         $user = $request->user();
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($cashFlow->branch_id != $user->branch_id) {
                     abort(403);
                 }
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 if ($cashFlow->warehouse_id != $user->warehouse_id) {
                     abort(403);
                 }
@@ -693,6 +727,7 @@ class CashFlowController extends Controller
         $query = CashFlow::with(['user', 'branch', 'warehouse', 'incomeCategory'])
             ->where('type', CashFlow::TYPE_IN)
             ->where('reference_type', CashFlow::REFERENCE_OTHER)
+            ->whereNull('cancelled_at')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
         $query->where(function ($q) {
@@ -713,13 +748,13 @@ class CashFlowController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $lockedBranchId = (int) $user->branch_id;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $lockedWarehouseId = (int) $user->warehouse_id;
@@ -753,16 +788,16 @@ class CashFlowController extends Controller
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
         $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         $totalIn = (float) (clone $query)->sum('amount');
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : $lockedBranchId ?? null);
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id
             ? (int) $user->warehouse_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : $lockedWarehouseId ?? null);
         $paymentMethods = PaymentMethod::query()
@@ -796,13 +831,13 @@ class CashFlowController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $lockedBranchId = $branchId;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $lockedWarehouseId = $warehouseId;
                 $filterLocked = true;
@@ -966,12 +1001,12 @@ class CashFlowController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $filterLocked = true;
                 $warehouse = Warehouse::find($warehouseId);
@@ -1312,8 +1347,8 @@ class CashFlowController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? (int) $user->branch_id : null;
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? (int) $user->branch_id : null;
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($pmBranchId, $pmWarehouseId)
@@ -1341,8 +1376,8 @@ class CashFlowController extends Controller
             ? Warehouse::orderBy('name')->get(['id', 'name'])
             : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? (int) $user->branch_id : null;
-        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? (int) $user->branch_id : null;
+        $pmWarehouseId = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? (int) $user->warehouse_id : null;
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($pmBranchId, $pmWarehouseId)
@@ -1371,9 +1406,9 @@ class CashFlowController extends Controller
                 $branchId = (int) $validated['branch_id'];
             }
         } else {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
             }
         }
@@ -1449,9 +1484,9 @@ class CashFlowController extends Controller
                 $branchId = (int) $validated['branch_id'];
             }
         } else {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
             }
         }
@@ -1521,10 +1556,10 @@ class CashFlowController extends Controller
         }
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $warehouseId = null;
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $branchId = null;
             }

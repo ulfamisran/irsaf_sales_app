@@ -464,7 +464,7 @@ class PurchaseService
     /**
      * Cancel a purchase: mark units as not_in_stock, deactivate products, refund payments via Cash In.
      */
-    public function cancelPurchase(Purchase $purchase, ?int $userId = null): void
+    public function cancelPurchase(Purchase $purchase, ?int $userId = null, ?string $reason = null): void
     {
         $userId = $userId ?? auth()->id();
 
@@ -475,7 +475,7 @@ class PurchaseService
         $locationType = $purchase->warehouse_id ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
         $locationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
 
-        DB::transaction(function () use ($purchase, $locationType, $locationId, $userId) {
+        DB::transaction(function () use ($purchase, $locationType, $locationId, $userId, $reason) {
             $purchase->load(['details.product', 'payments.paymentMethod']);
 
             foreach ($purchase->details as $detail) {
@@ -541,7 +541,11 @@ class PurchaseService
                 ]);
             }
 
-            $purchase->update(['status' => Purchase::STATUS_CANCELLED]);
+            $purchase->update([
+                'status' => Purchase::STATUS_CANCELLED,
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
         });
     }
 

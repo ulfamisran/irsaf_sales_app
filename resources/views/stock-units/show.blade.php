@@ -10,6 +10,7 @@
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && $unit->product)
                     <x-icon-btn-edit :href="route('products.units.edit', [$unit->product, $unit])" :label="__('Update Unit')" />
                 @endif
+                <a href="{{ route('stock-units.movement', ['mode' => 'serial', 'q' => $unit->serial_number]) }}" class="inline-flex items-center px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">{{ __('Riwayat Pergerakan') }}</a>
                 <x-icon-btn-back :href="route('stock-units.index')" :label="__('Kembali')" />
             </div>
         </div>

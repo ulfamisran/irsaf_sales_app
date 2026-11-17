@@ -11,11 +11,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->trustProxies(at: '*');
         $middleware->prepend(\App\Http\Middleware\TreatHeadAsGet::class);
 
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
             'module.access' => \App\Http\Middleware\EnsureModuleAccess::class,
+            'public.ip' => \App\Http\Middleware\EnsureRegisteredPublicIp::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

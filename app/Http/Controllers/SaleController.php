@@ -52,9 +52,9 @@ class SaleController extends Controller
         if ($user->isSuperAdminOrAdminPusat()) {
             $branches = Branch::orderBy('name')->get(['id', 'name']);
             $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
             $branches = Branch::whereKey($user->branch_id)->get(['id', 'name']);
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $warehouses = Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']);
         }
 
@@ -109,8 +109,8 @@ class SaleController extends Controller
     {
         $user = auth()->user();
         $isPusat = $user->isSuperAdminOrAdminPusat();
-        $isWarehouseUser = $user->hasRole(Role::ADMIN_GUDANG) && ! $isPusat;
-        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $isPusat;
+        $isWarehouseUser = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $isPusat;
+        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $isPusat;
 
         if (! $isPusat && ! $isWarehouseUser && ! ($isBranchStaff && $user->branch_id)) {
             abort(403, __('User branch or warehouse not set.'));
@@ -232,7 +232,7 @@ class SaleController extends Controller
                 } else {
                     $branchId = (int) $request->input('branch_id');
                 }
-            } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
                 $warehouseId = (int) $user->warehouse_id;
             } else {
                 $branchId = (int) $user->branch_id;
@@ -241,10 +241,10 @@ class SaleController extends Controller
             if ($branchId === null && $warehouseId === null) {
                 abort(403, __('Location is required.'));
             }
-            if ($user->hasRole(Role::ADMIN_GUDANG) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
                 abort(403, __('Unauthorized.'));
             }
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
             }
 
@@ -567,7 +567,7 @@ class SaleController extends Controller
             } else {
                 $branchId = (int) ($validated['branch_id'] ?? 0);
             }
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
             $warehouseId = (int) $user->warehouse_id;
         } else {
             $branchId = (int) $user->branch_id;
@@ -640,7 +640,7 @@ class SaleController extends Controller
             } else {
                 $branchId = (int) ($validated['branch_id'] ?? 0);
             }
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
             $warehouseId = (int) $user->warehouse_id;
         } else {
             $branchId = (int) $user->branch_id;
@@ -799,12 +799,12 @@ class SaleController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
@@ -880,9 +880,9 @@ class SaleController extends Controller
 
         $pmBranchId = null;
         $pmWarehouseId = null;
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
             $pmBranchId = (int) $user->branch_id;
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $pmWarehouseId = (int) $user->warehouse_id;
         } elseif ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {
@@ -1121,10 +1121,10 @@ class SaleController extends Controller
         if ($user->isSuperAdminOrAdminPusat()) {
             return;
         }
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
             return;
         }
-        if ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
+        if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
             return;
         }
         abort(403, __('Unauthorized.'));

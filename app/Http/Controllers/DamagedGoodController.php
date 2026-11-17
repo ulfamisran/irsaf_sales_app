@@ -25,7 +25,7 @@ class DamagedGoodController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -41,7 +41,7 @@ class DamagedGoodController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->whereHas('productUnit', fn ($q) => $q
                     ->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', $user->branch_id));
@@ -135,7 +135,7 @@ class DamagedGoodController extends Controller
     public function create(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -186,7 +186,7 @@ class DamagedGoodController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -199,7 +199,7 @@ class DamagedGoodController extends Controller
         $locType = (string) $validated['location_type'];
         $locId = (int) $validated['location_id'];
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
             if ($locType !== Stock::LOCATION_BRANCH || $locId !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
             }
@@ -249,7 +249,7 @@ class DamagedGoodController extends Controller
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -261,7 +261,7 @@ class DamagedGoodController extends Controller
 
         $locType = (string) $validated['location_type'];
         $locId = (int) $validated['location_id'];
-        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
             if ($locType !== Stock::LOCATION_BRANCH || $locId !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
             }
@@ -289,7 +289,7 @@ class DamagedGoodController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
@@ -308,7 +308,7 @@ class DamagedGoodController extends Controller
             if (! $unit) {
                 continue;
             }
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                     return back()->withInput()->with('error', __('Unit :serial tidak diizinkan untuk lokasi Anda.', ['serial' => $unit->serial_number]));
                 }
@@ -353,11 +353,11 @@ class DamagedGoodController extends Controller
     public function show(DamagedGood $damagedGood): View
     {
         $user = request()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
             $unit = $damagedGood->productUnit;
             if (! $unit || $unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
@@ -372,11 +372,11 @@ class DamagedGoodController extends Controller
     public function reactivateForm(DamagedGood $damagedGood): View
     {
         $user = request()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
             $unit = $damagedGood->productUnit;
             if (! $unit || $unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
@@ -395,11 +395,11 @@ class DamagedGoodController extends Controller
     public function reactivate(Request $request, DamagedGood $damagedGood): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
             abort(403, __('Unauthorized.'));
         }
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
             $unitCheck = $damagedGood->productUnit;
             if (! $unitCheck || $unitCheck->location_type !== Stock::LOCATION_BRANCH || (int) $unitCheck->location_id !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));

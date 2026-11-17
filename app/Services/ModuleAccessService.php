@@ -59,7 +59,7 @@ class ModuleAccessService
     public function resolve(Request $request): ?array
     {
         $name = $request->route()?->getName();
-        if (! is_string($name) || $name === '' || str_starts_with($name, 'role-access.')) {
+        if (! is_string($name) || $name === '' || str_starts_with($name, 'role-access.') || str_starts_with($name, 'verification-cutoff.')) {
             return null;
         }
 

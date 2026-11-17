@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 class Service extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const STATUS_OPEN = 'open';
     public const STATUS_COMPLETED = 'completed';
@@ -31,6 +33,8 @@ class Service extends Model
         'location_type',
         'warehouse_id',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'customer_id',
         'laptop_type',
         'laptop_detail',

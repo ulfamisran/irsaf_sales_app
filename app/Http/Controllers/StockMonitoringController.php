@@ -26,13 +26,13 @@ class StockMonitoringController extends Controller
             ->where('quantity', '>', 0);
 
         if (! $canFilterLocation) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $filterLocked = true;
                 $locationType = Stock::LOCATION_BRANCH;
                 $locationId = (int) $user->branch_id;
                 $branch = Branch::find($locationId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? ('#' . $locationId));
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $filterLocked = true;
                 $locationType = Stock::LOCATION_WAREHOUSE;
                 $locationId = (int) $user->warehouse_id;
