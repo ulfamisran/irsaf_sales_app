@@ -57,7 +57,7 @@ class ProductRequest extends FormRequest
     {
         if ($this->routeIs('products.update') && ! $this->has('location_type')) {
             $user = $this->user();
-            if ($user?->hasAnyRole([Role::ADMIN_GUDANG])) {
+            if ($user?->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
                 if ($user->warehouse_id) {
                     $this->merge(['location_type' => 'warehouse', 'location_id' => $user->warehouse_id]);
                 } elseif ($user->branch_id) {

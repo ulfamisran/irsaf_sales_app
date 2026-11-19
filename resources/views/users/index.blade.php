@@ -63,6 +63,7 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Email') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Role') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Penempatan') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('IP Publik') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
@@ -74,6 +75,7 @@
                                 <td class="px-4 py-3">{{ $user->email }}</td>
                                 <td class="px-4 py-3">{{ $user->roles->pluck('display_name')->implode(', ') ?: '-' }}</td>
                                 <td class="px-4 py-3">{{ $user->placement_display }}</td>
+                                <td class="px-4 py-3 text-sm text-slate-700">{{ $user->publicIpSummary() }}</td>
                                 <td class="px-4 py-3">
                                     <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $user->is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">
                                         {{ $user->is_active ? __('Aktif') : __('Nonaktif') }}
@@ -101,7 +103,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data user.') }}</td>
+                                <td colspan="7" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data user.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

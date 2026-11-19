@@ -13,6 +13,7 @@ use App\Models\Rental;
 use App\Models\Sale;
 use App\Models\Service;
 use App\Models\Stock;
+use App\Models\UnitExchange;
 
 use App\Models\Warehouse;
 use App\Support\ExcelExporter;
@@ -80,6 +81,23 @@ class FinanceController extends Controller
         return $pdf->download('perbandingan-laba-rugi-' . now()->format('Ymd-His') . '.pdf');
     }
 
+    /**
+     * Relasi yang dipakai omzet dan HPP penjualan, termasuk selisih tukar unit yang sudah release.
+     *
+     * @return array<int|string, mixed>
+     */
+    private function salesProfitRelations(): array
+    {
+        $with = ['saleDetails', 'payments', 'tradeIns'];
+        if (Schema::hasTable('unit_exchanges') && Schema::hasTable('unit_exchange_items')) {
+            $with['unitExchanges'] = fn ($query) => $query
+                ->where('status', UnitExchange::STATUS_RELEASED)
+                ->with('items');
+        }
+
+        return $with;
+    }
+
     public function profitLoss(Request $request): View
     {
         $user = $request->user();
@@ -108,13 +126,13 @@ class FinanceController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $lockedBranchId = $branchId;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $lockedWarehouseId = $warehouseId;
                 $filterLocked = true;
@@ -142,9 +160,9 @@ class FinanceController extends Controller
             $salesQuery->where('warehouse_id', $warehouseId);
         }
 
-        $sales = $salesQuery->with('saleDetails', 'payments', 'tradeIns')->get()->filter(fn ($sale) => $sale->isPaidOff());
+        $sales = $salesQuery->with($this->salesProfitRelations())->get()->filter(fn ($sale) => $sale->isPaidOff());
 
-        // Total transaksi = pembayaran tunai + nilai tukar tambah (selaras dengan baris detail).
+        // Total transaksi = pembayaran tunai + tukar tambah + selisih tukar unit release.
         $totalSales = (float) $sales->sum(fn ($sale) => $sale->payment_total_for_report);
         $totalSalesHpp = (float) $sales->sum->total_hpp;
         $totalSalesProfit = $totalSales - $totalSalesHpp;
@@ -502,13 +520,13 @@ class FinanceController extends Controller
         $lockedWarehouseId = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $lockedBranchId = $branchId;
                 $filterLocked = true;
                 $branch = Branch::find($branchId);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $lockedWarehouseId = $warehouseId;
                 $filterLocked = true;
@@ -868,10 +886,10 @@ class FinanceController extends Controller
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id ? Branch::whereKey($user->branch_id)->get(['id', 'name']) : collect());
         $warehouses = $user->isSuperAdminOrAdminPusat()
             ? Warehouse::orderBy('name')->get(['id', 'name'])
-            : ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
+            : ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']) : collect());
 
         return view('finance.cash-monitoring', [
             'canFilterLocation' => $canFilterLocation,
@@ -925,11 +943,11 @@ class FinanceController extends Controller
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             // Non super admin harus selalu terikat ke lokasi miliknya.
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $branchId = (int) $user->branch_id;
                 $warehouseId = null;
                 $isOverall = false;
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $warehouseId = (int) $user->warehouse_id;
                 $branchId = null;
                 $isOverall = false;
@@ -1316,7 +1334,7 @@ class FinanceController extends Controller
                 ->when($isBranch, fn ($q) => $q->where('branch_id', $branchId))
                 ->when(! $isBranch, fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->whereBetween('sale_date', [$dateFromStr, $dateToStr])
-                ->with('saleDetails', 'payments', 'tradeIns')
+                ->with($this->salesProfitRelations())
                 ->get()
                 ->filter(fn ($sale) => $sale->isPaidOff());
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,7 @@ use App\Models\Warehouse;
 class CashFlow extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const TYPE_IN = 'IN';
     public const TYPE_OUT = 'OUT';
@@ -30,6 +32,8 @@ class CashFlow extends Model
     public const REFERENCE_SETOR_TUNAI = 'setor_tunai';
     public const REFERENCE_MUTASI_DANA = 'mutasi_dana';
     public const REFERENCE_PENYESUAIAN_SALDO = 'penyesuaian_saldo';
+    public const REFERENCE_UNIT_EXCHANGE = 'unit_exchange';
+    public const REFERENCE_REVERSAL = 'reversal';
 
     protected $fillable = [
         'branch_id',
@@ -44,6 +48,11 @@ class CashFlow extends Model
         'payment_method_id',
         'transaction_date',
         'user_id',
+        'client_ip',
+        'client_user_agent',
+        'cancelled_at',
+        'cancel_user_id',
+        'cancel_reason',
     ];
 
     protected function casts(): array
@@ -51,6 +60,7 @@ class CashFlow extends Model
         return [
             'amount' => 'decimal:2',
             'transaction_date' => 'date',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -85,6 +95,25 @@ class CashFlow extends Model
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function isAttachedToSourceTransaction(): bool
+    {
+        if ($this->type === self::TYPE_OUT && in_array($this->reference_type, [self::REFERENCE_PURCHASE, self::REFERENCE_PURCHASE_RETURN], true)) {
+            return true;
+        }
+
+        return $this->type === self::TYPE_IN && in_array($this->reference_type, [
+            self::REFERENCE_SALE,
+            self::REFERENCE_SERVICE,
+            self::REFERENCE_RENTAL,
+            self::REFERENCE_TRADE_IN,
+        ], true);
+    }
+
+    public function isStandaloneCash(): bool
+    {
+        return $this->reference_type === null || $this->reference_type === '' || $this->reference_type === self::REFERENCE_OTHER;
     }
 
     /**

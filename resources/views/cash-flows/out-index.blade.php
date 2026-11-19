@@ -179,6 +179,13 @@
                                     </svg>
                                     {{ __('Detail') }}
                                 </a>
+                                @if (auth()->user()?->canModule('cash-out', 'cancel') && $exp->isStandaloneCash())
+                                    <form method="POST" action="{{ route('cash-flows.out.cancel', $exp) }}" class="mt-2 flex items-center justify-center gap-1">
+                                        @csrf
+                                        <input type="text" name="cancel_reason" required placeholder="{{ __('Alasan batal') }}" class="w-28 rounded border border-slate-300 text-xs">
+                                        <button type="submit" class="px-2 py-1 rounded bg-red-600 text-white text-xs">{{ __('Batal') }}</button>
+                                    </form>
+                                @endif
                                 @if (auth()->user()?->isSuperAdminOrAdminPusat())
                                     <div class="mt-2 flex items-center justify-center gap-2">
                                         <x-icon-btn-edit :href="route('cash-flows.out.edit', $exp)" :label="__('Edit')" />

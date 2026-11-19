@@ -17,9 +17,11 @@ use App\Models\Stock;
 use App\Models\StockMutation;
 use App\Models\AuditLog;
 use App\Services\ServiceService;
+use App\Services\TransactionProofService;
 use App\Services\KasBalanceService;
 use App\Services\StockMutationService;
 use App\Support\CatatRange;
+use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
@@ -33,7 +35,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ServiceController extends Controller
 {
     public function __construct(
-        protected ServiceService $serviceService
+        protected ServiceService $serviceService,
+        protected TransactionProofService $proofs
     ) {}
 
     public function index(Request $request): View
@@ -49,7 +52,7 @@ class ServiceController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
@@ -81,14 +84,7 @@ class ServiceController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyService($query, $request->input('search'));
         CatatRange::apply($query, $request, 'services.created_at');
         CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
@@ -99,7 +95,7 @@ class ServiceController extends Controller
         $totalService = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->total_service_price);
         $totalMaterialExpense = (float) $serviceTotals->sum(fn (Service $service) => (float) $service->materials_total_price);
         $totalServiceNet = $totalService - $totalMaterialExpense;
-        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
         $pmWarehouseId = $this->isWarehouseStaff($user) ? (int) $user->warehouse_id : null;
@@ -112,7 +108,7 @@ class ServiceController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('service_payments')
             ->join('services', 'service_payments.service_id', '=', 'services.id')
-            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id, fn ($q) => $q->where('services.branch_id', $user->branch_id))
             ->when($this->isWarehouseStaff($user), fn ($q) => $q->where('services.warehouse_id', $user->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->location_type === 'warehouse' && $request->filled('warehouse_id'), fn ($q) => $q->where('services.warehouse_id', $request->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->location_type !== 'warehouse' && $request->filled('branch_id'), fn ($q) => $q->where('services.branch_id', $request->branch_id))
@@ -120,6 +116,11 @@ class ServiceController extends Controller
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('services.entry_date', '<=', $request->date_to))
             ->when($request->filled('status'), fn ($q) => $q->where('services.status', $request->status))
             ->whereIn('services.status', [Service::STATUS_OPEN, Service::STATUS_COMPLETED])
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $matched = Service::query()->select('id');
+                DocumentSearch::applyService($matched, $request->input('search'));
+                $q->whereIn('services.id', $matched);
+            })
             ->when(true, function ($q) use ($request) {
                 CatatRange::apply($q, $request, 'services.created_at');
                 CatatRange::applyBackdate($q, $request, 'services.entry_date', 'services.created_at');
@@ -143,7 +144,7 @@ class ServiceController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($this->isWarehouseStaff($user)) {
                 $query->where('warehouse_id', $user->warehouse_id);
@@ -172,19 +173,12 @@ class ServiceController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyService($query, $request->input('search'));
         CatatRange::apply($query, $request, 'services.created_at');
         CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $b = Branch::find($user->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             } elseif ($this->isWarehouseStaff($user)) {
@@ -216,7 +210,7 @@ class ServiceController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
             } elseif ($this->isWarehouseStaff($user)) {
                 $query->where('warehouse_id', $user->warehouse_id);
@@ -245,19 +239,12 @@ class ServiceController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyService($query, $request->input('search'));
         CatatRange::apply($query, $request, 'services.created_at');
         CatatRange::applyBackdate($query, $request, 'services.entry_date', 'services.created_at');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $b = Branch::find($user->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             } elseif ($this->isWarehouseStaff($user)) {
@@ -359,12 +346,17 @@ class ServiceController extends Controller
 
             $customerId = $this->resolveCustomerId($request);
             $status = $request->input('status', 'open');
+            if (app(\App\Services\AuthorizationService::class)->enabled('services') && $status === 'release') {
+                $status = 'open';
+            }
             $isRelease = $status === 'release';
             if (! $user->isSuperAdminOrAdminPusat()) {
                 $request->merge([
                     'entry_date' => \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
                 ]);
             }
+
+            $this->proofs->validateUploads($request, null, $isRelease);
 
             $materialsInput = $isRelease ? ($request->input('materials', []) ?? []) : [];
             $materialsTotal = $isRelease ? $this->sumMaterialsTotalPrice($materialsInput) : 0.0;
@@ -391,6 +383,9 @@ class ServiceController extends Controller
                 $this->storeMaterials($service, $materialsInput, replace: true, userId: $user->id);
                 $this->refreshPaymentStatus($service);
             }
+
+            $this->proofs->storeUploaded($request, $service, $user->id);
+            app(\App\Services\AuthorizationService::class)->attach($service);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -402,7 +397,7 @@ class ServiceController extends Controller
     {
         $this->authorizeServiceAccess($service);
 
-        $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
+        $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor', 'proofs']);
 
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
@@ -439,7 +434,7 @@ class ServiceController extends Controller
             ? Warehouse::orderBy('name')->get()
             : ($user->warehouse_id ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
 
-        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
+        $service->load(['customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor', 'proofs']);
 
         $customers = $this->customersForServiceForm($service);
 
@@ -478,6 +473,7 @@ class ServiceController extends Controller
             $materialsTotal = is_array($materialsInput) ? $this->sumMaterialsTotalPrice($materialsInput) : null;
 
             $markAsReleased = (bool) $request->input('mark_release');
+            $this->proofs->validateUploads($request, $service, $markAsReleased);
             if (! $user->isSuperAdminOrAdminPusat()) {
                 $request->merge([
                     'entry_date' => $service->entry_date?->toDateString()
@@ -505,6 +501,8 @@ class ServiceController extends Controller
                 $this->refreshPaymentStatus($service);
             }
 
+            $this->proofs->storeUploaded($request, $service, $user->id);
+
             $pickupStatus = $request->boolean('mark_picked_up') ? Service::PICKUP_SUDAH : Service::PICKUP_BELUM;
             $service->update(['pickup_status' => $pickupStatus]);
 
@@ -526,6 +524,10 @@ class ServiceController extends Controller
     {
         $this->authorizeServiceAccess($service);
         $user = $request->user();
+
+        if ($request->boolean('mark_completed')) {
+            $this->proofs->assertHasProof($service);
+        }
 
         $validated = $request->validate([
             'payments' => ['required', 'array', 'min:1'],
@@ -559,6 +561,11 @@ class ServiceController extends Controller
         $user = $request->user();
         if ($service->status !== Service::STATUS_OPEN) {
             abort(403, __('Service tidak dapat diedit (sudah selesai atau dibatalkan).'));
+        }
+        try {
+            app(\App\Services\AuthorizationService::class)->assertFollowUp($service);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         }
 
         $validated = $request->validate([
@@ -606,6 +613,7 @@ class ServiceController extends Controller
     public function complete(Request $request, Service $service): RedirectResponse
     {
         $this->authorizeServiceAccess($service);
+        $this->proofs->assertHasProof($service);
 
         $validated = $request->validate([
             'exit_date' => ['nullable', 'date'],
@@ -678,10 +686,24 @@ class ServiceController extends Controller
     public function invoice(Service $service): View
     {
         $this->authorizeServiceAccess($service);
+        try {
+            app(\App\Services\AuthorizationService::class)->assertInvoice($service);
+        } catch (\InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
 
         $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor']);
 
         return view('services.invoice', compact('service'));
+    }
+
+    public function report(Service $service): View
+    {
+        $this->authorizeServiceAccess($service);
+
+        $service->load(['branch', 'warehouse', 'user', 'customer', 'payments.paymentMethod', 'serviceMaterials', 'sparePartServicePurchases.details.product', 'sparePartServicePurchases.distributor', 'proofs']);
+
+        return view('services.report', compact('service'));
     }
 
     /**
@@ -718,7 +740,7 @@ class ServiceController extends Controller
     private function isWarehouseStaff($user): bool
     {
         return (bool) $user->warehouse_id && (
-            $user->hasRole(Role::ADMIN_GUDANG)
+            $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])
             || ($user->hasRole(Role::KASIR) && ! $user->branch_id)
         );
     }
@@ -737,7 +759,7 @@ class ServiceController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && (int) $user->branch_id === (int) $service->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && (int) $user->branch_id === (int) $service->branch_id) {
             return;
         }
 

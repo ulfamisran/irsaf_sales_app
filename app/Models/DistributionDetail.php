@@ -15,6 +15,7 @@ class DistributionDetail extends Model
         'product_id',
         'quantity',
         'biaya_distribusi_per_unit',
+        'affects_hpp',
         'hpp_per_unit',
         'serial_numbers',
     ];
@@ -23,6 +24,7 @@ class DistributionDetail extends Model
     {
         return [
             'biaya_distribusi_per_unit' => 'decimal:2',
+            'affects_hpp' => 'boolean',
             'hpp_per_unit' => 'decimal:2',
         ];
     }

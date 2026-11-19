@@ -20,7 +20,7 @@ class ReportController extends Controller
     public function stockWarehouse(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG])) {
+        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
             abort(403, __('Unauthorized.'));
         }
 

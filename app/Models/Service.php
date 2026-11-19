@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\DB;
 
 class Service extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const STATUS_OPEN = 'open';
     public const STATUS_COMPLETED = 'completed';
@@ -31,6 +34,8 @@ class Service extends Model
         'location_type',
         'warehouse_id',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'customer_id',
         'laptop_type',
         'laptop_detail',
@@ -47,6 +52,7 @@ class Service extends Model
         'cancel_date',
         'cancel_user_id',
         'cancel_reason',
+        'requires_authorization',
     ];
 
     protected function casts(): array
@@ -58,6 +64,7 @@ class Service extends Model
             'entry_date' => 'date',
             'exit_date' => 'date',
             'cancel_date' => 'date',
+            'requires_authorization' => 'boolean',
         ];
     }
 
@@ -92,6 +99,11 @@ class Service extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function proofs(): MorphMany
+    {
+        return $this->morphMany(TransactionProof::class, 'proofable');
     }
 
     public function cancelUser(): BelongsTo

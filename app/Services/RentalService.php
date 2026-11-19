@@ -35,7 +35,8 @@ class RentalService
         float $penaltyAmount,
         array $payments,
         ?string $description = null,
-        ?int $userId = null
+        ?int $userId = null,
+        bool $deferEffects = false
     ): Rental {
         if (empty($items)) {
             throw new InvalidArgumentException(__('Penyewaan wajib berisi item.'));
@@ -95,7 +96,8 @@ class RentalService
             $payments,
             $paymentSum,
             $description,
-            $userId
+            $userId,
+            $deferEffects
         ) {
             $invoiceNumber = $this->generateInvoiceNumber();
             $isPaidOff = $paymentSum >= $grandTotal - 0.02;
@@ -119,6 +121,8 @@ class RentalService
                 'return_status' => Rental::RETURN_BELUM,
                 'status' => Rental::STATUS_OPEN,
                 'description' => $description,
+                'requires_authorization' => $deferEffects,
+                'effects_pending' => $deferEffects,
             ]);
 
             foreach ($details as $detail) {
@@ -131,12 +135,24 @@ class RentalService
                     'total' => $detail['total'],
                 ]);
 
-                $this->markUnitRented(
-                    $detail['product_id'],
-                    $locationType,
-                    $locationId,
-                    $detail['serial_number']
-                );
+                if ($deferEffects) {
+                    $product = Product::query()->find($detail['product_id']);
+                    if ($product) {
+                        app(StockMutationService::class)->reserveUnits(
+                            $product,
+                            $locationType,
+                            $locationId,
+                            [$detail['serial_number']]
+                        );
+                    }
+                } else {
+                    $this->markUnitRented(
+                        $detail['product_id'],
+                        $locationType,
+                        $locationId,
+                        $detail['serial_number']
+                    );
+                }
             }
 
             $cfBranchId = $locationType === Stock::LOCATION_BRANCH ? $branchId : null;
@@ -150,21 +166,24 @@ class RentalService
                 $pm = \App\Models\PaymentMethod::find($p['payment_method_id'] ?? 0);
                 $pmLabel = $pm ? $pm->display_label : __('Payment');
 
-                $cashFlow = CashFlow::create([
-                    'branch_id' => $cfBranchId,
-                    'warehouse_id' => $cfWarehouseId,
-                    'type' => CashFlow::TYPE_IN,
-                    'amount' => $amt,
-                    'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
-                    'reference_type' => CashFlow::REFERENCE_RENTAL,
-                    'reference_id' => $rental->id,
-                    'income_category_id' => $penyewaanCategory->id,
-                    'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
-                    'transaction_date' => $pickupDate,
-                    'user_id' => $userId ?? auth()->id(),
-                ]);
+                $cashFlow = null;
+                if (! $deferEffects) {
+                    $cashFlow = CashFlow::create([
+                        'branch_id' => $cfBranchId,
+                        'warehouse_id' => $cfWarehouseId,
+                        'type' => CashFlow::TYPE_IN,
+                        'amount' => $amt,
+                        'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                        'reference_type' => CashFlow::REFERENCE_RENTAL,
+                        'reference_id' => $rental->id,
+                        'income_category_id' => $penyewaanCategory->id,
+                        'payment_method_id' => (int) ($p['payment_method_id'] ?? 0),
+                        'transaction_date' => $pickupDate,
+                        'user_id' => $userId ?? auth()->id(),
+                    ]);
+                }
                 RentalPayment::create([
-                    'cash_flow_id' => $cashFlow->id,
+                    'cash_flow_id' => $cashFlow?->id,
                     'rental_id' => $rental->id,
                     'payment_method_id' => (int) $p['payment_method_id'],
                     'amount' => $amt,
@@ -188,6 +207,9 @@ class RentalService
     ): Rental {
         if ($rental->status !== Rental::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Penyewaan sudah selesai atau dibatalkan.'));
+        }
+        if ($rental->effects_pending) {
+            throw new InvalidArgumentException(__('Aktifkan penyewaan dulu sebelum mencatat pelunasan.'));
         }
         if (empty($payments)) {
             throw new InvalidArgumentException(__('Pembayaran wajib diisi.'));
@@ -416,6 +438,58 @@ class RentalService
     /**
      * Cancel an OPEN or RELEASED rental.
      */
+    public function releaseEffects(Rental $rental, ?int $userId = null): Rental
+    {
+        if (! $rental->effects_pending) {
+            throw new InvalidArgumentException(__('Penyewaan ini sudah di-release.'));
+        }
+        if ($rental->status !== Rental::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Hanya penyewaan open yang bisa di-release.'));
+        }
+
+        $locType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
+        $locId = $locType === Rental::LOCATION_BRANCH ? (int) $rental->branch_id : (int) $rental->warehouse_id;
+        $cfBranchId = $locType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
+        $cfWarehouseId = $locType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
+        $userId = $userId ?? auth()->id();
+
+        return DB::transaction(function () use ($rental, $locType, $locId, $cfBranchId, $cfWarehouseId, $userId) {
+            $stock = app(StockMutationService::class);
+            $items = RentalItem::where('rental_id', $rental->id)->get();
+            foreach ($items as $item) {
+                $product = Product::query()->find($item->product_id);
+                if ($product) {
+                    $stock->unreserveUnits($product, $locType, $locId, [(string) $item->serial_number], false);
+                }
+                $this->markUnitRented((int) $item->product_id, $locType, $locId, (string) $item->serial_number);
+            }
+
+            $category = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
+            $payments = RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->whereNull('cash_flow_id')->get();
+            foreach ($payments as $payment) {
+                $pmLabel = $payment->paymentMethod?->display_label ?? __('Payment');
+                $cashFlow = CashFlow::create([
+                    'branch_id' => $cfBranchId,
+                    'warehouse_id' => $cfWarehouseId,
+                    'type' => CashFlow::TYPE_IN,
+                    'amount' => $payment->amount,
+                    'description' => __('Sewa') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                    'reference_type' => CashFlow::REFERENCE_RENTAL,
+                    'reference_id' => $rental->id,
+                    'income_category_id' => $category->id,
+                    'payment_method_id' => $payment->payment_method_id,
+                    'transaction_date' => $rental->pickup_date?->toDateString() ?? now()->toDateString(),
+                    'user_id' => $userId,
+                ]);
+                $payment->update(['cash_flow_id' => $cashFlow->id]);
+            }
+
+            $rental->update(['effects_pending' => false]);
+
+            return $rental->fresh();
+        });
+    }
+
     public function cancel(Rental $rental, int $userId, string $reason): Rental
     {
         if (! in_array($rental->status, [Rental::STATUS_OPEN, Rental::STATUS_RELEASED], true)) {
@@ -428,7 +502,17 @@ class RentalService
         $cfWarehouseId = $locType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
 
         return DB::transaction(function () use ($rental, $userId, $reason, $locType, $locId, $cfBranchId, $cfWarehouseId) {
-            if ($rental->status === Rental::STATUS_OPEN) {
+            if ($rental->status === Rental::STATUS_OPEN && $rental->effects_pending) {
+                $stock = app(StockMutationService::class);
+                $items = RentalItem::where('rental_id', $rental->id)->get();
+                foreach ($items as $item) {
+                    $product = Product::query()->find($item->product_id);
+                    if ($product) {
+                        $stock->unreserveUnits($product, $locType, $locId, [(string) $item->serial_number], false);
+                    }
+                }
+            } elseif ($rental->status === Rental::STATUS_OPEN && $rental->return_status !== Rental::RETURN_SUDAH) {
+                // Unit masih di customer: kembalikan ke stok. Jika sudah dicatat kembali, lewati.
                 $items = RentalItem::where('rental_id', $rental->id)->get();
                 foreach ($items as $item) {
                     $this->markUnitReturned((int) $item->product_id, $locType, $locId, (string) $item->serial_number);
@@ -446,6 +530,9 @@ class RentalService
             );
             $payments = RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get();
             foreach ($payments as $rp) {
+                if (! $rp->cash_flow_id) {
+                    continue;
+                }
                 $pmLabel = $rp->paymentMethod?->display_label ?? __('Payment');
                 CashFlow::create([
                     'branch_id' => $cfBranchId,
@@ -475,21 +562,36 @@ class RentalService
     }
 
     /**
-     * Mark rental as returned and return units to warehouse stock.
-     * Pelunasan wajib jika belum lunas.
+     * Catat pelunasan + pengembalian unit. Status dokumen tetap OPEN jika butuh otorisasi release.
+     * Tanpa otorisasi, status langsung RELEASED.
+     *
+     * @param  array<int, array{payment_method_id:int, amount:float, notes?:string|null}>  $payments
      */
     public function markReturned(Rental $rental, array $payments = [], ?int $userId = null): Rental
     {
         if ($rental->status !== Rental::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Hanya penyewaan OPEN yang bisa diselesaikan.'));
         }
+        if ($rental->effects_pending) {
+            throw new InvalidArgumentException(__('Aktifkan penyewaan dulu sebelum unit dikembalikan.'));
+        }
+        if ($rental->return_status === Rental::RETURN_SUDAH) {
+            throw new InvalidArgumentException(__('Pengembalian unit sudah dicatat.'));
+        }
+
+        $authorization = app(AuthorizationService::class);
+        if ($rental->requires_authorization) {
+            // Cukup otorisasi open; status Release menunggu otorisasi kedua.
+            $authorization->assertFollowUp($rental);
+        }
 
         $locType = $rental->location_type ?? Rental::LOCATION_WAREHOUSE;
         $locId = $locType === Rental::LOCATION_BRANCH ? (int) $rental->branch_id : (int) $rental->warehouse_id;
         $cfBranchId = $locType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
         $cfWarehouseId = $locType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
+        $finalizeNow = ! (bool) $rental->requires_authorization;
 
-        return DB::transaction(function () use ($rental, $payments, $cfBranchId, $cfWarehouseId, $locType, $locId, $userId) {
+        return DB::transaction(function () use ($rental, $payments, $cfBranchId, $cfWarehouseId, $locType, $locId, $userId, $finalizeNow) {
             if (! empty($payments)) {
                 $penyewaanCategory = IncomeCategory::resolveByCode('RENT', 'Penyewaan');
                 foreach ($payments as $p) {
@@ -533,15 +635,39 @@ class RentalService
                 $this->markUnitReturned((int) $item->product_id, $locType, $locId, (string) $item->serial_number);
             }
 
-            $rental->update([
+            $payload = [
                 'total_paid' => $totalPaid,
                 'payment_status' => Rental::PAYMENT_LUNAS,
                 'return_status' => Rental::RETURN_SUDAH,
-                'status' => Rental::STATUS_RELEASED,
-            ]);
+            ];
+            if ($finalizeNow) {
+                $payload['status'] = Rental::STATUS_RELEASED;
+            }
+            $rental->update($payload);
 
             return $rental->fresh()->load(['items.product', 'payments.paymentMethod', 'branch', 'warehouse', 'customer', 'user']);
         });
+    }
+
+    /**
+     * Ubah status sewa menjadi RELEASED setelah otorisasi release (dan pengembalian sudah dicatat).
+     */
+    public function finalizeRelease(Rental $rental): Rental
+    {
+        if ($rental->status !== Rental::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Hanya penyewaan OPEN yang bisa di-release.'));
+        }
+        if ($rental->effects_pending) {
+            throw new InvalidArgumentException(__('Aktifkan penyewaan dulu.'));
+        }
+        if ($rental->return_status !== Rental::RETURN_SUDAH) {
+            throw new InvalidArgumentException(__('Catat pengembalian unit dulu sebelum mengubah status menjadi Release.'));
+        }
+        app(AuthorizationService::class)->assertCanRelease($rental);
+
+        $rental->update(['status' => Rental::STATUS_RELEASED]);
+
+        return $rental->fresh()->load(['items.product', 'payments.paymentMethod', 'branch', 'warehouse', 'customer', 'user']);
     }
 
     private function calculateDays(string $pickupDate, string $returnDate): int

@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Purchase extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
+    public const STATUS_OPEN = 'open';
     public const STATUS_ACTIVE = 'active';
     public const STATUS_CANCELLED = 'cancelled';
 
@@ -33,7 +37,12 @@ class Purchase extends Model
         'termin',
         'due_date',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'status',
+        'requires_authorization',
+        'cancel_reason',
+        'cancel_user_id',
         'stock_mutation_id',
         'service_id',
     ];
@@ -45,6 +54,7 @@ class Purchase extends Model
             'total_paid' => 'decimal:2',
             'purchase_date' => 'date',
             'due_date' => 'date',
+            'requires_authorization' => 'boolean',
         ];
     }
 
@@ -68,12 +78,17 @@ class Purchase extends Model
         return $this->status === self::STATUS_CANCELLED;
     }
 
+    public function proofs(): MorphMany
+    {
+        return $this->morphMany(TransactionProof::class, 'proofable');
+    }
+
     /**
      * Whether the purchase header and line items may be edited (no payments, not distribution-linked, etc.).
      */
     public function canBeEdited(): bool
     {
-        if ($this->isCancelled()) {
+        if ($this->isCancelled() || $this->status === self::STATUS_OPEN) {
             return false;
         }
         if ($this->isDistribusiUnit()) {

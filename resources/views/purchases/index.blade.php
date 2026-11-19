@@ -57,7 +57,7 @@
                                name="search"
                                value="{{ request('search') }}"
                                class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                               placeholder="{{ __('No. invoice, distributor, user...') }}">
+                               placeholder="{{ __('No. invoice, SKU, nomor serial, distributor, user...') }}">
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     @if ($canFilterLocation)
@@ -234,8 +234,18 @@
                                 $p = $row->purchase ?? $row;
                                 $s = $row->summary ?? null;
                             @endphp
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="px-4 py-3 font-medium">{{ $p->invoice_number }}</td>
+                            @php $needsAuthSubmit = app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($p); @endphp
+                            <tr @class([
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
+                                <td class="px-4 py-3 font-medium">
+                                    <div class="flex flex-col gap-1">
+                                        <span>{{ $p->invoice_number }}</span>
+                                        <x-authorization-list-badge :model="$p" />
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3">{{ $p->purchase_date?->format('d/m/Y') ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $p->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">
@@ -264,17 +274,23 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 text-center">
-                                    <div class="flex flex-wrap gap-2 justify-center items-center">
-                                        <x-icon-btn-view :href="route('purchases.show', $p)" :label="__('Detail')" />
+                                    <x-row-actions>
+                                        <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <a href="{{ route('purchases.show', $p) }}" style="color:#047857;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            {{ __('Detail') }}
+                                        </a>
                                         @if (!empty($s['needs_check']))
-                                            <a href="{{ route('purchase-receiving.show', $p) }}" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                                                </svg>
+                                            <a href="{{ route('purchase-receiving.show', $p) }}" style="color:#4f46e5;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
                                                 {{ __('Cek') }}
                                             </a>
                                         @endif
-                                    </div>
+                                        <a href="{{ route('purchases.report', $p) }}" target="_blank" style="color:#1d4ed8;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                            {{ __('Cetak Laporan') }}
+                                        </a>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty
@@ -314,9 +330,17 @@
                                 $remaining = (float) ($row->remaining ?? $row->summary['remaining_recognized'] ?? max(0, $recognized - $paid));
                                 $units = $row->units ?? [];
                             @endphp
-                            <tr class="hover:bg-slate-50/50">
+                            @php $needsAuthSubmit = app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($p); @endphp
+                            <tr @class([
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
                                 <td class="px-4 py-3 font-medium">
-                                    <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}" class="text-indigo-600 hover:underline">{{ $p->invoice_number }}</a>
+                                    <div class="flex flex-col gap-1">
+                                        <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}" class="text-indigo-600 hover:underline">{{ $p->invoice_number }}</a>
+                                        <x-authorization-list-badge :model="$p" />
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3">{{ $p->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">
@@ -349,13 +373,17 @@
                                 <td class="px-4 py-3 text-right">Rp {{ number_format($paid, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-right font-semibold text-rose-600">Rp {{ number_format($remaining, 0, ',', '.') }}</td>
                                 <td class="px-4 py-3 text-center">
-                                    <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}#payment-form-section"
-                                       class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
-                                        </svg>
-                                        {{ __('Bayar') }}
-                                    </a>
+                                    <x-row-actions>
+                                        <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}#payment-form-section" style="color:#047857;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                                            {{ __('Bayar') }}
+                                        </a>
+                                        <a href="{{ route('purchases.report', $p) }}" target="_blank" style="color:#1d4ed8;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                            {{ __('Cetak Laporan') }}
+                                        </a>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty
@@ -389,8 +417,19 @@
                                 $p = $row->purchase;
                                 $items = $row->deferred_items ?? [];
                             @endphp
-                            <tr class="hover:bg-slate-50/50 align-top">
-                                <td class="px-4 py-3 font-medium">{{ $p->invoice_number }}</td>
+                            @php $needsAuthSubmit = app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($p); @endphp
+                            <tr @class([
+                                    'align-top' => true,
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
+                                <td class="px-4 py-3 font-medium">
+                                    <div class="flex flex-col gap-1">
+                                        <span>{{ $p->invoice_number }}</span>
+                                        <x-authorization-list-badge :model="$p" />
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3">
                                     @if ($p->warehouse_id)
                                         {{ __('Gudang') }}: {{ $p->warehouse?->name ?? '-' }}
@@ -446,7 +485,17 @@
                                     </div>
                                 </td>
                                 <td class="px-4 py-3 text-center">
-                                    <x-icon-btn-view :href="route('purchases.show', $p)" :label="__('Detail')" />
+                                    <x-row-actions>
+                                        <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <a href="{{ route('purchases.show', $p) }}" style="color:#047857;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            {{ __('Detail') }}
+                                        </a>
+                                        <a href="{{ route('purchases.report', $p) }}" target="_blank" style="color:#1d4ed8;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                            {{ __('Cetak Laporan') }}
+                                        </a>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty
@@ -489,12 +538,26 @@
                                 $s = is_object($row) && isset($row->summary) ? $row->summary : null;
                                 $recognized = (float) ($s['recognized_debt'] ?? 0);
                             @endphp
-                            <tr class="hover:bg-slate-50/50 {{ $p->isCancelled() ? 'bg-slate-50' : '' }}">
+                            @php
+                                $needsAuthSubmit = ! $p->isCancelled()
+                                    && app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($p);
+                            @endphp
+                            <tr @class([
+                                    'bg-slate-50 hover:bg-slate-50/50' => $p->isCancelled(),
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $p->isCancelled() && ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
                                 <td class="px-4 py-3 font-medium">
-                                    {{ $p->invoice_number }}
-                                    @if ($p->isCancelled())
-                                        <span class="ml-2 inline-flex px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
-                                    @endif
+                                    <div class="flex flex-col gap-1">
+                                        <div>
+                                            {{ $p->invoice_number }}
+                                            @if ($p->isCancelled())
+                                                <span class="ml-2 inline-flex px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
+                                            @endif
+                                        </div>
+                                        <x-authorization-list-badge :model="$p" />
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3 text-sm">{{ $p->jenis_pembelian ?? __('Pembelian Unit') }}</td>
                                 <td class="px-4 py-3">{{ $p->purchase_date->format('d/m/Y') }}</td>
@@ -529,20 +592,29 @@
                                 <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$p->created_at" /></td>
                                 <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$p->updated_at" /></td>
                                 <td class="px-4 py-3">
-                                    <div class="flex flex-wrap gap-2 justify-center items-center">
-                                        <x-icon-btn-view :href="route('purchases.show', ['purchase' => $p, 'view' => 'detail'])" :label="__('Detail')" />
+                                    <x-row-actions>
+                                        <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}" style="color:#047857;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            {{ __('Detail') }}
+                                        </a>
                                         @if ($p->canBeEdited())
-                                            <x-icon-btn-edit :href="route('purchases.edit', $p)" :label="__('Ubah')" />
+                                            <a href="{{ route('purchases.edit', $p) }}" style="color:#b45309;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                {{ __('Ubah') }}
+                                            </a>
                                         @endif
                                         @if (!$p->isCancelled() && auth()->user()->canModule('purchases', 'cancel'))
-                                            <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'cancel']) }}" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                                </svg>
+                                            <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'cancel']) }}" style="color:#dc2626;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                                 {{ __('Cancel') }}
                                             </a>
                                         @endif
-                                    </div>
+                                        <a href="{{ route('purchases.report', $p) }}" target="_blank" style="color:#1d4ed8;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                            {{ __('Cetak Laporan') }}
+                                        </a>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty

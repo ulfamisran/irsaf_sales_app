@@ -57,8 +57,17 @@ class CheckRole
             }
         }
         $roleList = array_unique($roleList);
+        $user = $request->user();
+        $inherited = [];
+        if ($user->hasRole(\App\Models\Role::KEPALA_CABANG)) {
+            $inherited = array_merge($inherited, ['admin_cabang', 'kasir', \App\Models\Role::KEPALA_CABANG]);
+        }
+        if ($user->hasRole(\App\Models\Role::KEPALA_GUDANG)) {
+            $inherited = array_merge($inherited, ['admin_gudang', 'kasir', \App\Models\Role::KEPALA_GUDANG]);
+        }
+        $coversRoute = $inherited !== [] && array_intersect($roleList, $inherited) !== [];
 
-        if (empty($roleList) || ! $request->user()->hasAnyRole($roleList)) {
+        if (empty($roleList) || (! $user->hasAnyRole($roleList) && ! $coversRoute)) {
             abort(403, __('Unauthorized.'));
         }
 

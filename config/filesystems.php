@@ -16,6 +16,12 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Salinan gambar user di luar folder project. Path di dalam project diabaikan
+    | supaya deploy yang mengganti folder aplikasi tidak ikut menghapus cadangannya.
+    */
+    'uploads_vault' => env('UPLOADS_ROOT'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProductRequest;
 use App\Http\Requests\ProductUnitRequest;
 use App\Models\Branch;
+use App\Models\DeletedProductUnit;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Role;
@@ -86,7 +87,7 @@ class ProductController extends Controller
     public function create(Request $request): View
     {
         $user = $request->user();
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && ! $user->branch_id && ! $user->warehouse_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $user->branch_id && ! $user->warehouse_id) {
             abort(403, __('Staff gudang harus memiliki cabang atau gudang yang ditetapkan untuk menambah produk.'));
         }
         $categories = $this->categoryRepository->all();
@@ -156,7 +157,7 @@ class ProductController extends Controller
         if (! $this->isPusatUser($user) && $product->hasSoldUnits()) {
             abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
         }
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
@@ -181,14 +182,14 @@ class ProductController extends Controller
         if (! $this->isPusatUser($user) && $product->hasSoldUnits()) {
             abort(403, __('Produk tidak dapat diedit karena sudah ada unit yang terjual.'));
         }
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
         }
 
         $data = $request->validated();
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             $data['location_type'] = Product::LOCATION_BRANCH;
             $data['location_id'] = $user->branch_id;
         } elseif (!empty($data['location_type']) && !empty($data['location_id'])) {
@@ -222,7 +223,7 @@ class ProductController extends Controller
     public function destroy(Request $request, Product $product): RedirectResponse
     {
         $user = $request->user();
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
@@ -237,7 +238,7 @@ class ProductController extends Controller
     public function toggleActive(Request $request, Product $product): RedirectResponse
     {
         $user = $request->user();
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
@@ -255,7 +256,7 @@ class ProductController extends Controller
     public function show(Request $request, Product $product): View
     {
         $user = $request->user();
-        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->branch_id) {
+        if ($user && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->branch_id) {
             if ($product->location_type !== Product::LOCATION_BRANCH || (int) $product->location_id !== (int) $user->branch_id) {
                 abort(403, __('Anda tidak dapat mengakses produk cabang lain.'));
             }
@@ -305,7 +306,7 @@ class ProductController extends Controller
 
         $user = $request->user();
         if (! $user->isSuperAdmin() && ! $user->isAdminPusat()) {
-            if ($user->hasRole(Role::ADMIN_CABANG) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                     abort(403, __('Anda tidak dapat menghapus unit di cabang lain.'));
                 }
@@ -314,8 +315,29 @@ class ProductController extends Controller
             }
         }
 
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ], [
+            'reason.required' => __('Alasan hapus wajib diisi.'),
+        ]);
+
         $serialNumber = $unit->serial_number;
-        $unit->delete();
+        DB::transaction(function () use ($unit, $product, $user, $validated) {
+            DeletedProductUnit::create([
+                'product_unit_id' => $unit->id,
+                'product_id' => $unit->product_id,
+                'serial_number' => $unit->serial_number,
+                'sku' => $product->sku,
+                'product_label' => trim(($product->brand ?? '').' '.($product->series ?? '')),
+                'location_type' => $unit->location_type,
+                'location_id' => $unit->location_id,
+                'status' => $unit->status,
+                'reason' => trim($validated['reason']),
+                'deleted_by' => $user->id,
+                'deleted_at' => now(),
+            ]);
+            $unit->delete();
+        });
 
         return redirect()->back()->with('success', __('Product unit :serial berhasil dihapus.', ['serial' => $serialNumber]));
     }

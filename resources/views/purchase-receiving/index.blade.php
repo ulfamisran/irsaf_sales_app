@@ -20,8 +20,16 @@
         @php $activeTab = $tab ?? 'pengecekan'; @endphp
         <div class="mb-6 flex gap-1 border-b border-slate-200">
             <a href="{{ route('purchase-receiving.index', array_merge(request()->except('tab', 'page'), ['tab' => 'pengecekan'])) }}"
-               class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px {{ $activeTab === 'pengecekan' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700' }}">
+               class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px {{ $activeTab === 'pengecekan' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700' }}">
                 {{ __('Pengecekan Barang') }}
+                @php
+                    $receivingPending = auth()->user()
+                        ? app(\App\Services\PurchaseReceivingService::class)->pendingCount(auth()->user())
+                        : 0;
+                @endphp
+                @if ($receivingPending > 0)
+                    <span style="min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; line-height:20px; text-align:center;">{{ $receivingPending > 99 ? '99+' : $receivingPending }}</span>
+                @endif
             </a>
             <a href="{{ route('purchase-receiving.index', array_merge(request()->except('tab', 'page'), ['tab' => 'riwayat'])) }}"
                class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px {{ $activeTab === 'riwayat' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700' }}">

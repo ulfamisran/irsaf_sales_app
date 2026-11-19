@@ -6,6 +6,7 @@ use App\Models\LandingFeature;
 use App\Models\LandingInstagramPost;
 use App\Models\LandingPageSetting;
 use App\Models\LandingSlide;
+use App\Support\UploadVault;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -101,8 +102,10 @@ class LandingPageAdminController extends Controller
         if ($request->hasFile('image')) {
             if ($slide->image_path && Storage::disk('public')->exists($slide->image_path)) {
                 Storage::disk('public')->delete($slide->image_path);
+                UploadVault::forget('public', $slide->image_path);
             }
             $data['image_path'] = $request->file('image')->store('landing/slides', 'public');
+            UploadVault::mirror('public', $data['image_path']);
         }
 
         $data['sort_order'] = $data['sort_order'] ?? 0;
@@ -117,6 +120,7 @@ class LandingPageAdminController extends Controller
     {
         if ($slide->image_path && Storage::disk('public')->exists($slide->image_path)) {
             Storage::disk('public')->delete($slide->image_path);
+            UploadVault::forget('public', $slide->image_path);
         }
 
         $slide->delete();

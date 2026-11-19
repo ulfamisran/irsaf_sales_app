@@ -6,10 +6,15 @@
                 {{ __('Service') }}: {{ $service->invoice_number }}
             </h2>
             <div class="flex gap-2">
+                @if (! $service->requires_authorization || $service->status === \App\Models\Service::STATUS_COMPLETED)
                 <a href="{{ route('services.invoice', $service) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Print Invoice') }}
                 </a>
-                @if ($service->status === \App\Models\Service::STATUS_OPEN && (auth()->user()?->isSuperAdminOrAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::ADMIN_GUDANG])))
+                @endif
+                <a href="{{ route('services.report', $service) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+                    {{ __('Cetak Laporan') }}
+                </a>
+                @if ($service->status === \App\Models\Service::STATUS_OPEN && ! app(\App\Services\AuthorizationService::class)->blocksMutation($service) && (auth()->user()?->isSuperAdminOrAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])))
                     <a href="{{ route('services.edit', $service) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
                         {{ __('Edit') }}
                     </a>
@@ -26,6 +31,7 @@
 
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <x-authorization-actions :model="$service" module="services" />
             @if (session('error'))
                 <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">{{ session('error') }}</div>
             @endif
@@ -35,6 +41,9 @@
 
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="mb-4">
+                        <a href="{{ route('services.report', $service) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+                    </div>
                     @if ($service->status === \App\Models\Service::STATUS_CANCEL)
                         <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
                             <p class="text-sm font-semibold text-rose-700">{{ __('Informasi Pembatalan') }}</p>
@@ -185,7 +194,7 @@
                     </div>
 
                     <div class="mt-6">
-                        <p class="text-sm font-semibold text-gray-800">{{ __('Pembayaran') }}</p>
+                        <p class="text-sm font-semibold text-gray-800">{{ __('Riwayat Pembayaran') }}</p>
                         <div class="mt-2 space-y-1 text-sm text-gray-700">
                             @forelse ($service->payments as $p)
                                 <div class="flex justify-between">
@@ -202,6 +211,16 @@
                             @if (!$service->isPaidOff())
                                 <div class="text-amber-700">{{ __('Sisa') }}: {{ number_format((float)$service->total_service_price - (float)$service->total_paid, 0, ',', '.') }}</div>
                             @endif
+                        </div>
+                        <div class="mt-4">
+                            <x-transaction-proof-fields
+                                :require-one="true"
+                                :slots="$service->status === 'open' ? max(0, 2 - $service->proofs->count()) : 0"
+                                :existing="$service->proofs"
+                                :owner="$service"
+                                :upload-url="$service->status === 'open' ? route('services.proofs.store', $service) : null"
+                                :can-delete="$service->status === 'open'"
+                            />
                         </div>
                     </div>
 

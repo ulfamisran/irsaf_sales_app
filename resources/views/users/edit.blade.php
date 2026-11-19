@@ -99,6 +99,92 @@
                     </form>
                 </div>
             </div>
+
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mt-6">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold text-slate-800">{{ __('Akses IP Publik') }}</h3>
+                    <p class="mt-1 text-sm text-slate-500">
+                        {{ __('User hanya dapat mencatat transaksi dari IP publik yang terdaftar. Isi * jika user boleh memakai perangkat apa pun. Satu user dapat memiliki lebih dari satu IP.') }}
+                    </p>
+
+                    @if (session('success'))
+                        <div class="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">{{ session('success') }}</div>
+                    @endif
+                    <x-input-error :messages="$errors->get('ip_address')" class="mt-3" />
+
+                    @php
+                        $allowsAnyDevice = $user->publicIps->contains(fn ($row) => $row->isAnyDevice());
+                    @endphp
+                    <p class="mt-4 text-sm font-medium {{ $allowsAnyDevice ? 'text-emerald-700' : 'text-amber-700' }}">
+                        {{ $allowsAnyDevice ? __('Status: bebas, semua perangkat.') : __('Status: terbatas pada IP yang terdaftar.') }}
+                    </p>
+
+                    <div class="mt-4 overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('IP Publik') }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Keterangan') }}</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @forelse ($user->publicIps as $publicIp)
+                                    <tr>
+                                        <td class="px-3 py-2 font-medium text-slate-800">
+                                            {{ $publicIp->isAnyDevice() ? __('* (semua perangkat)') : $publicIp->ip_address }}
+                                        </td>
+                                        <td class="px-3 py-2 text-slate-600">{{ $publicIp->note ?: '-' }}</td>
+                                        <td class="px-3 py-2 text-right">
+                                            <form method="POST" action="{{ route('users.public-ips.destroy', [$user, $publicIp]) }}" onsubmit="return confirm('{{ __('Hapus IP ini?') }}')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-100 text-rose-800 hover:bg-rose-200">
+                                                    {{ __('Hapus') }}
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="3" class="px-3 py-6 text-center text-sm text-slate-500">{{ __('Belum ada IP. User ini belum bisa mencatat transaksi.') }}</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <form method="POST" action="{{ route('users.public-ips.store', $user) }}" class="mt-6 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                        @csrf
+                        <div>
+                            <x-input-label for="ip_address" :value="__('IP Publik')" />
+                            <x-text-input id="ip_address" name="ip_address" class="block mt-1 w-full" type="text" :value="old('ip_address')" placeholder="* atau 15.235.163.20" required />
+                        </div>
+                        <div>
+                            <x-input-label for="note" :value="__('Keterangan')" />
+                            <x-text-input id="note" name="note" class="block mt-1 w-full" type="text" :value="old('note')" placeholder="{{ __('Misalnya kasir kas 1') }}" />
+                        </div>
+                        <x-primary-button>{{ __('Daftarkan') }}</x-primary-button>
+                    </form>
+
+                    @if ($loginIps->isNotEmpty())
+                        <div class="mt-6">
+                            <p class="text-sm font-medium text-slate-700">{{ __('IP publik dari login terakhir') }}</p>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                @foreach ($loginIps as $log)
+                                    <form method="POST" action="{{ route('users.public-ips.store', $user) }}">
+                                        @csrf
+                                        <input type="hidden" name="ip_address" value="{{ $log->ip_publik }}">
+                                        <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200">
+                                            {{ __('Daftarkan') }} {{ $log->ip_publik }}
+                                        </button>
+                                    </form>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
         </div>
     </div>
 

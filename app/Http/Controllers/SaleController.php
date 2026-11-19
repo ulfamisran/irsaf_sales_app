@@ -18,7 +18,9 @@ use App\Models\SaleDetail;
 use App\Models\SalePayment;
 use App\Models\AuditLog;
 use App\Services\SaleService;
+use App\Services\TransactionProofService;
 use App\Support\CatatRange;
+use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +38,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class SaleController extends Controller
 {
     public function __construct(
-        protected SaleService $saleService
+        protected SaleService $saleService,
+        protected TransactionProofService $proofs
     ) {}
 
     public function index(Request $request): View
@@ -52,9 +55,9 @@ class SaleController extends Controller
         if ($user->isSuperAdminOrAdminPusat()) {
             $branches = Branch::orderBy('name')->get(['id', 'name']);
             $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
             $branches = Branch::whereKey($user->branch_id)->get(['id', 'name']);
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $warehouses = Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']);
         }
 
@@ -109,8 +112,8 @@ class SaleController extends Controller
     {
         $user = auth()->user();
         $isPusat = $user->isSuperAdminOrAdminPusat();
-        $isWarehouseUser = $user->hasRole(Role::ADMIN_GUDANG) && ! $isPusat;
-        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $isPusat;
+        $isWarehouseUser = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $isPusat;
+        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $isPusat;
 
         if (! $isPusat && ! $isWarehouseUser && ! ($isBranchStaff && $user->branch_id)) {
             abort(403, __('User branch or warehouse not set.'));
@@ -232,7 +235,7 @@ class SaleController extends Controller
                 } else {
                     $branchId = (int) $request->input('branch_id');
                 }
-            } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
                 $warehouseId = (int) $user->warehouse_id;
             } else {
                 $branchId = (int) $user->branch_id;
@@ -241,10 +244,10 @@ class SaleController extends Controller
             if ($branchId === null && $warehouseId === null) {
                 abort(403, __('Location is required.'));
             }
-            if ($user->hasRole(Role::ADMIN_GUDANG) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
                 abort(403, __('Unauthorized.'));
             }
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
                 abort(403, __('Unauthorized.'));
             }
 
@@ -254,6 +257,9 @@ class SaleController extends Controller
             $description = $request->input('description');
 
             $status = $request->input('status');
+            if (app(\App\Services\AuthorizationService::class)->enabled('sales') && $status === Sale::STATUS_RELEASED) {
+                $status = Sale::STATUS_OPEN;
+            }
             $payments = $request->input('payments', []);
             $tradeIns = $request->input('trade_ins', []);
             $tradeIns = is_array($tradeIns) ? array_filter($tradeIns, fn ($t) => ! empty(trim((string) ($t['sku'] ?? ''))) && ! empty(trim((string) ($t['brand'] ?? ''))) && (int) ($t['category_id'] ?? 0) > 0 && ! empty(trim((string) ($t['serial_number'] ?? ''))) && (float) ($t['trade_in_value'] ?? 0) > 0) : [];
@@ -263,6 +269,8 @@ class SaleController extends Controller
                     'sale_date' => \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
                 ]);
             }
+
+            $this->proofs->validateUploads($request, null, $status === Sale::STATUS_RELEASED);
 
             if ($status === Sale::STATUS_RELEASED) {
                 $sale = $this->saleService->createReleasedSale(
@@ -295,6 +303,9 @@ class SaleController extends Controller
                     $allowSoldSerialReuse
                 );
             }
+
+            $this->proofs->storeUploaded($request, $sale, $user->id);
+            app(\App\Services\AuthorizationService::class)->attach($sale);
         } catch (\InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -310,7 +321,7 @@ class SaleController extends Controller
     {
         $this->authorizeSaleForUser($sale);
 
-        $sale->load(['branch', 'warehouse', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
+        $sale->load([...Sale::invoiceEagerLoads(), 'proofs']);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->when($sale->isWarehouseSale(), fn ($q) => $q->where('warehouse_id', $sale->warehouse_id))
@@ -333,7 +344,7 @@ class SaleController extends Controller
             abort(403, __('Penjualan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
         }
 
-        $sale->load(['saleDetails.product', 'customer', 'payments.paymentMethod']);
+        $sale->load(['saleDetails.product', 'customer', 'payments.paymentMethod', 'proofs']);
 
         $branches = $user->isSuperAdminOrAdminPusat()
             ? Branch::orderBy('name')->get()
@@ -350,7 +361,7 @@ class SaleController extends Controller
                 ProductUnit::query()
                     ->where('location_type', $locType)
                     ->where('location_id', $locId)
-                    ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
+                    ->where('status', ProductUnit::STATUS_IN_STOCK)
                     ->distinct()
                     ->pluck('product_id')
             )
@@ -412,6 +423,9 @@ class SaleController extends Controller
         if ($sale->status !== Sale::STATUS_OPEN) {
             return back()->with('error', __('Sale sudah release dan tidak bisa diubah.'));
         }
+        if (app(\App\Services\AuthorizationService::class)->blocksMutation($sale)) {
+            return back()->with('error', __('Penjualan sedang menunggu otorisasi.'));
+        }
 
         try {
             $customerId = $this->resolveCustomerId(
@@ -426,6 +440,7 @@ class SaleController extends Controller
             $tradeIns = $request->input('trade_ins', []);
             $tradeIns = is_array($tradeIns) ? array_filter($tradeIns, fn ($t) => ! empty(trim((string) ($t['sku'] ?? ''))) && ! empty(trim((string) ($t['brand'] ?? ''))) && (int) ($t['category_id'] ?? 0) > 0 && ! empty(trim((string) ($t['serial_number'] ?? ''))) && (float) ($t['trade_in_value'] ?? 0) > 0) : [];
             $allowSoldSerialReuse = $request->boolean('confirm_reuse_sold_serials');
+            $this->proofs->validateUploads($request, $sale, false);
 
             // Update always keeps it OPEN; release must be done via explicit action.
             $sale = $this->saleService->updateDraftSale(
@@ -440,6 +455,7 @@ class SaleController extends Controller
                 $tradeIns,
                 $allowSoldSerialReuse
             );
+            $this->proofs->storeUploaded($request, $sale, $user->id);
             AuditLog::create([
                 'user_id' => $user->id,
                 'action' => 'sale.update',
@@ -496,6 +512,13 @@ class SaleController extends Controller
         if ($sale->status !== Sale::STATUS_OPEN) {
             return back()->with('error', __('Sale sudah release.'));
         }
+        try {
+            app(\App\Services\AuthorizationService::class)->assertCanRelease($sale);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $this->proofs->assertHasProof($sale);
 
         $validated = $request->validate([
             'sale_date' => ['required', 'date'],
@@ -526,6 +549,11 @@ class SaleController extends Controller
     {
         $user = $request->user();
         $this->authorizeSaleForUser($sale);
+        try {
+            app(\App\Services\AuthorizationService::class)->assertCanRelease($sale);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         $validated = $request->validate([
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
@@ -567,7 +595,7 @@ class SaleController extends Controller
             } else {
                 $branchId = (int) ($validated['branch_id'] ?? 0);
             }
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
             $warehouseId = (int) $user->warehouse_id;
         } else {
             $branchId = (int) $user->branch_id;
@@ -592,7 +620,7 @@ class SaleController extends Controller
             ->where('product_id', (int) $validated['product_id'])
             ->where('location_type', $locType)
             ->where('location_id', $locId)
-            ->whereIn('status', [ProductUnit::STATUS_IN_STOCK, ProductUnit::STATUS_KEEP])
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
             ->orderBy('serial_number')
             ->limit(500)
             ->get(['serial_number', 'harga_jual', 'harga_hpp']);
@@ -624,6 +652,76 @@ class SaleController extends Controller
         ]);
     }
 
+    public function searchSaleUnits(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
+        ]);
+
+        $user = $request->user();
+        $branchId = null;
+        $warehouseId = null;
+        if ($user->isSuperAdminOrAdminPusat()) {
+            if (! empty($validated['warehouse_id'])) {
+                $warehouseId = (int) $validated['warehouse_id'];
+            } else {
+                $branchId = (int) ($validated['branch_id'] ?? 0);
+            }
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
+            $warehouseId = (int) $user->warehouse_id;
+        } else {
+            $branchId = (int) $user->branch_id;
+        }
+
+        $locType = $warehouseId ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+        $locId = $warehouseId ?: $branchId;
+        $term = trim($validated['q']);
+        if (! $locId || $term === '') {
+            return response()->json(['results' => []]);
+        }
+
+        $escaped = addcslashes($term, '%_\\');
+        $like = '%'.$escaped.'%';
+        $units = ProductUnit::query()
+            ->with(['product:id,sku,brand,series,color,category_id,selling_price,is_active'])
+            ->where('location_type', $locType)
+            ->where('location_id', $locId)
+            ->where('status', ProductUnit::STATUS_IN_STOCK)
+            ->where(function ($query) use ($like) {
+                $query->where('serial_number', 'like', $like)
+                    ->orWhereHas('product', function ($product) use ($like) {
+                        $product->where('sku', 'like', $like)
+                            ->orWhere('brand', 'like', $like)
+                            ->orWhere('series', 'like', $like);
+                    });
+            })
+            ->orderByRaw('CASE WHEN LOWER(serial_number) = ? THEN 0 WHEN serial_number LIKE ? THEN 1 ELSE 2 END', [mb_strtolower($term), $escaped.'%'])
+            ->limit(15)
+            ->get();
+
+        $results = $units->map(function (ProductUnit $unit) {
+            $product = $unit->product;
+            if (! $product || ! $product->is_active) {
+                return null;
+            }
+
+            return [
+                'serial_number' => $unit->serial_number,
+                'product_id' => $product->id,
+                'sku' => $product->sku ?? '',
+                'brand' => $product->brand ?? '',
+                'series' => $product->series ?? '',
+                'color' => $product->color ?? '',
+                'category_id' => $product->category_id,
+                'harga_jual' => (float) ($unit->harga_jual ?? 0),
+            ];
+        })->filter()->values();
+
+        return response()->json(['results' => $results]);
+    }
+
     public function availableProducts(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -640,7 +738,7 @@ class SaleController extends Controller
             } else {
                 $branchId = (int) ($validated['branch_id'] ?? 0);
             }
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
             $warehouseId = (int) $user->warehouse_id;
         } else {
             $branchId = (int) $user->branch_id;
@@ -778,10 +876,24 @@ class SaleController extends Controller
     public function invoice(Sale $sale): View
     {
         $this->authorizeSaleForUser($sale);
+        try {
+            app(\App\Services\AuthorizationService::class)->assertInvoice($sale);
+        } catch (\InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
 
-        $sale->load(['branch', 'warehouse', 'user', 'customer', 'saleDetails.product', 'payments.paymentMethod', 'tradeIns.category']);
+        $sale->load(Sale::invoiceEagerLoads());
 
         return view('sales.invoice', compact('sale'));
+    }
+
+    public function report(Sale $sale): View
+    {
+        $this->authorizeSaleForUser($sale);
+
+        $sale->load([...Sale::invoiceEagerLoads(), 'proofs']);
+
+        return view('sales.report', compact('sale'));
     }
 
     /**
@@ -799,12 +911,12 @@ class SaleController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
@@ -828,14 +940,7 @@ class SaleController extends Controller
         }
         CatatRange::apply($query, $request, 'sales.created_at');
         CatatRange::applyBackdate($query, $request, 'sales.sale_date', 'sales.created_at');
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applySale($query, $request->input('search'));
 
         return compact('query', 'canFilterLocation', 'filterLocked', 'locationLabel');
     }
@@ -880,9 +985,9 @@ class SaleController extends Controller
 
         $pmBranchId = null;
         $pmWarehouseId = null;
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
             $pmBranchId = (int) $user->branch_id;
-        } elseif ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $pmWarehouseId = (int) $user->warehouse_id;
         } elseif ($user->isSuperAdminOrAdminPusat()) {
             if ($request->filled('warehouse_id')) {
@@ -1121,10 +1226,10 @@ class SaleController extends Controller
         if ($user->isSuperAdminOrAdminPusat()) {
             return;
         }
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
+        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
             return;
         }
-        if ($user->hasRole(Role::ADMIN_GUDANG) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
+        if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
             return;
         }
         abort(403, __('Unauthorized.'));

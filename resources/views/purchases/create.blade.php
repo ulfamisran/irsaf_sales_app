@@ -47,7 +47,7 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ $isEdit ? route('purchases.update', $editPurchase) : route('purchases.store') }}" id="purchase-form">
+                    <form method="POST" action="{{ $isEdit ? route('purchases.update', $editPurchase) : route('purchases.store') }}" id="purchase-form" enctype="multipart/form-data">
                         @csrf
                         @if ($isEdit)
                             @method('PUT')
@@ -280,6 +280,17 @@
                                 </div>
                             </div>
                             @endunless
+
+                            @php
+                                $savedProofs = $isEdit ? $editPurchase->proofs : collect();
+                            @endphp
+                            <x-transaction-proof-fields
+                                :slots="max(0, 2 - $savedProofs->count())"
+                                :note-required="true"
+                                :existing="$savedProofs"
+                                :owner="$isEdit ? $editPurchase : null"
+                                :hint="__('Opsional, tidak wajib. Maksimal 2 file gambar atau PDF. Jika file diisi, keterangan bukti wajib diisi.')"
+                            />
 
                             <div class="flex gap-4">
                                 <x-primary-button>{{ $isEdit ? __('Simpan Perubahan') : __('Simpan Pembelian') }}</x-primary-button>
@@ -629,15 +640,11 @@
         }
 
         function addPaymentRow(idx, pref = {}) {
-            const html = `<div class="payment-row flex flex-wrap gap-2 items-end">
-                <div class="flex-1 min-w-[200px]">
-                    <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                        ${paymentMethodOptionsHtml(pref.payment_method_id || '')}
-                    </select>
-                </div>
-                <div class="w-40">
-                    <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="payment-amount block w-full rounded-md border-gray-300 shadow-sm text-sm" placeholder="Nominal" value="${pref.amount || ''}">
-                </div>
+            const html = `<div class="payment-row" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;">
+                <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                    ${paymentMethodOptionsHtml(pref.payment_method_id || '')}
+                </select>
+                <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="payment-amount block w-full rounded-md border-gray-300 shadow-sm text-sm" placeholder="Nominal" value="${pref.amount || ''}">
                 <button type="button" class="remove-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm">-</button>
             </div>`;
             document.getElementById('payment-rows').insertAdjacentHTML('beforeend', html);

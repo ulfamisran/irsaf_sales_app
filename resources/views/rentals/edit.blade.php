@@ -14,7 +14,7 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('rentals.update', $rental) }}" id="rental-form">
+                    <form method="POST" action="{{ route('rentals.update', $rental) }}" id="rental-form" enctype="multipart/form-data">
                         @csrf
                         @method('PATCH')
                         <div class="space-y-4">
@@ -159,6 +159,13 @@
                                 </div>
                                 <x-input-error :messages="$errors->get('payments')" class="mt-2" />
                             </div>
+
+                            <x-transaction-proof-fields
+                                :require-one="true"
+                                :slots="max(0, 2 - $rental->proofs->count())"
+                                :existing="$rental->proofs"
+                                :owner="$rental"
+                            />
 
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Update Penyewaan') }}</x-primary-button>
@@ -555,20 +562,14 @@
         function addPaymentRow(pref = {}) {
             const div = document.createElement('div');
             const idx = paymentIndex++;
-            div.className = 'flex flex-col md:flex-row gap-2 items-end';
+            div.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
             div.innerHTML = `
-                <div class="flex-1">
-                    <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                        ${paymentOptionsHtml()}
-                    </select>
-                </div>
-                <div class="w-full md:w-48">
-                    <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
-                </div>
-                <div class="w-full md:w-64">
-                    <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)">
-                </div>
+                <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                    ${paymentOptionsHtml()}
+                </select>
+                <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
                 <button type="button" class="remove-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
+                <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)" style="grid-column:1 / -1;">
             `;
             paymentRows.appendChild(div);
             if (pref.payment_method_id) div.querySelector('select').value = String(pref.payment_method_id);

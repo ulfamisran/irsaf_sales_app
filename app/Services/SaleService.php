@@ -377,6 +377,7 @@ class SaleService
             }
 
             // Reduce stock now (validate serial availability at release time)
+            $shortages = [];
             foreach ($details as $detail) {
                 $product = Product::findOrFail((int) $detail->product_id);
                 $serialNumbers = [];
@@ -385,35 +386,45 @@ class SaleService
                     $serialNumbers = array_values(array_unique(array_filter(array_map('trim', $serialNumbers))));
                 }
 
-                $requiresSerial = $product->requiresSerialTracking();
-                if ($requiresSerial || ! empty($serialNumbers)) {
-                    if (count($serialNumbers) !== (int) $detail->quantity) {
-                        throw new InvalidArgumentException(__('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku]));
+                try {
+                    $requiresSerial = $product->requiresSerialTracking();
+                    if ($requiresSerial || ! empty($serialNumbers)) {
+                        if (count($serialNumbers) !== (int) $detail->quantity) {
+                            throw new InvalidArgumentException(__('Please select serial numbers equal to quantity for :sku', ['sku' => $product->sku]));
+                        }
+                        // If units were reserved while OPEN (keep), release them back to in_stock first.
+                        // This keeps sellUnits() strict (only sells in_stock) and prevents other sales from selling kept units.
+                        $this->stockMutationService->unreserveUnits(
+                            $product,
+                            $locType,
+                            $locId,
+                            $serialNumbers,
+                            strict: true
+                        );
+                        $this->stockMutationService->sellUnits(
+                            $product,
+                            $locType,
+                            $locId,
+                            $serialNumbers,
+                            Carbon::parse($saleDate)
+                        );
+                    } else {
+                        $this->stockMutationService->reduceStock(
+                            $product,
+                            $locType,
+                            $locId,
+                            (int) $detail->quantity
+                        );
                     }
-                    // If units were reserved while OPEN (keep), release them back to in_stock first.
-                    // This keeps sellUnits() strict (only sells in_stock) and prevents other sales from selling kept units.
-                    $this->stockMutationService->unreserveUnits(
-                        $product,
-                        $locType,
-                        $locId,
-                        $serialNumbers,
-                        strict: true
-                    );
-                    $this->stockMutationService->sellUnits(
-                        $product,
-                        $locType,
-                        $locId,
-                        $serialNumbers,
-                        Carbon::parse($saleDate)
-                    );
-                } else {
-                    $this->stockMutationService->reduceStock(
-                        $product,
-                        $locType,
-                        $locId,
-                        (int) $detail->quantity
-                    );
+                } catch (InvalidArgumentException $e) {
+                    if (! str_contains($e->getMessage(), 'Stok tidak cukup')) {
+                        throw $e;
+                    }
+                    $shortages[] = $e->getMessage();
                 }
+            }
+            if ($shortages !== []) {
+                throw new InvalidArgumentException(implode(' ', array_values(array_unique($shortages))));
             }
 
             // Save payments

@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
+use App\Models\LoginLog;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserPublicIp;
 use App\Models\Warehouse;
+use App\Services\UserPublicIpAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -16,7 +20,7 @@ class UserManagementController extends Controller
 {
     public function index(Request $request): View
     {
-        $query = User::query()->with(['roles', 'branch', 'warehouse']);
+        $query = User::query()->with(['roles', 'branch', 'warehouse', 'publicIps']);
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
@@ -46,12 +50,21 @@ class UserManagementController extends Controller
 
     public function edit(User $user): View
     {
-        $user->load(['roles', 'branch', 'warehouse']);
+        $user->load(['roles', 'branch', 'warehouse', 'publicIps']);
         $roles = Role::query()->orderBy('display_name')->get();
         $branches = Branch::query()->orderBy('name')->get();
         $warehouses = Warehouse::query()->orderBy('name')->get();
+        $loginIps = LoginLog::query()
+            ->where('user_id', $user->id)
+            ->whereNotNull('ip_publik')
+            ->where('ip_publik', '!=', '')
+            ->select('ip_publik', DB::raw('MAX(logged_in_at) as logged_in_at'))
+            ->groupBy('ip_publik')
+            ->orderByDesc('logged_in_at')
+            ->limit(8)
+            ->get();
 
-        return view('users.edit', compact('user', 'roles', 'branches', 'warehouses'));
+        return view('users.edit', compact('user', 'roles', 'branches', 'warehouses', 'loginIps'));
     }
 
     public function update(Request $request, User $user): RedirectResponse
@@ -82,6 +95,9 @@ class UserManagementController extends Controller
             }
             $validated['branch_id'] = null;
         }
+
+        $roleChanged = (int) $user->roles()->value('roles.id') !== (int) $validated['role_id'];
+        $request->attributes->set('user_role_changed', $roleChanged);
 
         $user->update([
             'name' => $validated['name'],
@@ -144,6 +160,40 @@ class UserManagementController extends Controller
         return redirect()
             ->route('users.index')
             ->with('success', __('User berhasil dibuat. Password awal sama dengan email.'));
+    }
+
+    public function storePublicIp(Request $request, User $user, UserPublicIpAccess $access): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ip_address' => ['required', 'string', 'max:45'],
+            'note' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $wasAnyDevice = $user->publicIps()->where('ip_address', UserPublicIp::ANY)->exists();
+        $access->register($user, $validated['ip_address'], $validated['note'] ?? null, $request->user()?->id);
+
+        $message = match (true) {
+            trim($validated['ip_address']) === UserPublicIp::ANY => __('User bebas mencatat transaksi dari perangkat mana pun.'),
+            $wasAnyDevice => __('IP publik berhasil didaftarkan. Tanda * dihapus agar hanya IP terdaftar yang boleh mencatat transaksi.'),
+            default => __('IP publik berhasil didaftarkan.'),
+        };
+
+        return back()->with('success', $message);
+    }
+
+    public function destroyPublicIp(User $user, UserPublicIp $publicIp): RedirectResponse
+    {
+        if ((int) $publicIp->user_id !== (int) $user->id) {
+            abort(404);
+        }
+
+        $publicIp->delete();
+
+        $message = $user->publicIps()->exists()
+            ? __('IP publik berhasil dihapus.')
+            : __('IP publik dihapus. User ini belum bisa mencatat transaksi sampai ada IP atau * yang didaftarkan.');
+
+        return back()->with('success', $message);
     }
 
     public function resetPassword(User $user): RedirectResponse

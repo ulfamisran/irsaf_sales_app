@@ -6,10 +6,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Distribution extends Model
 {
     use HasFactory;
+
+    public const STATUS_OPEN = 'open';
 
     public const STATUS_ACTIVE = 'active';
 
@@ -27,6 +30,7 @@ class Distribution extends Model
         'user_id',
         'distribution_date',
         'status',
+        'requires_authorization',
         'cancel_date',
         'cancel_user_id',
         'cancel_reason',
@@ -39,6 +43,7 @@ class Distribution extends Model
             'total_paid' => 'decimal:2',
             'distribution_date' => 'date',
             'cancel_date' => 'date',
+            'requires_authorization' => 'boolean',
         ];
     }
 
@@ -84,6 +89,11 @@ class Distribution extends Model
     public function stockMutations(): HasMany
     {
         return $this->hasMany(StockMutation::class);
+    }
+
+    public function proofs(): MorphMany
+    {
+        return $this->morphMany(TransactionProof::class, 'proofable');
     }
 
     public function fromLocationName(): string

@@ -179,11 +179,14 @@
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('HPP') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Jual') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
-                            <th class="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase w-28">{{ __('Lokasi') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">{{ __('Lokasi') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Received') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Sold') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Ubah') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User Tukar Unit') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat Tukar') }}</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Tukar Unit') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                         </tr>
                     </thead>
@@ -212,7 +215,7 @@
                                 <td class="px-4 py-3 text-slate-700">{{ $product->distributor?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">—</td>
                                 <td class="px-4 py-3">—</td>
-                                <td colspan="7" class="px-4 py-3 text-slate-700">
+                                <td colspan="10" class="px-4 py-3 text-slate-700">
                                     <span class="font-semibold">{{ __('In Stock') }}: {{ (int) ($inStockCounts[$product->id] ?? 0) }}</span>
                                 </td>
                             </tr>
@@ -249,7 +252,7 @@
                                             {{ $statusOptions[$u->status] ?? $u->status }}
                                         </span>
                                     </td>
-                                    <td class="px-2 py-3 text-xs text-slate-600 max-w-[7rem] truncate" title="{{ ($u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang')) }}: {{ $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? ($u->warehouse?->name ?? '#'.$u->location_id) : ($u->branch?->name ?? '#'.$u->location_id) }}">
+                                    <td class="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                                         @php
                                             $locationLabel = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
                                             $locationName = $u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE ? ($u->warehouse?->name ?? ('#'.$u->location_id)) : ($u->branch?->name ?? ('#'.$u->location_id));
@@ -277,9 +280,29 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$u->created_at" /></td>
                                     <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$u->updated_at" /></td>
+                                    @php $exchangeInfo = $exchangesByUnit[$u->id] ?? null; @endphp
+                                    <td class="px-4 py-3 text-sm text-slate-700">
+                                        @if ($exchangeInfo)
+                                            <div>{{ $exchangeInfo['user'] }}</div>
+                                            <div class="text-xs text-slate-500">{{ $exchangeInfo['number'] }}@if (($exchangeInfo['count'] ?? 1) > 1) · {{ $exchangeInfo['count'] }} {{ __('tukar') }}@endif</div>
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-slate-600">
+                                        @if ($exchangeInfo)
+                                            <x-wita-datetime :value="$exchangeInfo['created_at']" />
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-slate-700">{{ $exchangeInfo ? $exchangeInfo['exchange_date']?->timezone(\App\Support\CatatRange::TZ)->format('d/m/Y') : '-' }}</td>
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <x-icon-btn-view :href="route('stock-units.show', $u)" :label="__('Lihat Unit')" />
+                                            @if ($exchangeInfo)
+                                                <button type="button" data-unit-exchange="{{ $u->id }}" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-amber-700 hover:text-amber-900">{{ __('Detail Tukar') }}</button>
+                                            @endif
                                             @if (auth()->user()?->isSuperAdminOrAdminPusat())
                                                 <a href="{{ route('products.units.edit', [$u->product_id, $u]) }}"
                                                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
@@ -295,12 +318,12 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="16" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
+                                    <td colspan="19" class="px-4 py-6 text-center text-slate-500">{{ __('Tidak ada unit untuk produk ini.') }}</td>
                                 </tr>
                             @endforelse
                         @empty
                             <tr>
-                                <td colspan="16" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
+                                <td colspan="19" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data unit.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -309,6 +332,65 @@
             </div>
         </div>
     </div>
+
+    <div id="unit-exchange-modal" style="display:none;position:fixed;inset:0;z-index:50;align-items:center;justify-content:center;background:rgba(15,23,42,.45);padding:16px;">
+        <div style="width:min(720px,100%);max-height:85vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 20px 50px rgba(15,23,42,.2);">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #e2e8f0;">
+                <h3 style="font-weight:600;color:#1e293b;">{{ __('Detail Tukar Unit') }}</h3>
+                <button type="button" data-exchange-close style="padding:6px 12px;border-radius:8px;background:#f1f5f9;color:#334155;font-size:14px;">{{ __('Tutup') }}</button>
+            </div>
+            <div id="unit-exchange-body" style="padding:16px 20px;"></div>
+        </div>
+    </div>
+    @php
+        $exchangeDetails = [];
+        foreach ($exchangesByUnit ?? [] as $unitId => $info) {
+            $exchangeDetails[$unitId] = $info['details'] ?? [];
+        }
+    @endphp
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const details = @json($exchangeDetails);
+            const modal = document.getElementById('unit-exchange-modal');
+            const body = document.getElementById('unit-exchange-body');
+            if (!modal || !body) return;
+            const money = (value) => new Intl.NumberFormat('id-ID').format(Math.round(Number(value) || 0));
+            const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+            const open = (unitId) => {
+                const rows = details[unitId] || details[String(unitId)] || [];
+                body.innerHTML = rows.length ? rows.map((row) => {
+                    const link = row.url ? '<a href="' + esc(row.url) + '" style="color:#4f46e5;font-weight:600;">' + @json(__('Buka bukti tukar unit')) + '</a>' : '';
+                    return '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:12px;">'
+                        + '<p style="font-weight:600;color:#1e293b;">' + esc(row.number) + '</p>'
+                        + '<p style="font-size:14px;color:#475569;margin-top:4px;">' + @json(__('User pembuat')) + ': ' + esc(row.user) + '</p>'
+                        + '<p style="font-size:14px;color:#475569;">' + @json(__('Tanggal catat')) + ': ' + esc(row.recorded_label) + '</p>'
+                        + '<p style="font-size:14px;color:#475569;">' + @json(__('Tanggal tukar unit')) + ': ' + esc(row.exchange_label) + '</p>'
+                        + '<p style="font-size:14px;color:#475569;">' + @json(__('Invoice')) + ': ' + esc(row.invoice) + '</p>'
+                        + '<p style="font-size:14px;color:#475569;">' + esc(row.role) + '</p>'
+                        + '<p style="font-size:14px;color:#334155;margin-top:4px;">' + esc(row.old_serial) + ' → ' + esc(row.new_serial) + '</p>'
+                        + '<p style="font-size:14px;color:#334155;">' + @json(__('Selisih')) + ': ' + money(row.difference) + '</p>'
+                        + (link ? '<p style="margin-top:8px;">' + link + '</p>' : '')
+                        + '</div>';
+                }).join('') : '<p style="color:#64748b;">' + @json(__('Tidak ada detail tukar unit.')) + '</p>';
+                modal.style.display = 'flex';
+            };
+            document.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-unit-exchange]');
+                if (button) {
+                    open(button.dataset.unitExchange);
+                    return;
+                }
+                if (event.target.id === 'unit-exchange-modal' || event.target.closest('[data-exchange-close]')) {
+                    modal.style.display = 'none';
+                }
+            });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') modal.style.display = 'none';
+            });
+        });
+    </script>
+    @endpush
 
     @if($canFilterLocation ?? false)
     @push('scripts')

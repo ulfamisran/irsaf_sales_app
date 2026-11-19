@@ -45,7 +45,8 @@ class PurchaseService
         ?string $invoiceNumber = null,
         bool $allowSoldSerialReuse = false,
         string $jenisPembelian = Purchase::JENIS_PEMBELIAN_UNIT,
-        ?int $serviceId = null
+        ?int $serviceId = null,
+        bool $deferCommit = false
     ): Purchase {
         $userId = $userId ?? auth()->id();
         $this->validateLocation($locationType, $locationId);
@@ -69,6 +70,7 @@ class PurchaseService
                 throw new InvalidArgumentException(__('Invoice service tidak valid atau sudah tidak berstatus open.'));
             }
             $this->assertSparepartServiceMatchesLocation($service, $locationType, $locationId);
+            app(AuthorizationService::class)->assertFollowUp($service);
         } else {
             $serviceId = null;
         }
@@ -107,7 +109,8 @@ class PurchaseService
             $invoiceNumber,
             $allowSoldSerialReuse,
             $jenisPembelian,
-            $serviceId
+            $serviceId,
+            $deferCommit
         ) {
             $invoiceNumber = ! empty(trim((string) $invoiceNumber))
                 ? trim($invoiceNumber)
@@ -127,6 +130,8 @@ class PurchaseService
                 'termin' => $termin,
                 'due_date' => $dueDate ?: null,
                 'user_id' => $userId,
+                'status' => $deferCommit ? Purchase::STATUS_OPEN : Purchase::STATUS_ACTIVE,
+                'requires_authorization' => $deferCommit,
             ]);
 
             $this->persistPurchaseLineItems(
@@ -136,7 +141,8 @@ class PurchaseService
                 $locationId,
                 $purchaseDate,
                 (int) $userId,
-                $allowSoldSerialReuse
+                $allowSoldSerialReuse,
+                $deferCommit
             );
 
             foreach ($payments as $p) {
@@ -144,7 +150,7 @@ class PurchaseService
                 if ($amt <= 0) {
                     continue;
                 }
-                $this->recordPurchasePayment($purchase, (int) $p['payment_method_id'], $amt, $purchaseDate, $userId, $p['notes'] ?? null);
+                $this->recordPurchasePayment($purchase, (int) $p['payment_method_id'], $amt, $purchaseDate, $userId, $p['notes'] ?? null, ! $deferCommit);
             }
 
             return $purchase->fresh()->load(['details.product', 'payments.paymentMethod', 'distributor', 'service']);
@@ -275,7 +281,8 @@ class PurchaseService
         int $locationId,
         string $purchaseDate,
         int $userId,
-        bool $allowSoldSerialReuse
+        bool $allowSoldSerialReuse,
+        bool $deferStock = false
     ): void {
         foreach ($details as $detail) {
             $product = Product::with('category')->findOrFail($detail['product_id']);
@@ -290,7 +297,8 @@ class PurchaseService
 
             // Pembelian Unit: stok menunggu Cek Pembelian Barang.
             // Sparepart/distribusi: langsung stok (qty_baik = quantity).
-            $requireReceivingCheck = $purchase->jenis_pembelian === Purchase::JENIS_PEMBELIAN_UNIT
+            $requireReceivingCheck = $deferStock
+                || $purchase->jenis_pembelian === Purchase::JENIS_PEMBELIAN_UNIT
                 || $purchase->jenis_pembelian === null
                 || $purchase->jenis_pembelian === '';
 
@@ -322,7 +330,7 @@ class PurchaseService
                 $requireReceivingCheck
             );
 
-            if ($purchase->isSparepartService()) {
+            if ($purchase->isSparepartService() && ! $deferStock) {
                 StockMutation::create([
                     'invoice_number' => $purchase->invoice_number,
                     'product_id' => $product->id,
@@ -445,7 +453,8 @@ class PurchaseService
         float $amount,
         string $paymentDate,
         ?int $userId,
-        ?string $notes
+        ?string $notes,
+        bool $postCash = true
     ): PurchasePayment {
         $payment = PurchasePayment::create([
             'purchase_id' => $purchase->id,
@@ -456,7 +465,9 @@ class PurchaseService
             'user_id' => $userId,
         ]);
 
-        $this->createCashFlowForPayment($purchase, $payment, $userId);
+        if ($postCash) {
+            $this->createCashFlowForPayment($purchase, $payment, $userId);
+        }
 
         return $payment;
     }
@@ -464,7 +475,83 @@ class PurchaseService
     /**
      * Cancel a purchase: mark units as not_in_stock, deactivate products, refund payments via Cash In.
      */
-    public function cancelPurchase(Purchase $purchase, ?int $userId = null): void
+    public function releasePurchase(Purchase $purchase, ?int $userId = null): Purchase
+    {
+        if ($purchase->status !== Purchase::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Pembelian ini sudah diproses.'));
+        }
+
+        $userId = $userId ?? auth()->id();
+        $locationType = $purchase->warehouse_id ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
+        $locationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
+
+        return DB::transaction(function () use ($purchase, $userId, $locationType, $locationId) {
+            $purchase->load(['details.product.category', 'payments']);
+            foreach ($purchase->payments as $payment) {
+                if ($payment->cash_flow_id) {
+                    continue;
+                }
+                $this->createCashFlowForPayment($purchase, $payment, $userId);
+            }
+
+            $isSparepart = $purchase->isSparepartService() || $purchase->isSparepartServiceLaptopToko();
+            if ($isSparepart) {
+                foreach ($purchase->details as $detail) {
+                    $product = $detail->product;
+                    if (! $product) {
+                        continue;
+                    }
+                    $serials = $detail->serial_numbers
+                        ? array_values(array_filter(array_map('trim', explode("\n", (string) $detail->serial_numbers))))
+                        : [];
+                    if ($serials !== []) {
+                        ProductUnit::query()
+                            ->where('purchase_id', $purchase->id)
+                            ->where('product_id', $product->id)
+                            ->whereIn('serial_number', $serials)
+                            ->where('status', ProductUnit::STATUS_NOT_IN_STOCK)
+                            ->update([
+                                'status' => ProductUnit::STATUS_IN_STOCK,
+                                'check_status' => ProductUnit::CHECK_CHECKED,
+                            ]);
+                        $this->stockMutationService->recalculateStockQuantityIfExists($product->id, $locationType, $locationId);
+                    } else {
+                        $stock = Stock::firstOrCreate(
+                            [
+                                'product_id' => $product->id,
+                                'location_type' => $locationType,
+                                'location_id' => $locationId,
+                            ],
+                            ['quantity' => 0]
+                        );
+                        $stock->increment('quantity', (int) $detail->quantity);
+                    }
+
+                    $detail->update(['qty_baik' => (int) $detail->quantity]);
+                    StockMutation::create([
+                        'invoice_number' => $purchase->invoice_number,
+                        'product_id' => $product->id,
+                        'from_location_type' => $locationType,
+                        'from_location_id' => $locationId,
+                        'to_location_type' => $locationType,
+                        'to_location_id' => $locationId,
+                        'quantity' => (int) $detail->quantity,
+                        'biaya_distribusi_per_unit' => 0,
+                        'mutation_date' => $purchase->purchase_date?->toDateString() ?? now()->toDateString(),
+                        'notes' => 'IN '.$purchase->jenis_pembelian.' - '.$purchase->invoice_number,
+                        'serial_numbers' => $serials !== [] ? implode("\n", $serials) : null,
+                        'user_id' => $userId,
+                    ]);
+                }
+            }
+
+            $purchase->update(['status' => Purchase::STATUS_ACTIVE]);
+
+            return $purchase->fresh();
+        });
+    }
+
+    public function cancelPurchase(Purchase $purchase, ?int $userId = null, ?string $reason = null): void
     {
         $userId = $userId ?? auth()->id();
 
@@ -475,9 +562,11 @@ class PurchaseService
         $locationType = $purchase->warehouse_id ? Stock::LOCATION_WAREHOUSE : Stock::LOCATION_BRANCH;
         $locationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
 
-        DB::transaction(function () use ($purchase, $locationType, $locationId, $userId) {
+        DB::transaction(function () use ($purchase, $locationType, $locationId, $userId, $reason) {
             $purchase->load(['details.product', 'payments.paymentMethod']);
+            $wasOpen = $purchase->status === Purchase::STATUS_OPEN;
 
+            if (! $wasOpen) {
             foreach ($purchase->details as $detail) {
                 $product = $detail->product;
                 $serialNumbers = $detail->serial_numbers
@@ -514,6 +603,7 @@ class PurchaseService
 
                 $product->update(['is_active' => false]);
             }
+            }
 
             $incomeCategory = IncomeCategory::firstOrCreate(
                 ['code' => 'RTR'],
@@ -525,6 +615,9 @@ class PurchaseService
             );
 
             foreach ($purchase->payments as $payment) {
+                if (! $payment->cash_flow_id) {
+                    continue;
+                }
                 $pmLabel = $payment->paymentMethod?->display_label ?? __('Pembayaran');
                 CashFlow::create([
                     'branch_id' => $purchase->branch_id,
@@ -541,7 +634,11 @@ class PurchaseService
                 ]);
             }
 
-            $purchase->update(['status' => Purchase::STATUS_CANCELLED]);
+            $purchase->update([
+                'status' => Purchase::STATUS_CANCELLED,
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
         });
     }
 

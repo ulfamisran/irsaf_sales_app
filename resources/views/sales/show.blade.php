@@ -5,11 +5,21 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Sale') }}: {{ $sale->invoice_number }}
             </h2>
-            <div class="flex gap-2">
+            <div class="flex gap-2" style="flex-wrap:wrap;justify-content:flex-end;">
+                @if (! $sale->requires_authorization || $sale->status === 'released')
                 <a href="{{ route('sales.invoice', $sale) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Print Invoice') }}
                 </a>
-                @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status === 'open')
+                @endif
+                <a href="{{ route('sales.report', $sale) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+                    {{ __('Cetak Laporan') }}
+                </a>
+                @if ($sale->status === 'released')
+                    <a href="{{ route('sales.unit-exchanges.create', ['sale' => $sale->id]) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
+                        {{ __('Tukar Unit') }}
+                    </a>
+                @endif
+                @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status === 'open' && ! app(\App\Services\AuthorizationService::class)->blocksMutation($sale))
                         <a href="{{ route('sales.edit', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -37,6 +47,7 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <x-authorization-actions :model="$sale" module="sales" />
             @if (session('error'))
                 <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 flex items-center gap-3 shadow-sm">
                     <svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -73,6 +84,11 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="mb-4">
+                        <a href="{{ route('sales.report', $sale) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+                            {{ __('Cetak Laporan') }}
+                        </a>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
                             <p class="text-sm text-gray-500">{{ __('Tanggal Catat') }}</p>
@@ -190,12 +206,60 @@
                                 <td colspan="4" class="px-4 py-2 text-right text-sm text-gray-600">{{ __('Pajak') }}</td>
                                 <td class="px-4 py-2 text-right text-sm text-gray-700">{{ number_format($sale->tax_amount ?? 0, 0, ',', '.') }}</td>
                             </tr>
+                            @php $exchangeDiff = (float) $sale->unitExchanges->sum(fn ($exchange) => $exchange->items->sum('price_difference')); @endphp
+                            @if (abs($exchangeDiff) >= 0.01)
+                                <tr>
+                                    <td colspan="4" class="px-4 py-2 text-right text-sm text-gray-600">{{ __('Perubahan tukar unit') }}</td>
+                                    <td class="px-4 py-2 text-right text-sm {{ $exchangeDiff < 0 ? 'text-rose-700' : 'text-emerald-700' }}">{{ number_format($exchangeDiff, 0, ',', '.') }}</td>
+                                </tr>
+                            @endif
                             <tr class="font-semibold">
                                 <td colspan="4" class="px-4 py-2 text-right">{{ __('Total') }}</td>
                                 <td class="px-4 py-2 text-right">{{ number_format($sale->total, 0, ',', '.') }}</td>
                             </tr>
                         </tfoot>
                     </table>
+
+                    @if ($sale->unitExchanges->isNotEmpty())
+                        <div class="mt-6">
+                            <p class="text-sm font-semibold text-gray-800 mb-2">{{ __('Unit yang Ditukar') }}</p>
+                            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Bukti') }}</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Unit Lama') }}</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Unit Baru') }}</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Harga Unit') }}</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Perubahan') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        @foreach ($sale->unitExchanges as $exchange)
+                                            @foreach ($exchange->items as $item)
+                                                @php
+                                                    $newName = trim((string) ($item->product?->brand.' '.($item->product?->series ?? '')));
+                                                    $diff = (float) $item->price_difference;
+                                                @endphp
+                                                <tr>
+                                                    <td class="px-4 py-2">
+                                                        <a href="{{ route('sales.unit-exchanges.show', $exchange) }}" class="text-indigo-600 hover:text-indigo-800">{{ $exchange->exchange_number }}</a>
+                                                    </td>
+                                                    <td class="px-4 py-2 font-mono text-xs">{{ $item->old_serial }}</td>
+                                                    <td class="px-4 py-2">
+                                                        <div class="font-mono text-xs">{{ $item->new_serial }}</div>
+                                                        <div class="text-xs text-slate-500">{{ $newName !== '' ? $newName : ($item->product?->sku ?? '') }}</div>
+                                                    </td>
+                                                    <td class="px-4 py-2 text-right">{{ number_format((float) $item->unit_price, 0, ',', '.') }}</td>
+                                                    <td class="px-4 py-2 text-right font-medium {{ $diff < 0 ? 'text-rose-700' : 'text-emerald-700' }}">{{ number_format($diff, 0, ',', '.') }}</td>
+                                                </tr>
+                                            @endforeach
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
 
                     @if ($sale->status === 'released' || $sale->status === 'open')
                         @php
@@ -236,12 +300,24 @@
                                                 <td class="px-4 py-2 text-right font-medium">Rp {{ number_format($p->amount, 0, ',', '.') }}</td>
                                             </tr>
                                         @empty
-                                            @if (!$sale->tradeIns || $sale->tradeIns->isEmpty())
+                                            @if ((!$sale->tradeIns || $sale->tradeIns->isEmpty()) && $sale->unitExchanges->flatMap->cashFlows->isEmpty())
                                                 <tr>
                                                     <td colspan="5" class="px-4 py-3 text-center text-slate-500">{{ __('Belum ada pembayaran.') }}</td>
                                                 </tr>
                                             @endif
                                         @endforelse
+                                        @foreach ($sale->unitExchanges as $exchange)
+                                            @foreach ($exchange->cashFlows as $flow)
+                                                @php $signed = $flow->type === \App\Models\CashFlow::TYPE_OUT ? -1 * (float) $flow->amount : (float) $flow->amount; @endphp
+                                                <tr>
+                                                    <td class="px-4 py-2 text-slate-600">{{ $paymentNo++ }}</td>
+                                                    <td class="px-4 py-2">{{ $flow->paymentMethod?->display_label ?? '-' }}</td>
+                                                    <td class="px-4 py-2 text-slate-600">{{ $flow->transaction_date?->format('d/m/Y') }}</td>
+                                                    <td class="px-4 py-2 text-slate-500 text-sm">{{ __('Tukar unit') }} {{ $exchange->exchange_number }}</td>
+                                                    <td class="px-4 py-2 text-right font-medium {{ $signed < 0 ? 'text-rose-700' : 'text-emerald-700' }}">Rp {{ number_format($signed, 0, ',', '.') }}</td>
+                                                </tr>
+                                            @endforeach
+                                        @endforeach
                                         @foreach ($sale->tradeIns ?? [] as $ti)
                                             <tr class="bg-amber-50/50">
                                                 <td class="px-4 py-2 text-amber-700">{{ $paymentNo++ }}</td>
@@ -277,8 +353,8 @@
                                     <p class="font-semibold text-sm text-indigo-800 mb-3">{{ __('Tambah Pembayaran') }}</p>
                                     <form method="POST" action="{{ route('sales.store-payment', $sale) }}">
                                         @csrf
-                                        <div class="flex flex-wrap items-end gap-3">
-                                            <div class="flex-1 min-w-[150px]">
+                                        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:end;">
+                                            <div>
                                                 <x-input-label for="add_payment_method" :value="__('Metode Pembayaran')" class="text-xs" />
                                                 <select id="add_payment_method" name="payment_method_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
                                                     <option value="">{{ __('Pilih Metode') }}</option>
@@ -287,7 +363,7 @@
                                                     @endforeach
                                                 </select>
                                             </div>
-                                            <div class="flex-1 min-w-[130px]">
+                                            <div>
                                                 <x-input-label for="add_payment_amount" :value="__('Nominal')" class="text-xs" />
                                                 <div class="relative mt-1">
                                                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 text-sm">Rp</span>
@@ -295,15 +371,15 @@
                                                     <input type="hidden" name="amount" id="add_payment_amount" value="{{ old('amount', $sisa) }}">
                                                 </div>
                                             </div>
-                                            <div class="w-36">
+                                            <div>
                                                 <x-input-label for="add_payment_date" :value="__('Tanggal')" class="text-xs" />
                                                 <input type="date" id="add_payment_date" name="transaction_date" value="{{ old('transaction_date', date('Y-m-d')) }}" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                             </div>
-                                            <div class="flex-1 min-w-[120px]">
+                                            <div>
                                                 <x-input-label for="add_payment_notes" :value="__('Catatan')" class="text-xs" />
                                                 <input type="text" id="add_payment_notes" name="notes" value="{{ old('notes') }}" placeholder="{{ __('Opsional') }}" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                             </div>
-                                            <div>
+                                            <div style="grid-column:1 / -1;">
                                                 <button type="submit" class="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                                     {{ __('Bayar') }}
@@ -332,6 +408,17 @@
                                 </script>
                                 @endpush
                             @endif
+
+                            <div class="mt-4">
+                                <x-transaction-proof-fields
+                                    :require-one="true"
+                                    :slots="$sale->status === 'open' ? max(0, 2 - $sale->proofs->count()) : 0"
+                                    :existing="$sale->proofs"
+                                    :owner="$sale"
+                                    :upload-url="$sale->status === 'open' ? route('sales.proofs.store', $sale) : null"
+                                    :can-delete="$sale->status === 'open'"
+                                />
+                            </div>
                         </div>
                     @endif
 
@@ -367,10 +454,10 @@
                         </div>
                     @endif
 
-                    @if ($sale->status === 'open')
+                    @if ($sale->status === 'open' && app(\App\Services\AuthorizationService::class)->allowsCommit($sale))
                         <div class="mt-8 border rounded-lg p-4 bg-slate-50">
                             <p class="font-semibold text-slate-800">{{ __('Release Penjualan') }}</p>
-                            <p class="text-xs text-slate-500 mt-1">{{ __('Saat release, stok akan dikurangi dan penjualan tidak bisa diubah lagi. Pembayaran boleh lunas atau belum lunas (partial).') }}</p>
+                            <p class="text-xs text-slate-500 mt-1">{{ __('Saat release, stok akan dikurangi dan penjualan tidak bisa diubah lagi. Pembayaran boleh lunas atau belum lunas (partial). Minimal 1 bukti transaksi wajib sudah tersimpan.') }}</p>
                             @if ($sale->tradeIns && $sale->tradeIns->isNotEmpty())
                                 @php $ttTotal = $sale->tradeIns->sum('trade_in_value'); @endphp
                                 <p class="text-xs text-amber-700 mt-1">{{ __('Tukar Tambah') }}: {{ number_format($ttTotal, 0, ',', '.') }} — {{ __('Yang dibayar tunai') }}: {{ number_format((float)$sale->total - $ttTotal, 0, ',', '.') }}</p>
@@ -437,16 +524,12 @@
                                 if (!rowsEl) return;
                                 const i = idx++;
                                 const div = document.createElement('div');
-                                div.className = 'flex flex-col md:flex-row gap-2 items-end';
+                                div.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
                                 div.innerHTML = `
-                                    <div class="flex-1">
-                                        <select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                            ${releasePaymentOptionsHtml()}
-                                        </select>
-                                    </div>
-                                    <div class="w-full md:w-48">
-                                        <input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal">
-                                    </div>
+                                    <select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        ${releasePaymentOptionsHtml()}
+                                    </select>
+                                    <input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal">
                                     <button type="button" class="remove-release-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
                                 `;
                                 rowsEl.appendChild(div);

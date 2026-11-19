@@ -20,11 +20,14 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RentalController;
+use App\Http\Controllers\TransactionVerificationController;
+use App\Http\Controllers\VerificationCutoffController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StockMutationController;
 use App\Http\Controllers\StockMonitoringController;
 use App\Http\Controllers\StockInOutController;
+use App\Http\Controllers\MovementHistoryController;
 use App\Http\Controllers\StockUnitController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WarehouseController;
@@ -63,7 +66,7 @@ Route::get('/dashboard', function (Request $request) {
 
     $isBranchUser = $user
         && ! $user->isSuperAdmin()
-        && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR])
+        && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG])
         && $user->branch_id;
 
     // 1) Pergerakan jumlah barang masuk dan barang terjual
@@ -143,8 +146,25 @@ Route::get('/dashboard', function (Request $request) {
     ]);
 })->middleware(['auth', 'verified', 'module.access'])->name('dashboard');
 
-Route::middleware(['auth', 'module.access'])->group(function () {
+Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
+    Route::get('verification-cutoff', [VerificationCutoffController::class, 'edit'])->name('verification-cutoff.edit');
+    Route::put('verification-cutoff', [VerificationCutoffController::class, 'update'])->name('verification-cutoff.update');
+
+    Route::get('authorization-settings', [\App\Http\Controllers\AuthorizationSettingController::class, 'edit'])->name('authorization-settings.edit');
+    Route::put('authorization-settings', [\App\Http\Controllers\AuthorizationSettingController::class, 'update'])->name('authorization-settings.update');
+    Route::get('authorizations', [\App\Http\Controllers\AuthorizationController::class, 'index'])->name('authorizations.index');
+    Route::get('authorizations/pending-feed', [\App\Http\Controllers\AuthorizationController::class, 'pendingFeed'])->name('authorizations.pending-feed');
+    Route::post('authorizations', [\App\Http\Controllers\AuthorizationController::class, 'submit'])->name('authorizations.submit');
+    Route::post('authorizations/approve-many', [\App\Http\Controllers\AuthorizationController::class, 'approveMany'])->name('authorizations.approve-many');
+    Route::post('authorizations/{authorizationRequest}/approve', [\App\Http\Controllers\AuthorizationController::class, 'approve'])->name('authorizations.approve');
+    Route::post('authorizations/{authorizationRequest}/reject', [\App\Http\Controllers\AuthorizationController::class, 'reject'])->name('authorizations.reject');
+    Route::get('push/vapid-public-key', [\App\Http\Controllers\PushSubscriptionController::class, 'vapidPublicKey'])->name('push.vapid-public-key');
+    Route::post('push/subscriptions', [\App\Http\Controllers\PushSubscriptionController::class, 'store'])->name('push.subscriptions.store');
+    Route::delete('push/subscriptions', [\App\Http\Controllers\PushSubscriptionController::class, 'destroy'])->name('push.subscriptions.destroy');
+
+    Route::get('activity-logs', [\App\Http\Controllers\UserActivityLogController::class, 'index'])->name('activity-logs.index');
     Route::get('role-access', [\App\Http\Controllers\RoleAccessController::class, 'index'])->name('role-access.index');
+    Route::post('role-access', [\App\Http\Controllers\RoleAccessController::class, 'store'])->name('role-access.store');
     Route::get('role-access/{role}/edit', [\App\Http\Controllers\RoleAccessController::class, 'edit'])->name('role-access.edit');
     Route::put('role-access/{role}', [\App\Http\Controllers\RoleAccessController::class, 'update'])->name('role-access.update');
 
@@ -215,6 +235,9 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('stock-units/export-pdf', [StockUnitController::class, 'exportPdf'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.export-pdf');
+    Route::get('stock-units/pergerakan', [MovementHistoryController::class, 'index'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-units.movement');
     Route::get('stock-units/{unit}', [StockUnitController::class, 'show'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.show');
@@ -233,9 +256,24 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('stock-mutations', [StockMutationController::class, 'store'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.store');
+    Route::get('stock-mutations/{distribution}/proofs', [StockMutationController::class, 'proofs'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.proofs');
+    Route::post('stock-mutations/{distribution}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.proofs.store');
+    Route::get('stock-mutations/{distribution}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.proofs.show');
+    Route::delete('stock-mutations/{distribution}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.proofs.destroy');
     Route::get('stock-mutations/{distribution}/invoice', [StockMutationController::class, 'invoice'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.invoice');
+    Route::get('stock-mutations/{distribution}/report', [StockMutationController::class, 'report'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.report');
     Route::get('stock-mutations/{distribution}/add-payment', [StockMutationController::class, 'addPayment'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.add-payment');
@@ -245,9 +283,15 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('stock-mutations/{distribution}/cancel', [StockMutationController::class, 'showCancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('stock-mutations.cancel.show');
+    Route::post('stock-mutations/{distribution}/release', [StockMutationController::class, 'release'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.release');
     Route::post('stock-mutations/{distribution}/cancel', [StockMutationController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('stock-mutations.cancel');
+    Route::get('stock-mutations/{distribution}', [StockMutationController::class, 'show'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.show');
 
     Route::get('stock-inout', [StockInOutController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
@@ -320,15 +364,27 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('purchases/export-pdf', [PurchaseController::class, 'exportPdf'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.export-pdf');
+    Route::post('purchases/{purchase}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->name('purchases.proofs.store');
+    Route::get('purchases/{purchase}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->name('purchases.proofs.show');
+    Route::delete('purchases/{purchase}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->name('purchases.proofs.destroy');
     Route::post('purchases/{purchase}/add-payment', [PurchaseController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.add-payment');
     Route::post('purchases/{purchase}/resolve-deferred', [PurchaseController::class, 'resolveDeferred'])
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->name('purchases.resolve-deferred');
+    Route::post('purchases/{purchase}/release', [PurchaseController::class, 'release'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.release');
     Route::post('purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])
         ->middleware('role:admin_gudang,super_admin,admin_pusat')
         ->name('purchases.cancel');
+    Route::get('purchases/{purchase}/report', [PurchaseController::class, 'report'])
+        ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
+        ->name('purchases.report');
     Route::resource('purchases', PurchaseController::class)
         ->middleware('role:admin_gudang,admin_cabang,super_admin,admin_pusat')
         ->only(['index', 'create', 'store', 'show', 'edit', 'update']);
@@ -357,6 +413,45 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('data-by-location/form-data', [\App\Http\Controllers\DataByLocationController::class, 'formData'])
         ->name('data-by-location.form-data');
 
+    Route::get('print-reports', [\App\Http\Controllers\PrintReportController::class, 'index'])
+        ->name('print-reports.index');
+    Route::get('print-reports/{type}', [\App\Http\Controllers\PrintReportController::class, 'show'])
+        ->name('print-reports.show');
+
+    Route::get('sales/unit-exchanges', [\App\Http\Controllers\UnitExchangeController::class, 'index'])
+        ->name('sales.unit-exchanges.index');
+    Route::get('sales/unit-exchanges/create', [\App\Http\Controllers\UnitExchangeController::class, 'create'])
+        ->name('sales.unit-exchanges.create');
+    Route::post('sales/unit-exchanges', [\App\Http\Controllers\UnitExchangeController::class, 'store'])
+        ->name('sales.unit-exchanges.store');
+    Route::get('sales/unit-exchanges/invoices', [\App\Http\Controllers\UnitExchangeController::class, 'searchInvoices'])
+        ->name('sales.unit-exchanges.invoices');
+    Route::get('sales/unit-exchanges/invoices/{sale}', [\App\Http\Controllers\UnitExchangeController::class, 'invoice'])
+        ->name('sales.unit-exchanges.invoice');
+    Route::get('sales/unit-exchanges/serials', [\App\Http\Controllers\UnitExchangeController::class, 'searchSerials'])
+        ->name('sales.unit-exchanges.serials');
+    Route::get('sales/unit-exchanges/products', [\App\Http\Controllers\UnitExchangeController::class, 'replacementProducts'])
+        ->name('sales.unit-exchanges.products');
+    Route::get('sales/unit-exchanges/{exchange}/edit', [\App\Http\Controllers\UnitExchangeController::class, 'edit'])
+        ->name('sales.unit-exchanges.edit');
+    Route::post('sales/unit-exchanges/{exchange}', [\App\Http\Controllers\UnitExchangeController::class, 'update'])
+        ->name('sales.unit-exchanges.update');
+    Route::post('sales/unit-exchanges/{exchange}/release', [\App\Http\Controllers\UnitExchangeController::class, 'release'])
+        ->name('sales.unit-exchanges.release');
+    Route::post('sales/unit-exchanges/{exchange}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->name('sales.unit-exchanges.proofs.store');
+    Route::get('sales/unit-exchanges/{exchange}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->name('sales.unit-exchanges.proofs.show');
+    Route::delete('sales/unit-exchanges/{exchange}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->name('sales.unit-exchanges.proofs.destroy');
+    Route::get('sales/unit-exchanges/{exchange}/report', [\App\Http\Controllers\UnitExchangeController::class, 'report'])
+        ->name('sales.unit-exchanges.report');
+    Route::get('sales/unit-exchanges/{exchange}', [\App\Http\Controllers\UnitExchangeController::class, 'show'])
+        ->name('sales.unit-exchanges.show');
+
+    Route::get('sales/search-units', [SaleController::class, 'searchSaleUnits'])
+        ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
+        ->name('sales.search-units');
     Route::get('sales/available-serials', [SaleController::class, 'availableSerials'])
         ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.available-serials');
@@ -378,9 +473,18 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('sales/{sale}/invoice', [SaleController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('sales.invoice');
+    Route::get('sales/{sale}/report', [SaleController::class, 'report'])
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
+        ->name('sales.report');
     Route::post('sales/{sale}/release', [SaleController::class, 'release'])
         ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('sales.release');
+    Route::post('sales/{sale}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->name('sales.proofs.store');
+    Route::get('sales/{sale}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->name('sales.proofs.show');
+    Route::delete('sales/{sale}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->name('sales.proofs.destroy');
     Route::post('sales/{sale}/payment', [SaleController::class, 'storePayment'])
         ->middleware('role:admin_cabang,kasir,admin_gudang,super_admin,admin_pusat')
         ->name('sales.store-payment');
@@ -409,12 +513,27 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('rentals/{rental}/invoice', [RentalController::class, 'invoice'])
         ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.invoice');
+    Route::get('rentals/{rental}/report', [RentalController::class, 'report'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.report');
     Route::post('rentals/{rental}/add-payment', [RentalController::class, 'addPayment'])
         ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.add-payment');
+    Route::post('rentals/{rental}/release', [RentalController::class, 'release'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.release');
     Route::post('rentals/{rental}/mark-returned', [RentalController::class, 'markReturned'])
         ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.mark-returned');
+    Route::post('rentals/{rental}/finalize-release', [RentalController::class, 'finalizeRelease'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.finalize-release');
+    Route::post('rentals/{rental}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->name('rentals.proofs.store');
+    Route::get('rentals/{rental}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->name('rentals.proofs.show');
+    Route::delete('rentals/{rental}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->name('rentals.proofs.destroy');
     Route::post('rentals/{rental}/cancel', [RentalController::class, 'cancel'])
         ->middleware('role:super_admin,admin_pusat')
         ->name('rentals.cancel');
@@ -428,6 +547,9 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('services/{service}/invoice', [ServiceController::class, 'invoice'])
         ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('services.invoice');
+    Route::get('services/{service}/report', [ServiceController::class, 'report'])
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
+        ->name('services.report');
     Route::get('services/export', [ServiceController::class, 'export'])
         ->middleware('role:admin_cabang,kasir,admin_gudang')
         ->name('services.export');
@@ -437,6 +559,12 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('services/{service}/add-payment', [ServiceController::class, 'addPayment'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.add-payment');
+    Route::post('services/{service}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
+        ->name('services.proofs.store');
+    Route::get('services/{service}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
+        ->name('services.proofs.show');
+    Route::delete('services/{service}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'destroy'])
+        ->name('services.proofs.destroy');
     Route::post('services/{service}/materials', [ServiceController::class, 'addMaterials'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.materials.store');
@@ -484,6 +612,13 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::get('cash-flows/export-pdf', [CashFlowController::class, 'exportPdf'])
         ->middleware('role:admin_cabang')
         ->name('cash-flows.export-pdf');
+    Route::get('verification', [TransactionVerificationController::class, 'index'])
+        ->name('verification.index');
+    Route::post('verification/accept', [TransactionVerificationController::class, 'accept'])
+        ->name('verification.accept');
+    Route::post('verification/reject', [TransactionVerificationController::class, 'reject'])
+        ->name('verification.reject');
+
     Route::get('cash-flows/in', [CashFlowController::class, 'inIndex'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.index');
@@ -505,6 +640,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('cash-flows/in', [CashFlowController::class, 'storeIn'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.in.store');
+    Route::post('cash-flows/in/{cashFlow}/cancel', [CashFlowController::class, 'cancelIn'])
+        ->name('cash-flows.in.cancel');
     Route::get('cash-flows/out/list', [CashFlowController::class, 'outIndex'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.index');
@@ -544,6 +681,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
     Route::post('cash-flows/out', [CashFlowController::class, 'storeOut'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('cash-flows.out.store');
+    Route::post('cash-flows/out/{cashFlow}/cancel', [CashFlowController::class, 'cancelOut'])
+        ->name('cash-flows.out.cancel');
 
     Route::get('cash-flows/saldo-adjustment', [\App\Http\Controllers\SaldoAdjustmentController::class, 'index'])
         ->middleware('role:super_admin,admin_pusat')
@@ -665,6 +804,8 @@ Route::middleware(['auth', 'module.access'])->group(function () {
         Route::get('users/create', [UserManagementController::class, 'create'])->name('users.create');
         Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
         Route::get('users/{user}/edit', [UserManagementController::class, 'edit'])->name('users.edit');
+        Route::post('users/{user}/public-ips', [UserManagementController::class, 'storePublicIp'])->name('users.public-ips.store');
+        Route::delete('users/{user}/public-ips/{publicIp}', [UserManagementController::class, 'destroyPublicIp'])->name('users.public-ips.destroy');
         Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
         Route::put('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('users.toggle-active');

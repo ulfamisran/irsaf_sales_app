@@ -11,8 +11,13 @@ use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\SaleTradeIn;
 use App\Models\Stock;
+use App\Models\UnitExchange;
+use App\Models\UnitExchangeItem;
 use App\Models\Warehouse;
 use App\Support\CatatRange;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -51,6 +56,7 @@ class StockUnitController extends Controller
             ->all();
         $unitsByProduct = collect();
         $soldInfoBySerial = [];
+        $exchangesByUnit = [];
         if (! empty($productIds)) {
             $units = (clone $listBase)
                 ->with(['product.category', 'product.distributor', 'warehouse', 'branch', 'user'])
@@ -59,6 +65,7 @@ class StockUnitController extends Controller
                 ->orderByDesc('id')
                 ->get();
             $unitsByProduct = $units->groupBy('product_id');
+            $exchangesByUnit = $this->exchangesByUnit($units, $user);
 
             $saleDetails = SaleDetail::with(['sale:id,invoice_number,sale_date,status'])
                 ->whereIn('product_id', $productIds)
@@ -91,13 +98,13 @@ class StockUnitController extends Controller
         $locationId = null;
         $locationLabel = null;
         if (! $canFilterLocation) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationType = 'branch';
                 $locationId = (int) $user->branch_id;
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
                 $locationType = 'warehouse';
@@ -176,7 +183,8 @@ class StockUnitController extends Controller
             'totalInStockUnits',
             'totalInStockHpp',
             'soldInfoBySerial',
-            'tradeInProductIds'
+            'tradeInProductIds',
+            'exchangesByUnit'
         ));
     }
 
@@ -189,11 +197,11 @@ class StockUnitController extends Controller
         $unit->load(['product.category', 'product.distributor', 'warehouse', 'branch', 'user', 'changeLogs.user']);
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
                     abort(403, __('Unauthorized.'));
                 }
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 if ($unit->location_type !== Stock::LOCATION_WAREHOUSE || (int) $unit->location_id !== (int) $user->warehouse_id) {
                     abort(403, __('Unauthorized.'));
                 }
@@ -453,12 +461,12 @@ class StockUnitController extends Controller
     private function applyFilters(Request $request, $user, $listBase, $countBase): void
     {
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
                 $listBase->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', (int) $user->branch_id);
                 $countBase->where('location_type', Stock::LOCATION_BRANCH)
                     ->where('location_id', (int) $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $listBase->where('location_type', Stock::LOCATION_WAREHOUSE)
                     ->where('location_id', (int) $user->warehouse_id);
                 $countBase->where('location_type', Stock::LOCATION_WAREHOUSE)
@@ -539,6 +547,82 @@ class StockUnitController extends Controller
                 $countBase->whereHas('product', fn ($q) => $q->where('laptop_type', $jenis));
             }
         }
+    }
+
+    /**
+     * @param  Collection<int, ProductUnit>  $units
+     * @return array<int, array{user: string, created_at: mixed, exchange_date: mixed, number: string, count: int, details: list<array<string, mixed>>}>
+     */
+    private function exchangesByUnit(Collection $units, $user): array
+    {
+        if ($units->isEmpty() || ! Schema::hasTable('unit_exchange_items')) {
+            return [];
+        }
+
+        $idSet = array_fill_keys($units->pluck('id')->map(fn ($id) => (int) $id)->all(), true);
+        $items = UnitExchangeItem::query()
+            ->with(['exchange.user:id,name', 'exchange.sale:id,invoice_number'])
+            ->whereHas('exchange', fn ($query) => $query->where('status', UnitExchange::STATUS_RELEASED))
+            ->where(function ($query) use ($idSet) {
+                $ids = array_keys($idSet);
+                $query->whereIn('old_unit_id', $ids)->orWhereIn('new_unit_id', $ids);
+            })
+            ->get();
+
+        $canOpen = (bool) $user?->canModule('sales') && Route::has('sales.unit-exchanges.show');
+        $grouped = [];
+        foreach ($items as $item) {
+            $exchange = $item->exchange;
+            if (! $exchange) {
+                continue;
+            }
+            $oldId = (int) $item->old_unit_id;
+            $newId = (int) $item->new_unit_id;
+            foreach ([$oldId, $newId] as $unitId) {
+                if ($unitId <= 0 || ! isset($idSet[$unitId])) {
+                    continue;
+                }
+                $role = $oldId === $unitId && $newId === $unitId
+                    ? __('Unit lama dan pengganti')
+                    : ($oldId === $unitId ? __('Unit dikembalikan') : __('Unit pengganti'));
+                $grouped[$unitId][] = [
+                    'exchange_id' => (int) $exchange->id,
+                    'item_id' => (int) $item->id,
+                    'number' => (string) $exchange->exchange_number,
+                    'user' => (string) ($exchange->user?->name ?? '-'),
+                    'created_at' => $exchange->created_at,
+                    'exchange_date' => $exchange->exchange_date,
+                    'recorded_label' => $exchange->created_at?->timezone(CatatRange::TZ)->format('d/m/Y H:i') ?? '-',
+                    'exchange_label' => $exchange->exchange_date?->timezone(CatatRange::TZ)->format('d/m/Y') ?? '-',
+                    'invoice' => (string) ($exchange->sale?->invoice_number ?? '-'),
+                    'old_serial' => (string) $item->old_serial,
+                    'new_serial' => (string) $item->new_serial,
+                    'role' => $role,
+                    'difference' => (float) $item->price_difference,
+                    'url' => $canOpen ? route('sales.unit-exchanges.show', $exchange) : null,
+                ];
+            }
+        }
+
+        $result = [];
+        foreach ($grouped as $unitId => $rows) {
+            usort($rows, fn (array $a, array $b) => $b['exchange_id'] <=> $a['exchange_id'] ?: $b['item_id'] <=> $a['item_id']);
+            $latest = $rows[0];
+            $result[$unitId] = [
+                'user' => $latest['user'],
+                'created_at' => $latest['created_at'],
+                'exchange_date' => $latest['exchange_date'],
+                'number' => $latest['number'],
+                'count' => count($rows),
+                'details' => array_map(function (array $row) {
+                    unset($row['created_at'], $row['exchange_date'], $row['exchange_id'], $row['item_id']);
+
+                    return $row;
+                }, $rows),
+            ];
+        }
+
+        return $result;
     }
 }
 

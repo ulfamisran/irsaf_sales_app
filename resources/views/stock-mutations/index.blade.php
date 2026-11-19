@@ -99,6 +99,7 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
                         <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                             <option value="">{{ __('Semua') }}</option>
+                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
                             <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>{{ __('Release') }}</option>
                             <option value="cancelled" {{ request('status') === 'cancelled' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
                             <option value="paid_off" {{ request('status') === 'paid_off' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
@@ -150,7 +151,7 @@
                                 <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total Trx') }}</th>
                                 <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total Bayar') }}</th>
                                 <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status') }}</th>
-                                <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
@@ -170,9 +171,11 @@
                                     $toIsWh = $dist->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE;
                                     $toName = $toIsWh ? ($warehousesById[$dist->to_location_id] ?? '#'.$dist->to_location_id) : ($branchesById[$dist->to_location_id] ?? '#'.$dist->to_location_id);
                                     $toLabel = $toIsWh ? __('Gudang') : __('Cabang');
+                                    $authPhase = app(\App\Services\AuthorizationService::class)->phase($dist);
                                 @endphp
                                 <tr @class([
-                                    'hover:bg-slate-50/50' => ! $invoiceCancelled,
+                                    'hover:bg-slate-50/50' => ! $invoiceCancelled && $authPhase !== 'draft',
+                                    'bg-red-50 hover:bg-red-100/80 border-l-4 border-l-red-500' => ! $invoiceCancelled && $authPhase === 'draft',
                                     'bg-slate-100/90 border-l-4 border-l-slate-500' => $invoiceCancelled,
                                 ])>
                                     <td class="px-4 py-3">
@@ -180,6 +183,8 @@
                                             <span @class(['font-mono text-sm', 'text-indigo-700' => ! $invoiceCancelled, 'text-slate-600 line-through decoration-slate-400' => $invoiceCancelled])>{{ $dist->invoice_number }}</span>
                                             @if ($invoiceCancelled)
                                                 <span class="inline-flex items-center w-fit px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
+                                            @else
+                                                <x-authorization-list-badge :model="$dist" class="w-fit" />
                                             @endif
                                         </div>
                                     </td>
@@ -234,25 +239,40 @@
                                             </div>
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 text-center">
-                                        <div class="flex flex-wrap items-center justify-center gap-1">
-                                            @if (! $invoiceCancelled && ! $noBiaya && ! $isLunas)
-                                            <a href="{{ route('stock-mutations.add-payment', $dist) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors" title="{{ __('Tambah Pembayaran') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-                                                {{ __('Bayar') }}
+                                    <td class="px-4 py-3 text-right">
+                                        <x-row-actions>
+                                            <x-authorization-submit-action :model="$dist" module="stock-mutations" />
+                                            <a href="{{ route('stock-mutations.show', $dist) }}" style="color:#047857;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                {{ __('Detail') }}
                                             </a>
+                                            @if (! $invoiceCancelled && $dist->status !== \App\Models\Distribution::STATUS_OPEN && ! $noBiaya && ! $isLunas)
+                                                <a href="{{ route('stock-mutations.add-payment', $dist) }}" style="color:#b45309;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                                    {{ __('Bayar') }}
+                                                </a>
                                             @endif
-                                            <a href="{{ route('stock-mutations.invoice', $dist) }}" target="_blank" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors" title="{{ __('Invoice') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                            @if ($dist->status !== \App\Models\Distribution::STATUS_OPEN)
+                                            <a href="{{ route('stock-mutations.invoice', $dist) }}" target="_blank" style="color:#7c3aed;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
                                                 {{ __('Invoice') }}
                                             </a>
-                                            @if (($canCancelDistribution ?? false) && ! $invoiceCancelled)
-                                            <a href="{{ route('stock-mutations.cancel.show', $dist) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors" title="{{ __('Batalkan distribusi') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                                {{ __('Batal') }}
-                                            </a>
                                             @endif
-                                        </div>
+                                            <a href="{{ route('stock-mutations.report', $dist) }}" target="_blank" style="color:#1d4ed8;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                                {{ __('Cetak Laporan') }}
+                                            </a>
+                                            <a href="{{ route('stock-mutations.proofs', $dist) }}" style="color:#4f46e5;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                                {{ __('Bukti') }}
+                                            </a>
+                                            @if (($canCancelDistribution ?? false) && ! $invoiceCancelled)
+                                                <a href="{{ route('stock-mutations.cancel.show', $dist) }}" style="color:#dc2626;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                    {{ __('Batal') }}
+                                                </a>
+                                            @endif
+                                        </x-row-actions>
                                     </td>
                                 </tr>
                             @empty
@@ -284,7 +304,7 @@
                                 <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Biaya/Unit') }}</th>
                                 <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
-                                <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Aksi') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
@@ -303,9 +323,11 @@
                                     $toIsWh = ($dist->to_location_type ?? '') === \App\Models\Stock::LOCATION_WAREHOUSE;
                                     $toName = $toIsWh ? ($warehousesById[$dist->to_location_id ?? 0] ?? '#'.($dist->to_location_id ?? 0)) : ($branchesById[$dist->to_location_id ?? 0] ?? '#'.($dist->to_location_id ?? 0));
                                     $toLabel = $toIsWh ? __('Gudang') : __('Cabang');
+                                    $authPhase = $dist ? app(\App\Services\AuthorizationService::class)->phase($dist) : 'off';
                                 @endphp
                                 <tr @class([
-                                    'hover:bg-slate-50/50' => ! $rowCancelled,
+                                    'hover:bg-slate-50/50' => ! $rowCancelled && $authPhase !== 'draft',
+                                    'bg-red-50 hover:bg-red-100/80 border-l-4 border-l-red-500' => ! $rowCancelled && $authPhase === 'draft',
                                     'bg-slate-100/90 border-l-4 border-l-slate-500' => $rowCancelled,
                                 ])>
                                     <td class="px-4 py-3 @if($rowCancelled) text-slate-500 @endif">{{ $dist->distribution_date?->format('d/m/Y') ?? '-' }}</td>
@@ -314,6 +336,8 @@
                                             <span @class(['font-mono text-xs', 'text-indigo-600' => ! $rowCancelled, 'text-slate-600 line-through decoration-slate-400' => $rowCancelled])>{{ $dist->invoice_number ?? '-' }}</span>
                                             @if ($rowCancelled)
                                                 <span class="inline-flex items-center w-fit px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-300 text-slate-800">{{ __('Batal') }}</span>
+                                            @else
+                                                <x-authorization-list-badge :model="$dist" class="w-fit" />
                                             @endif
                                         </div>
                                     </td>
@@ -330,6 +354,11 @@
                                         @else
                                             -
                                         @endif
+                                        @if ($detail->affects_hpp === true)
+                                            <div class="text-[11px] text-emerald-700">{{ __('Mempengaruhi HPP') }}</div>
+                                        @elseif ($detail->affects_hpp === false)
+                                            <div class="text-[11px] text-slate-500">{{ __('Tidak mempengaruhi HPP') }}</div>
+                                        @endif
                                     </td>
                                     <td class="px-4 py-3 text-center">
                                         @if ($rowCancelled)
@@ -342,27 +371,42 @@
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 @if($rowCancelled) text-slate-500 @endif">{{ $dist->user?->name ?? '-' }}</td>
-                                    <td class="px-4 py-3 text-center">
-                                        <div class="flex flex-wrap items-center justify-center gap-1">
-                                            @if ($dist && ! $rowCancelled && $totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
-                                            <a href="{{ route('stock-mutations.add-payment', $dist) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors" title="{{ __('Tambah Pembayaran') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-                                                {{ __('Bayar') }}
-                                            </a>
-                                            @endif
-                                            @if ($dist)
-                                            <a href="{{ route('stock-mutations.invoice', $dist) }}" target="_blank" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors" title="{{ __('Invoice') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                                {{ __('Invoice') }}
-                                            </a>
-                                            @if (($canCancelDistribution ?? false) && ! $rowCancelled)
-                                            <a href="{{ route('stock-mutations.cancel.show', $dist) }}" class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors" title="{{ __('Batalkan distribusi') }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                                {{ __('Batal') }}
-                                            </a>
-                                            @endif
-                                            @endif
-                                        </div>
+                                    <td class="px-4 py-3 text-right">
+                                        @if ($dist)
+                                            <x-row-actions>
+                                                <x-authorization-submit-action :model="$dist" module="stock-mutations" />
+                                                <a href="{{ route('stock-mutations.show', $dist) }}" style="color:#047857;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                    {{ __('Detail') }}
+                                                </a>
+                                                @if (! $rowCancelled && $dist->status !== \App\Models\Distribution::STATUS_OPEN && $totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
+                                                    <a href="{{ route('stock-mutations.add-payment', $dist) }}" style="color:#b45309;">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                                        {{ __('Bayar') }}
+                                                    </a>
+                                                @endif
+                                                @if ($dist->status !== \App\Models\Distribution::STATUS_OPEN)
+                                                <a href="{{ route('stock-mutations.invoice', $dist) }}" target="_blank" style="color:#7c3aed;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
+                                                    {{ __('Invoice') }}
+                                                </a>
+                                                @endif
+                                                <a href="{{ route('stock-mutations.report', $dist) }}" target="_blank" style="color:#1d4ed8;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                                    {{ __('Cetak Laporan') }}
+                                                </a>
+                                                <a href="{{ route('stock-mutations.proofs', $dist) }}" style="color:#4f46e5;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                                    {{ __('Bukti') }}
+                                                </a>
+                                                @if (($canCancelDistribution ?? false) && ! $rowCancelled)
+                                                    <a href="{{ route('stock-mutations.cancel.show', $dist) }}" style="color:#dc2626;">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                        {{ __('Batal') }}
+                                                    </a>
+                                                @endif
+                                            </x-row-actions>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty

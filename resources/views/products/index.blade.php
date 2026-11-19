@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Produk') }}</h2>
-            @if (auth()->user()?->isSuperAdmin() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG]))
+            @if (auth()->user()?->isSuperAdmin() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]))
                 <x-icon-btn-add :href="route('products.create')" :label="__('Tambah Produk')" />
             @else
                 <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
@@ -158,10 +158,10 @@
                                             $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
                                             $canEdit = $isPusat
                                                 || (
-                                                    auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::ADMIN_GUDANG])
+                                                    auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])
                                                     && ($product->sold_units_count ?? 0) == 0
                                                 );
-                                            if ($canEdit && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && auth()->user()?->branch_id) {
+                                            if ($canEdit && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()?->branch_id) {
                                                 $canEdit = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
                                             }
                                         @endphp
@@ -187,16 +187,6 @@
                                                     {{ $product->is_active ? __('Nonaktifkan') : __('Aktifkan') }}
                                                 </button>
                                             </form>
-                                        @endif
-                                        @if ($product->is_active)
-                                            <a href="{{ route('incoming-goods.create', ['product_id' => $product->id]) }}"
-                                               class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
-                                                {{ __('Tambah Unit') }}
-                                            </a>
-                                        @else
-                                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-400">
-                                                {{ __('Tambah Unit') }}
-                                            </span>
                                         @endif
                                     </div>
                                 </td>

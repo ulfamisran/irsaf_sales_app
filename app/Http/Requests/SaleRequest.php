@@ -127,11 +127,11 @@ class SaleRequest extends FormRequest
                     if ($type === 'warehouse' && ! $this->filled('warehouse_id')) {
                         $validator->errors()->add('warehouse_id', __('Gudang wajib dipilih.'));
                     }
-                } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR])) {
+                } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG])) {
                     if (! $user->branch_id) {
                         $validator->errors()->add('branch_id', __('Cabang pengguna belum diatur.'));
                     }
-                } elseif ($user->hasRole(Role::ADMIN_GUDANG)) {
+                } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])) {
                     if (! $user->warehouse_id) {
                         $validator->errors()->add('warehouse_id', __('Gudang pengguna belum diatur.'));
                     }

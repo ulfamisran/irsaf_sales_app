@@ -6,8 +6,8 @@
             @php
                 $user = auth()->user();
                 $canAdd = $user->isSuperAdminOrAdminPusat()
-                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG]) && $user->branch_id)
-                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id);
+                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id)
+                    || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id);
             @endphp
             @if ($canAdd)
                 <x-icon-btn-add :href="route('payment-methods.create')" :label="__('Tambah Metode')" />
@@ -106,8 +106,8 @@
                                 <td class="px-4 py-3 text-right">
                                     @php
                                         $canEdit = $user->isSuperAdminOrAdminPusat()
-                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG]) && $m->branch_id == $user->branch_id)
-                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $m->warehouse_id == $user->warehouse_id);
+                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]) && $m->branch_id == $user->branch_id)
+                                            || ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $m->warehouse_id == $user->warehouse_id);
                                     @endphp
                                     <div class="flex items-center justify-end gap-2">
                                         @if ($canEdit)

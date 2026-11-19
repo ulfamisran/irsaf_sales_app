@@ -38,7 +38,7 @@
                 <form method="GET" action="{{ route('rentals.index') }}" class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[200px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
-                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Invoice, pelanggan, atau user...') }}"
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Invoice, SKU, nomor serial, pelanggan, atau user...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     @if($canFilterLocation ?? false)
@@ -165,8 +165,20 @@
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($rentals as $rental)
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="px-4 py-3">{{ $rental->invoice_number }}</td>
+                            @php
+                                $needsAuthSubmit = app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($rental);
+                            @endphp
+                            <tr @class([
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-col gap-1">
+                                        <span>{{ $rental->invoice_number }}</span>
+                                        <x-authorization-list-badge :model="$rental" />
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3">
                                     @if ($rental->status === \App\Models\Rental::STATUS_CANCEL)
                                         <span class="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800">{{ __('Cancel') }}</span>
@@ -199,13 +211,21 @@
                                 <td class="px-4 py-3"><x-wita-datetime :value="$rental->created_at" /></td>
                                 <td class="px-4 py-3"><x-wita-datetime :value="$rental->updated_at" /></td>
                                 <td class="px-4 py-3 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900" title="{{ __('Invoice') }}">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
+                                    <x-row-actions>
+                                        <x-authorization-submit-action :model="$rental" module="rentals" />
+                                        <a href="{{ route('rentals.show', $rental) }}" style="color:#047857;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            {{ __('Lihat') }}
+                                        </a>
+                                        <a href="{{ route('rentals.report', $rental) }}" target="_blank" style="color:#1d4ed8;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                            {{ __('Cetak Laporan') }}
+                                        </a>
+                                        <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" style="color:#7c3aed;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
                                             {{ __('Invoice') }}
                                         </a>
-                                        <x-icon-btn-view :href="route('rentals.show', $rental)" />
-                                    </div>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty

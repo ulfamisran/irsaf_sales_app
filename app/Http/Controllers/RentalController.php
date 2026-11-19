@@ -13,7 +13,9 @@ use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
 use App\Services\RentalService;
+use App\Services\TransactionProofService;
 use App\Support\CatatRange;
+use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
@@ -28,7 +30,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class RentalController extends Controller
 {
     public function __construct(
-        protected RentalService $rentalService
+        protected RentalService $rentalService,
+        protected TransactionProofService $proofs
     ) {}
 
     public function index(Request $request): View
@@ -44,12 +47,12 @@ class RentalController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
                 $filterLocked = true;
                 $branch = Branch::find($user->branch_id);
                 $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
@@ -73,14 +76,7 @@ class RentalController extends Controller
         if ($request->filled('return_status')) {
             $query->where('return_status', $request->return_status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyRental($query, $request->input('search'));
         CatatRange::apply($query, $request, 'rentals.created_at');
         CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
 
@@ -96,10 +92,10 @@ class RentalController extends Controller
         $totalRental = (float) (clone $query)
             ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
             ->sum('total');
-        $pmBranchId = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id
+        $pmBranchId = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id
+        $pmWarehouseId = $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id
             ? (int) $user->warehouse_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
         $paymentMethods = PaymentMethod::query()
@@ -111,14 +107,19 @@ class RentalController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('rental_payments')
             ->join('rentals', 'rental_payments.rental_id', '=', 'rentals.id')
-            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('rentals.warehouse_id', $user->warehouse_id))
+            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
+            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('rentals.warehouse_id', $user->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id'), fn ($q) => $q->where('rentals.warehouse_id', $request->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('rentals.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('rentals.pickup_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($q) => $q->whereDate('rentals.pickup_date', '<=', $request->date_to))
             ->when($request->filled('return_status'), fn ($q) => $q->where('rentals.return_status', $request->return_status))
             ->whereIn('rentals.status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $matched = Rental::query()->select('id');
+                DocumentSearch::applyRental($matched, $request->input('search'));
+                $q->whereIn('rentals.id', $matched);
+            })
             ->when(true, function ($q) use ($request) {
                 CatatRange::apply($q, $request, 'rentals.created_at');
                 CatatRange::applyBackdate($q, $request, 'rentals.pickup_date', 'rentals.created_at');
@@ -142,9 +143,9 @@ class RentalController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
@@ -163,14 +164,7 @@ class RentalController extends Controller
         if ($request->filled('return_status')) {
             $query->where('return_status', $request->return_status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyRental($query, $request->input('search'));
         CatatRange::apply($query, $request, 'rentals.created_at');
         CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
         if ($user->isSuperAdminOrAdminPusat()) {
@@ -184,10 +178,10 @@ class RentalController extends Controller
                 $b = Branch::find($request->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             }
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
             $b = Branch::find($user->branch_id);
             $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $w = Warehouse::find($user->warehouse_id);
             $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
         }
@@ -215,9 +209,9 @@ class RentalController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
                 $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
@@ -236,14 +230,7 @@ class RentalController extends Controller
         if ($request->filled('return_status')) {
             $query->where('return_status', $request->return_status);
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
-            });
-        }
+        DocumentSearch::applyRental($query, $request->input('search'));
         CatatRange::apply($query, $request, 'rentals.created_at');
         CatatRange::applyBackdate($query, $request, 'rentals.pickup_date', 'rentals.created_at');
         if ($user->isSuperAdminOrAdminPusat()) {
@@ -257,10 +244,10 @@ class RentalController extends Controller
                 $b = Branch::find($request->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             }
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
             $b = Branch::find($user->branch_id);
             $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $w = Warehouse::find($user->warehouse_id);
             $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
         }
@@ -287,10 +274,10 @@ class RentalController extends Controller
 
         $warehouses = Warehouse::orderBy('name')->get();
         $branches = Branch::orderBy('name')->get();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG]) && $user->warehouse_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
             $warehouses = $warehouses->where('id', $user->warehouse_id)->values();
         }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR]) && $user->branch_id) {
+        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
             $branches = $branches->where('id', $user->branch_id)->values();
         }
 
@@ -331,6 +318,8 @@ class RentalController extends Controller
 
     public function store(RentalRequest $request): RedirectResponse
     {
+        $this->proofs->validateUploads($request, null, false);
+
         try {
             $customerId = $this->resolveCustomerId($request);
             $user = $request->user();
@@ -351,8 +340,10 @@ class RentalController extends Controller
                 (float) $request->input('penalty_amount', 0),
                 $request->input('payments', []),
                 $request->description,
-                $request->user()->id
+                $request->user()->id,
+                app(\App\Services\AuthorizationService::class)->enabled('rentals')
             );
+            $this->proofs->storeUploaded($request, $rental, $user->id);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -367,7 +358,7 @@ class RentalController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod']);
+        $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs']);
         $paymentMethods = PaymentMethod::query()
             ->where('is_active', true)
             ->forLocation($rental->branch_id, $rental->warehouse_id)
@@ -389,7 +380,7 @@ class RentalController extends Controller
             abort(403, __('Penyewaan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
         }
 
-        $rental->load(['items.product', 'customer', 'payments.paymentMethod']);
+        $rental->load(['items.product', 'customer', 'payments.paymentMethod', 'proofs']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $customers = Customer::query()
@@ -414,9 +405,11 @@ class RentalController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if ($rental->status !== Rental::STATUS_OPEN) {
-            return back()->with('error', __('Penyewaan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
+        if ($rental->status !== Rental::STATUS_OPEN || $rental->effects_pending) {
+            return back()->with('error', __('Penyewaan tidak dapat diedit (sudah dirilis, menunggu otorisasi, atau dibatalkan).'));
         }
+
+        $this->proofs->validateUploads($request, $rental, false);
 
         try {
             $customerId = $this->resolveCustomerId($request);
@@ -434,6 +427,7 @@ class RentalController extends Controller
                 $request->description,
                 $user->id
             );
+            $this->proofs->storeUploaded($request, $rental, $user->id);
             AuditLog::create([
                 'user_id' => $user->id,
                 'action' => 'rental.update',
@@ -463,6 +457,16 @@ class RentalController extends Controller
         ]);
 
         try {
+            $authorization = app(\App\Services\AuthorizationService::class);
+            if ($authorization->blocksMutation($rental)) {
+                throw new InvalidArgumentException(__('Dokumen sedang menunggu otorisasi.'));
+            }
+            if ($rental->effects_pending) {
+                throw new InvalidArgumentException(__('Aktifkan penyewaan dulu sebelum mencatat pelunasan.'));
+            }
+            if ($rental->requires_authorization) {
+                $authorization->assertFollowUp($rental);
+            }
             $this->rentalService->addPayment($rental, $validated['payments'], $user->id);
         } catch (InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -471,12 +475,27 @@ class RentalController extends Controller
         return redirect()->route('rentals.show', $rental)->with('success', __('Pembayaran berhasil ditambahkan.'));
     }
 
+    public function release(Request $request, Rental $rental): RedirectResponse
+    {
+        try {
+            // Release efek stok/kas (setelah otorisasi open). Final status RELEASED butuh otorisasi kedua.
+            app(\App\Services\AuthorizationService::class)->assertCanApplyDeferredEffects($rental);
+            $this->rentalService->releaseEffects($rental, (int) $request->user()->id);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('rentals.show', $rental)->with('success', __('Penyewaan diaktifkan. Catat pelunasan & pengembalian unit di bawah.'));
+    }
+
     public function markReturned(Rental $rental): RedirectResponse
     {
         $user = auth()->user();
         if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
+
+        $this->proofs->assertHasProof($rental);
 
         $validated = request()->validate([
             'payments' => ['nullable', 'array'],
@@ -495,7 +514,27 @@ class RentalController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('rentals.show', $rental)->with('success', __('Penyewaan ditandai kembali.'));
+        $msg = $rental->fresh()->status === Rental::STATUS_RELEASED
+            ? __('Pelunasan & pengembalian dicatat. Status sewa Release.')
+            : __('Pelunasan & pengembalian unit dicatat. Ajukan otorisasi release, lalu ubah status menjadi Release.');
+
+        return redirect()->route('rentals.show', $rental)->with('success', $msg);
+    }
+
+    public function finalizeRelease(Request $request, Rental $rental): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        try {
+            $this->rentalService->finalizeRelease($rental);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('rentals.show', $rental)->with('success', __('Status penyewaan diubah menjadi Release.'));
     }
 
     public function cancel(Request $request, Rental $rental): RedirectResponse
@@ -537,10 +576,27 @@ class RentalController extends Controller
         if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
             abort(403, __('Unauthorized.'));
         }
+        try {
+            app(\App\Services\AuthorizationService::class)->assertInvoice($rental);
+        } catch (\InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
 
         $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod']);
 
         return view('rentals.invoice', compact('rental'));
+    }
+
+    public function report(Rental $rental): View
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs']);
+
+        return view('rentals.report', compact('rental'));
     }
 
     public function availableProducts(Request $request): JsonResponse

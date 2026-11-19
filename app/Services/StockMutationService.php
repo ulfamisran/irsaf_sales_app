@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\CashFlow;
+use App\Models\Distribution;
 use App\Models\Distributor;
+use App\Models\UnitExchange;
 use App\Models\ExpenseCategory;
 use App\Models\IncomeCategory;
 use App\Models\Product;
@@ -42,7 +44,8 @@ class StockMutationService
         float $biayaDistribusiPerUnit = 0,
         array $distributionPayments = [],
         ?string $invoiceNumber = null,
-        ?int $distributionId = null
+        ?int $distributionId = null,
+        bool $affectsHpp = true
     ): StockMutation {
         $serialNumbers = $this->normalizeSerialNumbers($serialNumbers);
 
@@ -60,7 +63,8 @@ class StockMutationService
                 $biayaDistribusiPerUnit,
                 $distributionPayments,
                 $invoiceNumber,
-                $distributionId
+                $distributionId,
+                $affectsHpp
             );
         }
 
@@ -146,6 +150,25 @@ class StockMutationService
                 'user_id' => $userId,
             ]);
         });
+    }
+
+    private function insufficientStockMessage(Product $product, int $requested, int $available): string
+    {
+        $label = trim(implode(' ', array_filter([
+            $product->sku,
+            $product->brand,
+            $product->series,
+        ], fn ($part) => is_string($part) && trim($part) !== '')));
+
+        if ($label === '') {
+            $label = 'produk #'.$product->id;
+        }
+
+        return __('Stok tidak cukup untuk :product. Diminta :requested, tersedia :available.', [
+            'product' => $label,
+            'requested' => $requested,
+            'available' => $available,
+        ]);
     }
 
     private function validateLocation(string $locationType, int $locationId): void
@@ -287,9 +310,7 @@ class StockMutationService
                 );
 
                 if ($stock->quantity < $quantity) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, (int) $stock->quantity));
                 }
 
                 // Habiskan dulu unit berserial lama (FIFO), sisanya dari stok qty murni.
@@ -333,9 +354,7 @@ class StockMutationService
                     ->all();
 
                 if (count($unitIds) < $quantity) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => count($unitIds)])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, count($unitIds)));
                 }
 
                 ProductUnit::whereIn('id', $unitIds)->update([
@@ -365,9 +384,7 @@ class StockMutationService
             );
 
             if ($stock->quantity < $quantity) {
-                throw new InvalidArgumentException(
-                    __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                );
+                throw new InvalidArgumentException($this->insufficientStockMessage($product, $quantity, (int) $stock->quantity));
             }
 
             $stock->decrement('quantity', $quantity);
@@ -432,9 +449,7 @@ class StockMutationService
                 );
                 $soldCount = count($serialNumbers);
                 if ((int) $stock->quantity < $soldCount) {
-                    throw new InvalidArgumentException(
-                        __('Insufficient stock. Available: :quantity', ['quantity' => $stock->quantity])
-                    );
+                    throw new InvalidArgumentException($this->insufficientStockMessage($product, $soldCount, (int) $stock->quantity));
                 }
                 $stock->decrement('quantity', $soldCount);
             } else {
@@ -577,7 +592,8 @@ class StockMutationService
         float $biayaDistribusiPerUnit = 0,
         array $distributionPayments = [],
         ?string $invoiceNumber = null,
-        ?int $distributionId = null
+        ?int $distributionId = null,
+        bool $affectsHpp = true
     ): StockMutation {
         if ($fromLocationType === $toLocationType && $fromLocationId === $toLocationId) {
             throw new InvalidArgumentException(__('Source and destination cannot be the same.'));
@@ -603,7 +619,8 @@ class StockMutationService
             $biayaDistribusiPerUnit,
             $distributionPayments,
             $invoiceNumber,
-            $distributionId
+            $distributionId,
+            $affectsHpp
         ) {
             $units = ProductUnit::where('product_id', $product->id)
                 ->where('location_type', $fromLocationType)
@@ -635,20 +652,17 @@ class StockMutationService
             $avgHppPerUnit = $quantity > 0 ? round($totalSnapshotHpp / $quantity, 2) : 0;
 
             foreach ($units as $unit) {
+                $oldHpp = round((float) ($unit->harga_hpp ?? 0), 2);
                 $oldJual = round((float) ($unit->harga_jual ?? 0), 2);
-                if ($biayaDistribusiPerUnit > 0) {
-                    $newHpp = $biayaDistribusiPerUnit;
-                    $newJual = $oldJual;
-                } else {
-                    $newHpp = round((float) ($unit->harga_hpp ?? 0), 2);
-                    $newJual = $oldJual;
-                }
+                $newHpp = ($affectsHpp && $biayaDistribusiPerUnit > 0)
+                    ? round($oldHpp + $biayaDistribusiPerUnit, 2)
+                    : $oldHpp;
 
                 ProductUnit::where('id', $unit->id)->update([
                     'location_type' => $toLocationType,
                     'location_id' => $toLocationId,
                     'harga_hpp' => $newHpp,
-                    'harga_jual' => $newJual,
+                    'harga_jual' => $oldJual,
                 ]);
             }
 
@@ -662,6 +676,7 @@ class StockMutationService
                 'to_location_id' => $toLocationId,
                 'quantity' => $quantity,
                 'biaya_distribusi_per_unit' => $biayaDistribusiPerUnit,
+                'affects_hpp' => $affectsHpp,
                 'hpp_per_unit' => $avgHppPerUnit,
                 'distribution_payment_method_id' => null,
                 'mutation_date' => $mutationDate,
@@ -718,7 +733,8 @@ class StockMutationService
                 }
             }
 
-            // Biaya pembelian/utang = jumlah_unit × biaya_distribusi_per_unit (bukan HPP atau harga jual)
+            // Utang pembelian internal di lokasi tujuan = jumlah unit × biaya per unit yang ditulis.
+            // Flag Mempengaruhi HPP tidak mengubah utang ini. Total biaya 0 tidak membuat dokumen utang.
             $totalBiayaDistribusi = round($quantity * $biayaDistribusiPerUnit, 2);
             if ($biayaDistribusiPerUnit > 0 && $totalBiayaDistribusi > 0) {
                 $distributor = Distributor::firstOrCreate(
@@ -798,10 +814,19 @@ class StockMutationService
         return DB::transaction(function () use ($product, $locationType, $locationId, $serialNumbers, $receivedDate, $userId, $hpp, $jual, $unitStatus, $checkStatus, $allowSoldSerialReuse, $purchaseId, $purchaseDetailId, $requireReceivingCheck) {
             $existingUnits = ProductUnit::whereIn('serial_number', $serialNumbers)
                 ->lockForUpdate()
-                ->get(['id', 'serial_number', 'status', 'product_id', 'location_type', 'location_id']);
+                ->get(['id', 'serial_number', 'status', 'product_id', 'location_type', 'location_id', 'purchase_id']);
             $existingBySerial = $existingUnits->keyBy(fn (ProductUnit $u) => strtoupper((string) $u->serial_number));
             $blockedSerials = [];
+            $openPurchaseIds = Purchase::query()
+                ->whereIn('id', $existingUnits->pluck('purchase_id')->filter()->unique()->all())
+                ->where('status', Purchase::STATUS_OPEN)
+                ->pluck('id')
+                ->all();
             foreach ($existingUnits as $unit) {
+                if ($unit->status === ProductUnit::STATUS_NOT_IN_STOCK && in_array((int) $unit->purchase_id, $openPurchaseIds, true)) {
+                    $blockedSerials[] = $unit->serial_number;
+                    continue;
+                }
                 if ($unit->status === ProductUnit::STATUS_SOLD
                     || $unit->status === ProductUnit::STATUS_NOT_IN_STOCK
                     || $unit->status === ProductUnit::STATUS_CANCEL
@@ -995,6 +1020,150 @@ class StockMutationService
      *
      * @throws InvalidArgumentException
      */
+    public function reserveDistributionUnits(Distribution $distribution): void
+    {
+        $distribution->loadMissing('details.product');
+        foreach ($distribution->details as $detail) {
+            $serials = $this->serialList($detail->serial_numbers ?? null);
+            if ($serials === [] || ! $detail->product) {
+                continue;
+            }
+            $this->reserveUnits($detail->product, $distribution->from_location_type, (int) $distribution->from_location_id, $serials);
+        }
+    }
+
+    public function unreserveDistributionUnits(Distribution $distribution): void
+    {
+        $distribution->loadMissing('details.product');
+        foreach ($distribution->details as $detail) {
+            $serials = $this->serialList($detail->serial_numbers ?? null);
+            if ($serials === [] || ! $detail->product) {
+                continue;
+            }
+            $this->unreserveUnits($detail->product, $distribution->from_location_type, (int) $distribution->from_location_id, $serials, false);
+        }
+    }
+
+    /**
+     * @return array<int, StockMutation>
+     */
+    public function releaseOpenDistribution(Distribution $distribution, int $userId): array
+    {
+        if ($distribution->status !== Distribution::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Distribusi ini sudah diproses.'));
+        }
+
+        return DB::transaction(function () use ($distribution, $userId) {
+            $distribution->load('details.product');
+            $this->unreserveDistributionUnits($distribution);
+            $date = $distribution->distribution_date?->toDateString() ?? now()->toDateString();
+            $mutations = [];
+            foreach ($distribution->details as $detail) {
+                if (! $detail->product) {
+                    continue;
+                }
+                $mutations[] = $this->mutate(
+                    $detail->product,
+                    $distribution->from_location_type,
+                    (int) $distribution->from_location_id,
+                    $distribution->to_location_type,
+                    (int) $distribution->to_location_id,
+                    (int) $detail->quantity,
+                    $date,
+                    $distribution->notes,
+                    $userId,
+                    $this->serialList($detail->serial_numbers ?? null),
+                    (float) $detail->biaya_distribusi_per_unit,
+                    [],
+                    $distribution->invoice_number,
+                    (int) $distribution->id,
+                    (bool) $detail->affects_hpp
+                );
+            }
+            $distribution->update(['status' => Distribution::STATUS_ACTIVE]);
+
+            return $mutations;
+        });
+    }
+
+    public function cancelOpenDistribution(Distribution $distribution, int $userId, string $reason): void
+    {
+        if ($distribution->status !== Distribution::STATUS_OPEN) {
+            throw new InvalidArgumentException(__('Hanya distribusi open yang bisa dibatalkan dari antrian otorisasi.'));
+        }
+
+        DB::transaction(function () use ($distribution, $userId, $reason) {
+            $this->unreserveDistributionUnits($distribution);
+            $distribution->update([
+                'status' => Distribution::STATUS_CANCELLED,
+                'cancel_date' => now()->toDateString(),
+                'cancel_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+        });
+    }
+
+    public function reserveExchangeUnits(UnitExchange $exchange): void
+    {
+        $exchange->loadMissing('items.product');
+        [$locationType, $locationId] = $this->exchangeLocation($exchange);
+        foreach ($exchange->items as $item) {
+            $serial = trim((string) $item->new_serial);
+            if ($serial === '' || ! $item->product) {
+                continue;
+            }
+            $unit = ProductUnit::query()
+                ->where('product_id', $item->product_id)
+                ->where('location_type', $locationType)
+                ->where('location_id', $locationId)
+                ->where('serial_number', $serial)
+                ->first();
+            if ($unit && $unit->status === ProductUnit::STATUS_KEEP) {
+                continue;
+            }
+            $this->reserveUnits($item->product, $locationType, $locationId, [$serial]);
+        }
+    }
+
+    public function unreserveExchangeUnits(UnitExchange $exchange): void
+    {
+        $exchange->loadMissing('items.product');
+        [$locationType, $locationId] = $this->exchangeLocation($exchange);
+        foreach ($exchange->items as $item) {
+            $serial = trim((string) $item->new_serial);
+            if ($serial === '' || ! $item->product) {
+                continue;
+            }
+            $this->unreserveUnits($item->product, $locationType, $locationId, [$serial], false);
+        }
+    }
+
+    /**
+     * @return array{0: string, 1: int}
+     */
+    private function exchangeLocation(UnitExchange $exchange): array
+    {
+        if ($exchange->warehouse_id) {
+            return [Stock::LOCATION_WAREHOUSE, (int) $exchange->warehouse_id];
+        }
+
+        return [Stock::LOCATION_BRANCH, (int) $exchange->branch_id];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function serialList(mixed $input): array
+    {
+        if (is_array($input)) {
+            return $this->normalizeSerialNumbers($input);
+        }
+
+        $lines = is_string($input) ? preg_split('/\r\n|\r|\n/', $input) : [];
+
+        return $this->normalizeSerialNumbers(is_array($lines) ? $lines : []);
+    }
+
     public function cancelDistribution(\App\Models\Distribution $distribution, int $userId, string $reason): void
     {
         $reason = trim($reason);
@@ -1107,8 +1276,19 @@ class StockMutationService
                                 'harga_jual' => max(0, $restoreJual),
                             ]);
                         } else {
-                            $newHpp = round((float) $unit->harga_hpp - $biaya, 2);
-                            $newJual = round((float) $unit->harga_jual - $biaya, 2);
+                            $affects = $mutation->affects_hpp;
+                            $currentHpp = round((float) $unit->harga_hpp, 2);
+                            $currentJual = round((float) $unit->harga_jual, 2);
+                            if ($affects === false) {
+                                $newHpp = $currentHpp;
+                                $newJual = $currentJual;
+                            } elseif ($affects === true) {
+                                $newHpp = round($currentHpp - $biaya, 2);
+                                $newJual = $currentJual;
+                            } else {
+                                $newHpp = round($currentHpp - $biaya, 2);
+                                $newJual = round($currentJual - $biaya, 2);
+                            }
 
                             ProductUnit::whereKey($unit->id)->update([
                                 'location_type' => $mutation->from_location_type,
@@ -1400,8 +1580,19 @@ class StockMutationService
                                 'harga_jual' => max(0, $restoreJual),
                             ]);
                         } else {
-                            $newHpp = round((float) $unit->harga_hpp - $biaya, 2);
-                            $newJual = round((float) $unit->harga_jual - $biaya, 2);
+                            $affects = $mutation->affects_hpp;
+                            $currentHpp = round((float) $unit->harga_hpp, 2);
+                            $currentJual = round((float) $unit->harga_jual, 2);
+                            if ($affects === false) {
+                                $newHpp = $currentHpp;
+                                $newJual = $currentJual;
+                            } elseif ($affects === true) {
+                                $newHpp = round($currentHpp - $biaya, 2);
+                                $newJual = $currentJual;
+                            } else {
+                                $newHpp = round($currentHpp - $biaya, 2);
+                                $newJual = round($currentJual - $biaya, 2);
+                            }
                             if ($newHpp < -0.02 || $newJual < -0.02) {
                                 throw new InvalidArgumentException(__('Data HPP/jual unit tidak valid untuk pembatalan.'));
                             }

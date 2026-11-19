@@ -160,7 +160,10 @@
                     </div>
                     <div class="md:col-span-2">
                         <x-input-label for="new_slide_image" :value="__('Gambar Slide')" />
-                        <input id="new_slide_image" name="image" type="file" class="mt-1 block w-full text-sm text-slate-600" required>
+                        <div class="mt-1 flex items-center gap-2">
+                            <input id="new_slide_image" name="image" type="file" data-plain-file class="block w-full text-sm text-slate-600" required>
+                            <button type="button" data-plain-file-clear style="display:none;border:0;border-radius:8px;background:#ffe4e6;color:#be123c;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">{{ __('Hapus') }}</button>
+                        </div>
                     </div>
                     <div class="md:col-span-2 flex justify-end">
                         <x-primary-button>{{ __('Tambah Slide') }}</x-primary-button>
@@ -195,7 +198,10 @@
                                 </div>
                                 <div class="md:col-span-2">
                                     <x-input-label for="slide_image_{{ $slide->id }}" :value="__('Ganti Gambar (opsional)')" />
-                                    <input id="slide_image_{{ $slide->id }}" name="image" type="file" class="mt-1 block w-full text-sm text-slate-600">
+                                    <div class="mt-1 flex items-center gap-2">
+                                        <input id="slide_image_{{ $slide->id }}" name="image" type="file" data-plain-file class="block w-full text-sm text-slate-600">
+                                        <button type="button" data-plain-file-clear style="display:none;border:0;border-radius:8px;background:#ffe4e6;color:#be123c;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">{{ __('Hapus') }}</button>
+                                    </div>
                                 </div>
                                 <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3">
                                     <div class="text-sm text-slate-500">Gambar saat ini: {{ $slide->image_path }}</div>
@@ -378,4 +384,5 @@
             </div>
         </div>
     </div>
+    <x-proof-preview-script />
 </x-app-layout>
