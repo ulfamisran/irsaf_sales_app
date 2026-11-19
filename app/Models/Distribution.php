@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 class Distribution extends Model
 {
     use HasFactory;
+    use RecordsClientDevice;
 
     public const STATUS_OPEN = 'open';
 
@@ -28,6 +30,8 @@ class Distribution extends Model
         'total_paid',
         'notes',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'distribution_date',
         'status',
         'requires_authorization',

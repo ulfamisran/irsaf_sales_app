@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsClientDevice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class UnitExchange extends Model
 {
+    use RecordsClientDevice;
+
     public const STATUS_OPEN = 'open';
 
     public const STATUS_RELEASED = 'released';
@@ -21,6 +24,8 @@ class UnitExchange extends Model
         'status',
         'sale_id',
         'user_id',
+        'client_ip',
+        'client_user_agent',
         'branch_id',
         'warehouse_id',
         'requires_authorization',
