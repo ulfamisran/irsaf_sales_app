@@ -9,6 +9,9 @@
                 @endif
             </h2>
             <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('purchases.report', $purchase) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+                    {{ __('Cetak Laporan') }}
+                </a>
                 @if ($purchase->canBeEdited())
                     <a href="{{ route('purchases.edit', $purchase) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -33,6 +36,7 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <x-authorization-actions :model="$purchase" module="purchases" :release-route="route('purchases.release', $purchase)" />
             @if (session('error'))
                 <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 flex items-center gap-3">
                     <svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -52,6 +56,9 @@
 
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
+                    <div class="mb-4">
+                        <a href="{{ route('purchases.report', $purchase) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
                             <p class="text-sm text-gray-500">{{ __('Lokasi') }}</p>
@@ -236,6 +243,13 @@
                         </div>
                     @endif
 
+                    <x-transaction-proofs
+                        :owner="$purchase"
+                        :upload-url="route('purchases.proofs.store', $purchase)"
+                        :note-required="true"
+                        :hint="__('Opsional. Maksimal 2 file gambar atau PDF. Setiap file wajib punya keterangan.')"
+                    />
+
                     @if (!$purchase->isCancelled() && request('view') === 'cancel' && auth()->user()->canModule('purchases', 'cancel'))
                         <div id="cancel-section" class="mt-6 border rounded-lg p-4 bg-red-50 border-red-200">
                             <p class="font-semibold text-slate-800">{{ __('Batalkan / Retur Pembelian') }}</p>
@@ -328,27 +342,28 @@
                         amountVal = num > 0 ? new Intl.NumberFormat('id-ID', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(num) : '';
                     }
                     const row = document.createElement('div');
-                    row.className = 'payment-row flex flex-wrap gap-2 items-end';
+                    row.className = 'payment-row';
+                    row.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
                     row.innerHTML = `
-                        <div class="flex-1 min-w-[150px]">
+                        <div>
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Sumber Dana'))}</label>
                             <select name="payments[${idx}][payment_method_id]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5">
                                 ${optionsHtml}
                             </select>
                         </div>
-                        <div class="flex-1 min-w-[150px]">
+                        <div>
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Nominal'))}</label>
                             <input type="text" name="payments[${idx}][amount]" class="payment-amount-input block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" placeholder="0" value="${amountVal}" data-rupiah="true">
                         </div>
-                        <div class="w-36">
+                        <button type="button" class="remove-payment-row px-2 py-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs">−</button>
+                        <div>
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Tanggal'))}</label>
                             <input type="date" name="payments[${idx}][payment_date]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" value="${prefill.payment_date || this.today}">
                         </div>
-                        <div class="flex-1 min-w-[120px]">
+                        <div style="grid-column:2 / -1;">
                             <label class="block text-xs font-medium text-slate-600 mb-0.5">${@json(__('Catatan'))}</label>
                             <input type="text" name="payments[${idx}][notes]" class="block w-full rounded border-gray-300 shadow-sm text-sm py-1.5" placeholder="Opsional" value="${prefill.notes || ''}">
                         </div>
-                        <button type="button" class="remove-payment-row px-2 py-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs">−</button>
                     `;
                     const container = document.getElementById('payment-rows');
                     container.appendChild(row);

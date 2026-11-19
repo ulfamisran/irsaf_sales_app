@@ -120,6 +120,11 @@
                                         @else
                                             —
                                         @endif
+                                        @if ($detail->affects_hpp === true)
+                                            <div class="text-[11px] text-emerald-700">{{ __('Mempengaruhi HPP') }}</div>
+                                        @elseif ($detail->affects_hpp === false)
+                                            <div class="text-[11px] text-slate-500">{{ __('Tidak mempengaruhi HPP') }}</div>
+                                        @endif
                                     </td>
                                     <td class="px-3 py-2 text-slate-600 font-mono text-xs whitespace-pre-line">{{ $detail->serial_numbers ?: '—' }}</td>
                                 </tr>

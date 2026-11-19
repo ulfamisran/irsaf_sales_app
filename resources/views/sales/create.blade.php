@@ -13,7 +13,7 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('sales.store') }}" id="sale-form">
+                    <form method="POST" action="{{ route('sales.store') }}" id="sale-form" enctype="multipart/form-data">
                         @csrf
                         <input type="hidden" name="confirm_reuse_sold_serials" id="confirm_reuse_sold_serials" value="{{ old('confirm_reuse_sold_serials') ? 1 : 0 }}">
                         <div class="space-y-4">
@@ -168,6 +168,11 @@
                                         </div>
                                         <div class="px-4 py-3 space-y-3">
                                             <div class="product-selector-block">
+                                                <div class="unit-lookup relative mb-3">
+                                                    <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Cari Produk / Nomor Serial') }}</label>
+                                                    <input type="text" class="unit-lookup-input block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="{{ __('Ketik SKU, produk, atau nomor serial...') }}" autocomplete="off">
+                                                    <div class="unit-lookup-results hidden mt-1 max-h-64 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg"></div>
+                                                </div>
                                                 <div class="grid grid-cols-3 gap-3 mb-3">
                                                     <div>
                                                         <label class="block text-xs font-medium text-slate-600 mb-1">{{ __('Kategori') }}</label>
@@ -302,6 +307,7 @@
                                 <x-input-error :messages="$errors->get('payments.*.payment_method_id')" class="mt-2" />
                                 <x-input-error :messages="$errors->get('payments.*.amount')" class="mt-2" />
                             </div>
+                            <x-transaction-proof-fields :require-one="true" />
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Create Sale') }}</x-primary-button>
                                 <a href="{{ route('sales.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Cancel') }}</a>
@@ -323,11 +329,13 @@
         const formDataPath = @json(route('data-by-location.form-data', [], false));
         const availableProductsPath = @json(route('sales.available-products', [], false));
         const availableSerialsPath = @json(route('sales.available-serials', [], false));
+        const searchUnitsPath = @json(route('sales.search-units', [], false));
         const checkReusableTradeInSerialsPath = @json(route('sales.check-reusable-trade-in-serials', [], false));
         const tradeInSerialSearchPath = @json(route('sales.trade-in-search-serial', [], false));
         const formDataUrl = appBaseUrl + formDataPath;
         const availableProductsUrl = appBaseUrl + availableProductsPath;
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
+        const searchUnitsUrl = appBaseUrl + searchUnitsPath;
         const checkReusableTradeInSerialsUrl = appBaseUrl + checkReusableTradeInSerialsPath;
         const tradeInSerialSearchUrl = appBaseUrl + tradeInSerialSearchPath;
         const categories = @json($categories ?? []);
@@ -339,6 +347,9 @@
                 'produk' => __('Produk'),
                 'pilihProduk' => __('Pilih Produk'),
                 'cariProduk' => __('Cari SKU, brand, series, atau warna...'),
+                'cariUnit' => __('Cari Produk / Nomor Serial'),
+                'cariUnitPlaceholder' => __('Ketik SKU, produk, atau nomor serial...'),
+                'tidakAdaUnit' => __('Tidak ada serial atau produk yang cocok.'),
                 'tidakAdaProduk' => __('Tidak ada produk yang cocok.'),
                 'nomorSerial' => __('Nomor Serial'),
                 'searchSerial' => __('Search serial...'),
@@ -388,8 +399,17 @@
                 '</div></div>';
         }
 
+        function unitLookupHtml() {
+            return '<div class="unit-lookup relative mb-3">' +
+                '<label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.cariUnit + '</label>' +
+                '<input type="text" class="unit-lookup-input block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="' + i18n.cariUnitPlaceholder + '" autocomplete="off">' +
+                '<div class="unit-lookup-results hidden mt-1 max-h-64 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg"></div>' +
+                '</div>';
+        }
+
         function productSelectorHtml(itemIndex) {
             return '<div class="product-selector-block">' +
+                unitLookupHtml() +
                 '<div class="grid grid-cols-3 gap-3 mb-3">' +
                 '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.kategori + '</label>' +
                 '<select class="category-filter block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></select></div>' +
@@ -460,6 +480,9 @@
         });
 
         document.getElementById('sale-items')?.addEventListener('click', function(e) {
+            if (e.target.closest('.unit-lookup')) {
+                e.stopPropagation();
+            }
             if (e.target.closest('.remove-item')) {
                 e.target.closest('.sale-item').remove();
                 toggleRemoveButtons();
@@ -469,6 +492,9 @@
 
         const rowSerials = new WeakMap(); // row -> full serial array
         const rowUnits = new WeakMap();   // row -> [{serial_number, harga_jual, harga_hpp}, ...]
+        const rowPendingSerial = new WeakMap();
+        const rowLookupHits = new WeakMap();
+        const rowLookupTimer = new WeakMap();
 
         function getCategoriesFromProducts() {
             const map = new Map();
@@ -584,7 +610,10 @@
             if (brandEl) brandEl.onchange = () => { updateRowSeriesFilter(row); filterRowProductOptions(row); };
             if (seriesEl) seriesEl.onchange = () => filterRowProductOptions(row);
         }
-        document.addEventListener('click', () => document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden')));
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.product-dropdown').forEach(d => d.classList.add('hidden'));
+            document.querySelectorAll('.unit-lookup-results').forEach(d => d.classList.add('hidden'));
+        });
         document.querySelectorAll('.sale-item').forEach(row => row.querySelector('.product-dropdown')?.addEventListener('click', e => e.stopPropagation()));
 
         function updateAllProductSelectors() {
@@ -734,7 +763,20 @@
                 rowUnits.set(row, enableSerials ? units : []);
                 // Enable when serial-tracked (wajib) atau ada sisa serial aksesoris lama (opsional)
                 setSerialInputsEnabled(row, enableSerials);
+                const pendingSerial = rowPendingSerial.get(row);
+                if (pendingSerial && enableSerials) {
+                    renderSerialOptions(row);
+                    const pendingOption = Array.from(serialSelect.options).find(option => option.value === pendingSerial);
+                    if (pendingOption) {
+                        Array.from(serialSelect.options).forEach(option => {
+                            option.selected = option.value === pendingSerial;
+                        });
+                        serialSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    rowPendingSerial.delete(row);
+                }
                 if (!enableSerials) {
+                    rowPendingSerial.delete(row);
                     serialSelect.innerHTML = '';
                     const qtyInput = row.querySelector('input[name*="[quantity]"]');
                     if (qtyInput) qtyInput.removeAttribute('readonly');
@@ -754,6 +796,159 @@
                 setSerialInputsEnabled(row, false);
                 console.error('Failed to load serials', e);
             }
+        }
+
+        function serialAlreadyUsed(row, serial) {
+            let used = false;
+            document.querySelectorAll('.sale-item').forEach(other => {
+                if (other === row) return;
+                const select = other.querySelector('.serial-select');
+                if (!select) return;
+                Array.from(select.selectedOptions || []).forEach(option => {
+                    if (option.value === serial) used = true;
+                });
+            });
+            return used;
+        }
+
+        function hideUnitLookup(row) {
+            row?.querySelector('.unit-lookup-results')?.classList.add('hidden');
+        }
+
+        function renderUnitLookup(row, results) {
+            const box = row.querySelector('.unit-lookup-results');
+            if (!box) return;
+            box.innerHTML = '';
+            if (!results.length) {
+                const empty = document.createElement('div');
+                empty.className = 'px-3 py-3 text-sm text-slate-500';
+                empty.textContent = i18n.tidakAdaUnit;
+                box.appendChild(empty);
+                box.classList.remove('hidden');
+                return;
+            }
+            results.forEach(hit => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'unit-lookup-option block w-full border-0 border-b border-slate-100 bg-white px-3 py-2 text-left hover:bg-indigo-50';
+                const serial = document.createElement('div');
+                serial.className = 'text-sm font-semibold text-slate-800';
+                serial.textContent = hit.serial_number || '';
+                const meta = document.createElement('div');
+                meta.className = 'text-xs text-slate-500';
+                meta.textContent = [hit.sku, hit.brand, hit.series, hit.color].filter(Boolean).join(' · ');
+                button.appendChild(serial);
+                button.appendChild(meta);
+                button.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    applySaleUnit(row, hit);
+                });
+                box.appendChild(button);
+            });
+            box.classList.remove('hidden');
+        }
+
+        async function applySaleUnit(row, hit, seq) {
+            const serial = String(hit.serial_number || '');
+            if (!serial || !hit.product_id) return;
+            if (serialAlreadyUsed(row, serial)) {
+                alert('Serial sudah dipilih di item lain.');
+                return;
+            }
+
+            const categoryEl = row.querySelector('.category-filter');
+            if (categoryEl) {
+                categoryEl.value = hit.category_id ? String(hit.category_id) : '';
+                updateRowBrandFilter(row);
+            }
+            const brandEl = row.querySelector('.brand-filter');
+            if (brandEl) {
+                brandEl.value = hit.brand || '';
+                updateRowSeriesFilter(row);
+            }
+            const seriesEl = row.querySelector('.series-filter');
+            if (seriesEl) seriesEl.value = hit.series || '';
+            filterRowProductOptions(row);
+
+            const productIdInput = row.querySelector('.product-id-input');
+            if (productIdInput) productIdInput.value = hit.product_id;
+            const label = row.querySelector('.product-select-label');
+            if (label) {
+                const name = [hit.brand, hit.series].filter(Boolean).join(' ');
+                label.textContent = [hit.sku, name].filter(Boolean).join(' - ') || i18n.pilihProduk;
+                label.classList.remove('text-slate-500');
+            }
+
+            rowPendingSerial.set(row, serial);
+            await loadSerialsForRow(row);
+            if (seq && row.dataset.lookupSeq !== String(seq)) return;
+
+            const serialSelect = row.querySelector('.serial-select');
+            const selected = Array.from(serialSelect?.selectedOptions || []).some(option => option.value === serial);
+            if (!selected) {
+                alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.');
+            }
+            const lookup = row.querySelector('.unit-lookup-input');
+            if (lookup) lookup.value = serial;
+            hideUnitLookup(row);
+        }
+
+        async function searchSaleUnits(row) {
+            const seq = Number(row.dataset.lookupSeq || 0) + 1;
+            row.dataset.lookupSeq = String(seq);
+            const input = row.querySelector('.unit-lookup-input');
+            const term = (input?.value || '').trim();
+            if (term.length < 2) {
+                rowLookupHits.set(row, []);
+                hideUnitLookup(row);
+                return;
+            }
+            const locId = getSaleLocationIdForFetch();
+            if (!locId) {
+                rowLookupHits.set(row, []);
+                renderUnitLookup(row, []);
+                const box = row.querySelector('.unit-lookup-results');
+                if (box) {
+                    box.innerHTML = '';
+                    const empty = document.createElement('div');
+                    empty.className = 'px-3 py-3 text-sm text-slate-500';
+                    empty.textContent = i18n.pilihLokasiDulu || 'Pilih cabang atau gudang terlebih dahulu';
+                    box.appendChild(empty);
+                }
+                return;
+            }
+
+            try {
+                const url = new URL(searchUnitsUrl, window.location.origin);
+                url.searchParams.set('q', term);
+                if (getSaleLocationType() === 'warehouse') {
+                    url.searchParams.set('warehouse_id', locId);
+                } else {
+                    url.searchParams.set('branch_id', locId);
+                }
+                const res = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('search-units ' + res.status);
+                const data = await res.json();
+                if (row.dataset.lookupSeq !== String(seq) || (input.value || '').trim() !== term) return;
+                const results = Array.isArray(data.results) ? data.results : [];
+                rowLookupHits.set(row, results);
+                const exact = results.find(hit => String(hit.serial_number || '').toLowerCase() === term.toLowerCase());
+                if (exact) {
+                    await applySaleUnit(row, exact, seq);
+                    return;
+                }
+                renderUnitLookup(row, results);
+            } catch (error) {
+                console.error('Gagal mencari serial', error);
+                rowLookupHits.set(row, []);
+                hideUnitLookup(row);
+            }
+        }
+
+        function scheduleUnitLookup(row) {
+            clearTimeout(rowLookupTimer.get(row));
+            rowLookupTimer.set(row, setTimeout(() => searchSaleUnits(row), 300));
         }
 
         function syncPriceFromSerials(row) {
@@ -909,11 +1104,28 @@
             if (e.target.classList.contains('serial-search')) {
                 renderSerialOptions(row);
             }
+            if (e.target.classList.contains('unit-lookup-input')) {
+                scheduleUnitLookup(row);
+            }
         });
 
         document.getElementById('sale-items')?.addEventListener('keydown', function(e) {
             const row = e.target.closest('.sale-item');
             if (!row) return;
+            if (e.target.classList.contains('unit-lookup-input')) {
+                if (e.key === 'Escape') {
+                    hideUnitLookup(row);
+                    return;
+                }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const term = (e.target.value || '').trim().toLowerCase();
+                const hits = rowLookupHits.get(row) || [];
+                const exact = hits.find(hit => String(hit.serial_number || '').toLowerCase() === term);
+                const chosen = exact || (hits.length === 1 ? hits[0] : null);
+                if (chosen) applySaleUnit(row, chosen);
+                return;
+            }
             if (!e.target.classList.contains('serial-scan')) return;
 
             if (e.key === 'Enter') {
@@ -1064,20 +1276,14 @@
             if (!paymentRows) return;
             const idx = paymentIndex++;
             const div = document.createElement('div');
-            div.className = 'flex flex-col md:flex-row gap-2 items-end';
+            div.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
             div.innerHTML = `
-                <div class="flex-1">
-                    <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                        ${paymentOptionsHtml()}
-                    </select>
-                </div>
-                <div class="w-full md:w-48">
-                    <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
-                </div>
-                <div class="w-full md:w-64">
-                    <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)">
-                </div>
+                <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                    ${paymentOptionsHtml()}
+                </select>
+                <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
                 <button type="button" class="remove-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
+                <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)" style="grid-column:1 / -1;">
             `;
             paymentRows.appendChild(div);
 

@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex flex-wrap justify-between items-center gap-3">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Penjualan') }}</h2>
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap items-center gap-3">
                 <a href="{{ route('sales.export', request()->query()) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
                     {{ __('Download Excel') }}
                 </a>
@@ -38,7 +38,7 @@
                 <form method="GET" action="{{ route('sales.index') }}" class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[200px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
-                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Invoice, pelanggan, atau user...') }}"
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Invoice, SKU, nomor serial, pelanggan, atau user...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     @if($canFilterLocation ?? false)
@@ -158,8 +158,20 @@
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         @forelse ($sales as $sale)
-                            <tr class="hover:bg-slate-50/50">
-                                <td class="px-4 py-3">{{ $sale->invoice_number }}</td>
+                            @php
+                                $needsAuthSubmit = app(\App\Services\AuthorizationService::class)->needsSubmitHighlight($sale);
+                            @endphp
+                            <tr @class([
+                                    'hover:bg-red-100/80' => $needsAuthSubmit,
+                                    'hover:bg-slate-50/50' => ! $needsAuthSubmit,
+                                ])
+                                @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-col gap-1">
+                                        <span>{{ $sale->invoice_number }}</span>
+                                        <x-authorization-list-badge :model="$sale" />
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3">
                                     @if ($sale->warehouse_id)
                                         {{ __('Gudang') }}: {{ $sale->warehouse?->name ?? '-' }}
@@ -216,25 +228,27 @@
                                 <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$sale->created_at" /></td>
                                 <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$sale->updated_at" /></td>
                                 <td class="px-4 py-3 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <x-icon-btn-view :href="route('sales.show', $sale)" />
-                                        @if ((auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat()) && $sale->status === 'released')
-                                            <a href="{{ route('sales.edit-hpp', $sale) }}"
-                                               class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
-                                               title="{{ __('Edit HPP') }}">
-                                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                                </svg>
-                                                {{ __('Edit HPP') }}
+                                    <x-row-actions>
+                                            <x-authorization-submit-action :model="$sale" module="sales" />
+                                            <a href="{{ route('sales.show', $sale) }}" style="color:#047857;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                {{ __('Lihat') }}
                                             </a>
-                                        @endif
-                                        <a href="{{ route('sales.invoice', $sale) }}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors" title="{{ __('Print Invoice') }}">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/>
-                                            </svg>
-                                            {{ __('Invoice') }}
-                                        </a>
-                                    </div>
+                                            @if ((auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat()) && $sale->status === 'released')
+                                                <a href="{{ route('sales.edit-hpp', $sale) }}" style="color:#b45309;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                    {{ __('Edit HPP') }}
+                                                </a>
+                                            @endif
+                                            <a href="{{ route('sales.report', $sale) }}" target="_blank" style="color:#1d4ed8;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h6v6m-8 4h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                                {{ __('Cetak Laporan') }}
+                                            </a>
+                                            <a href="{{ route('sales.invoice', $sale) }}" target="_blank" style="color:#7c3aed;">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/></svg>
+                                                {{ __('Invoice') }}
+                                            </a>
+                                    </x-row-actions>
                                 </td>
                             </tr>
                         @empty

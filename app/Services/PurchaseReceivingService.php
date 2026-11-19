@@ -11,6 +11,7 @@ use App\Models\Role;
 use App\Models\Stock;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -38,6 +39,16 @@ class PurchaseReceivingService
      */
     public function summarize(Purchase $purchase): array
     {
+        return $this->reportSheet($purchase)['summary'];
+    }
+
+    /**
+     * Detail pembelian dan hasil cek untuk cetak laporan.
+     *
+     * @return array{lines: list<array<string, mixed>>, summary: array<string, mixed>}
+     */
+    public function reportSheet(Purchase $purchase): array
+    {
         $purchase->loadMissing(['details.product.category', 'details.units', 'payments']);
 
         $invoiceTotal = round((float) $purchase->total, 2);
@@ -48,70 +59,17 @@ class PurchaseReceivingService
         $hasUnchecked = false;
         $hasChecked = false;
         $unitsByDetail = $this->serialUnitsByDetail($purchase);
+        $lines = [];
 
         foreach ($purchase->details as $detail) {
-            $unitPrice = round((float) $detail->unit_price, 2);
-            if ($unitPrice <= 0 && (int) $detail->quantity > 0) {
-                $unitPrice = round((float) $detail->subtotal / (int) $detail->quantity, 2);
-            }
-            $product = $detail->product;
-            $requiresSerial = $product?->category?->requires_serial ?? true;
-
-            $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
-            $units = $unitsByDetail[(int) $detail->id] ?? collect();
-            if ($requiresSerial || $serialsOnDetail !== [] || $units->isNotEmpty()) {
-
-                foreach ($units as $unit) {
-                    $hpp = $this->unitDebtAmount($unit, $unitPrice);
-                    if ($this->unitCountsAsRecognizedDebt($unit)) {
-                        // Diterima baik: utang = harga invoice, tetap dihitung saat in_stock maupun sold.
-                        $hasChecked = true;
-                        $recognized += $unitPrice;
-                    } elseif ($unit->check_status === ProductUnit::CHECK_UNCHECKED) {
-                        $unchecked += $hpp;
-                        $hasUnchecked = true;
-                    } elseif ($this->normalizedUnitStatus($unit) === ProductUnit::STATUS_RETURE) {
-                        $hasChecked = true;
-                        $returnValue += $hpp;
-                    } elseif ($this->normalizedUnitStatus($unit) === ProductUnit::STATUS_PENDING) {
-                        $hasChecked = true;
-                        $deferred += $hpp;
-                    }
-                }
-
-                // Fallback serial text without linked units (legacy / edge)
-                if ($units->isEmpty() && ! empty($detail->serial_numbers)) {
-                    $serials = preg_split('/[\r\n,]+/', (string) $detail->serial_numbers) ?: [];
-                    $serials = array_values(array_filter(array_map('trim', $serials)));
-                    // Legacy treated as fully baik via migration on units; if no units, use qty columns.
-                    $recognized += ((int) $detail->qty_baik) * $unitPrice;
-                    $returnValue += ((int) $detail->qty_reture) * $unitPrice;
-                    $deferred += ((int) $detail->qty_pending) * $unitPrice;
-                    $left = max(0, (int) $detail->quantity - (int) $detail->qty_baik - (int) $detail->qty_reture - (int) $detail->qty_pending);
-                    if ($left > 0) {
-                        $unchecked += $left * $unitPrice;
-                        $hasUnchecked = true;
-                    }
-                    if ((int) $detail->qty_baik + (int) $detail->qty_reture + (int) $detail->qty_pending > 0) {
-                        $hasChecked = true;
-                    }
-                }
-            } else {
-                $baik = (int) $detail->qty_baik;
-                $reture = (int) $detail->qty_reture;
-                $pending = (int) $detail->qty_pending;
-                $left = max(0, (int) $detail->quantity - $baik - $reture - $pending);
-                $recognized += $baik * $unitPrice;
-                $returnValue += $reture * $unitPrice;
-                $deferred += $pending * $unitPrice;
-                $unchecked += $left * $unitPrice;
-                if ($left > 0) {
-                    $hasUnchecked = true;
-                }
-                if ($baik + $reture + $pending > 0) {
-                    $hasChecked = true;
-                }
-            }
+            $line = $this->classifyDetail($detail, $unitsByDetail[(int) $detail->id] ?? collect());
+            $lines[] = $line;
+            $recognized += $line['recognized_value'];
+            $returnValue += $line['return_value'];
+            $deferred += $line['pending_value'];
+            $unchecked += $line['unchecked_value'];
+            $hasUnchecked = $hasUnchecked || $line['has_unchecked'];
+            $hasChecked = $hasChecked || $line['has_checked'];
         }
 
         $recognized = round($recognized, 2);
@@ -155,19 +113,178 @@ class PurchaseReceivingService
         }
 
         return [
-            'invoice_total' => $invoiceTotal,
-            'recognized_debt' => $recognized,
-            'return_value' => $returnValue,
-            'deferred_value' => $deferred,
-            'unchecked_value' => $unchecked,
-            'check_status' => $checkStatus,
-            'check_status_label' => $checkLabel,
-            'paid' => $paid,
-            'payment_status' => $paymentStatus,
-            'payment_status_label' => $paymentLabel,
-            'remaining_recognized' => $remainingRecognized,
-            'needs_check' => $hasUnchecked,
+            'lines' => $lines,
+            'summary' => [
+                'invoice_total' => $invoiceTotal,
+                'recognized_debt' => $recognized,
+                'return_value' => $returnValue,
+                'deferred_value' => $deferred,
+                'unchecked_value' => $unchecked,
+                'check_status' => $checkStatus,
+                'check_status_label' => $checkLabel,
+                'paid' => $paid,
+                'payment_status' => $paymentStatus,
+                'payment_status_label' => $paymentLabel,
+                'remaining_recognized' => $remainingRecognized,
+                'needs_check' => $hasUnchecked,
+            ],
         ];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, ProductUnit>  $units
+     * @return array<string, mixed>
+     */
+    private function classifyDetail(PurchaseDetail $detail, $units): array
+    {
+        $unitPrice = round((float) $detail->unit_price, 2);
+        if ($unitPrice <= 0 && (int) $detail->quantity > 0) {
+            $unitPrice = round((float) $detail->subtotal / (int) $detail->quantity, 2);
+        }
+
+        $product = $detail->product;
+        $requiresSerial = $product?->category?->requires_serial ?? true;
+        $serialsOnDetail = $this->parseDetailSerials($detail->serial_numbers);
+        $recognizedQty = 0;
+        $pendingQty = 0;
+        $returnQty = 0;
+        $uncheckedQty = 0;
+        $recognized = 0.0;
+        $returnValue = 0.0;
+        $deferred = 0.0;
+        $unchecked = 0.0;
+        $hasUnchecked = false;
+        $hasChecked = false;
+        $unitRows = [];
+
+        if ($requiresSerial || $serialsOnDetail !== [] || $units->isNotEmpty()) {
+            foreach ($units as $unit) {
+                $hpp = $this->unitDebtAmount($unit, $unitPrice);
+                if ($this->unitCountsAsRecognizedDebt($unit)) {
+                    $hasChecked = true;
+                    $recognized += $unitPrice;
+                    $recognizedQty++;
+                    $unitRows[] = $this->reportUnitRow((string) $unit->serial_number, 'diterima', __('Diterima'), $unitPrice);
+                } elseif ($unit->check_status === ProductUnit::CHECK_UNCHECKED) {
+                    $unchecked += $hpp;
+                    $uncheckedQty++;
+                    $hasUnchecked = true;
+                    $unitRows[] = $this->reportUnitRow((string) $unit->serial_number, 'unchecked', __('Belum dicek'), $hpp);
+                } elseif ($this->normalizedUnitStatus($unit) === ProductUnit::STATUS_RETURE) {
+                    $hasChecked = true;
+                    $returnValue += $hpp;
+                    $returnQty++;
+                    $unitRows[] = $this->reportUnitRow((string) $unit->serial_number, 'retur', __('Diretur'), $hpp);
+                } elseif ($this->normalizedUnitStatus($unit) === ProductUnit::STATUS_PENDING) {
+                    $hasChecked = true;
+                    $deferred += $hpp;
+                    $pendingQty++;
+                    $unitRows[] = $this->reportUnitRow((string) $unit->serial_number, 'pending', __('Dipending'), $hpp);
+                }
+            }
+
+            if ($units->isEmpty() && ! empty($detail->serial_numbers)) {
+                $recognizedQty = (int) $detail->qty_baik;
+                $returnQty = (int) $detail->qty_reture;
+                $pendingQty = (int) $detail->qty_pending;
+                $uncheckedQty = max(0, (int) $detail->quantity - $recognizedQty - $returnQty - $pendingQty);
+                $recognized += $recognizedQty * $unitPrice;
+                $returnValue += $returnQty * $unitPrice;
+                $deferred += $pendingQty * $unitPrice;
+                if ($uncheckedQty > 0) {
+                    $unchecked += $uncheckedQty * $unitPrice;
+                    $hasUnchecked = true;
+                }
+                if ($recognizedQty + $returnQty + $pendingQty > 0) {
+                    $hasChecked = true;
+                }
+                $cursor = 0;
+                $this->appendQtyRows($unitRows, $serialsOnDetail, $cursor, 'diterima', __('Diterima'), $recognizedQty, $unitPrice);
+                $this->appendQtyRows($unitRows, $serialsOnDetail, $cursor, 'retur', __('Diretur'), $returnQty, $unitPrice);
+                $this->appendQtyRows($unitRows, $serialsOnDetail, $cursor, 'pending', __('Dipending'), $pendingQty, $unitPrice);
+                $this->appendQtyRows($unitRows, $serialsOnDetail, $cursor, 'unchecked', __('Belum dicek'), $uncheckedQty, $unitPrice);
+            }
+        } else {
+            $recognizedQty = (int) $detail->qty_baik;
+            $returnQty = (int) $detail->qty_reture;
+            $pendingQty = (int) $detail->qty_pending;
+            $uncheckedQty = max(0, (int) $detail->quantity - $recognizedQty - $returnQty - $pendingQty);
+            $recognized += $recognizedQty * $unitPrice;
+            $returnValue += $returnQty * $unitPrice;
+            $deferred += $pendingQty * $unitPrice;
+            $unchecked += $uncheckedQty * $unitPrice;
+            if ($uncheckedQty > 0) {
+                $hasUnchecked = true;
+            }
+            if ($recognizedQty + $returnQty + $pendingQty > 0) {
+                $hasChecked = true;
+            }
+            $cursor = 0;
+            $this->appendQtyRows($unitRows, [], $cursor, 'diterima', __('Diterima'), $recognizedQty, $unitPrice);
+            $this->appendQtyRows($unitRows, [], $cursor, 'retur', __('Diretur'), $returnQty, $unitPrice);
+            $this->appendQtyRows($unitRows, [], $cursor, 'pending', __('Dipending'), $pendingQty, $unitPrice);
+            $this->appendQtyRows($unitRows, [], $cursor, 'unchecked', __('Belum dicek'), $uncheckedQty, $unitPrice);
+        }
+
+        $name = trim(implode(' ', array_filter([
+            $product?->sku,
+            $product?->brand,
+            $product?->series,
+        ], fn ($part) => trim((string) $part) !== '')));
+
+        return [
+            'product' => $name !== '' ? $name : '-',
+            'serials' => $serialsOnDetail === [] ? '' : implode(', ', $serialsOnDetail),
+            'quantity' => (int) $detail->quantity,
+            'unit_price' => $unitPrice,
+            'subtotal' => round((float) $detail->subtotal, 2),
+            'recognized_qty' => $recognizedQty,
+            'recognized_value' => round($recognized, 2),
+            'pending_qty' => $pendingQty,
+            'pending_value' => round($deferred, 2),
+            'return_qty' => $returnQty,
+            'return_value' => round($returnValue, 2),
+            'unchecked_qty' => $uncheckedQty,
+            'unchecked_value' => round($unchecked, 2),
+            'has_unchecked' => $hasUnchecked,
+            'has_checked' => $hasChecked,
+            'units' => $unitRows,
+        ];
+    }
+
+    /**
+     * @return array{serial: string, qty: int, status: string, label: string, amount: float}
+     */
+    private function reportUnitRow(string $serial, string $status, string $label, float $amount, int $qty = 1): array
+    {
+        return [
+            'serial' => trim($serial),
+            'qty' => $qty,
+            'status' => $status,
+            'label' => $label,
+            'amount' => round($amount, 2),
+        ];
+    }
+
+    /**
+     * @param  list<array{serial: string, qty: int, status: string, label: string, amount: float}>  $rows
+     * @param  list<string>  $serials
+     */
+    private function appendQtyRows(array &$rows, array $serials, int &$cursor, string $status, string $label, int $qty, float $unitPrice): void
+    {
+        if ($qty <= 0) {
+            return;
+        }
+        if ($serials !== []) {
+            for ($i = 0; $i < $qty; $i++) {
+                $rows[] = $this->reportUnitRow($serials[$cursor] ?? '', $status, $label, $unitPrice);
+                $cursor++;
+            }
+
+            return;
+        }
+
+        $rows[] = $this->reportUnitRow('', $status, $label, $unitPrice * $qty, $qty);
     }
 
     public function purchaseNeedsCheck(Purchase $purchase): bool
@@ -188,14 +305,8 @@ class PurchaseReceivingService
                 $inner->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
                     ->orWhereNull('jenis_pembelian')
                     ->orWhere('jenis_pembelian', '');
-            })
-            ->where(function ($inner) {
-                $inner->whereHas('details.units', fn ($units) => $units->where('check_status', ProductUnit::CHECK_UNCHECKED))
-                    ->orWhereHas('details', function ($details) {
-                        $details->whereRaw('COALESCE(quantity, 0) > COALESCE(qty_baik, 0) + COALESCE(qty_reture, 0) + COALESCE(qty_pending, 0)')
-                            ->whereDoesntHave('units');
-                    });
             });
+        $this->constrainNeedingCheck($query);
 
         if (! $user->isSuperAdminOrAdminPusat()) {
             if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
@@ -822,6 +933,22 @@ class PurchaseReceivingService
         ), static fn ($sn) => $sn !== '')));
     }
 
+    public function constrainNeedingCheck(Builder $query): void
+    {
+        $recognized = $this->recognizedDebtStatuses();
+
+        $placeholders = implode(', ', array_fill(0, count($recognized), '?'));
+        $query->where(function (Builder $inner) use ($recognized, $placeholders) {
+            $inner->whereHas('details.units', function (Builder $units) use ($recognized, $placeholders) {
+                $units->where('check_status', ProductUnit::CHECK_UNCHECKED)
+                    ->whereRaw('LOWER(TRIM(status)) NOT IN ('.$placeholders.')', $recognized);
+            })->orWhereHas('details', function (Builder $details) {
+                $details->whereRaw('COALESCE(quantity, 0) > COALESCE(qty_baik, 0) + COALESCE(qty_reture, 0) + COALESCE(qty_pending, 0)')
+                    ->whereDoesntHave('units');
+            });
+        });
+    }
+
     /**
      * Unit serial milik pembelian, termasuk yang purchase_detail_id-nya kosong
      * selama serialnya masih tercantum di baris pembelian.
@@ -859,10 +986,10 @@ class PurchaseReceivingService
                 ->when($knownIds !== [], fn ($q) => $q->whereNotIn('id', $knownIds))
                 ->where(function ($q) use ($serials, $serialKeys) {
                     $q->whereIn('serial_number', $serials);
-                    foreach ($serialKeys as $key) {
-                        $q->orWhereRaw(
-                            "UPPER(REPLACE(REPLACE(REPLACE(TRIM(serial_number), '-', ''), ' ', ''), '.', '')) = ?",
-                            [$key]
+                    if ($serialKeys !== []) {
+                        $q->orWhereIn(
+                            DB::raw("UPPER(REPLACE(REPLACE(REPLACE(TRIM(serial_number), '-', ''), ' ', ''), '.', ''))"),
+                            $serialKeys
                         );
                     }
                 })

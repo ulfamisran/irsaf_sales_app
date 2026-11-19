@@ -18,6 +18,7 @@ use App\Models\Warehouse;
 use App\Services\KasBalanceService;
 use App\Services\PurchaseReceivingService;
 use App\Services\PurchaseService;
+use App\Services\TransactionProofService;
 use App\Support\CatatRange;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -34,7 +35,8 @@ class PurchaseController extends Controller
 {
     public function __construct(
         protected PurchaseService $purchaseService,
-        protected PurchaseReceivingService $receivingService
+        protected PurchaseReceivingService $receivingService,
+        protected TransactionProofService $proofs
     ) {}
 
     public function index(Request $request): View
@@ -325,10 +327,15 @@ class PurchaseController extends Controller
         }
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
-            $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhereHas('distributor', fn ($d) => $d->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$search}%"));
+            $like = '%'.$search.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('invoice_number', 'like', $like)
+                    ->orWhereHas('distributor', fn ($d) => $d->where('name', 'like', $like))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', $like))
+                    ->orWhereHas('details.product', fn ($product) => $product->where('sku', 'like', $like))
+                    ->orWhereHas('details', fn ($detail) => $detail->where('serial_numbers', 'like', $like))
+                    ->orWhereHas('units', fn ($unit) => $unit->where('serial_number', 'like', $like))
+                    ->orWhereHas('details.units', fn ($unit) => $unit->where('serial_number', 'like', $like));
             });
         }
 
@@ -510,7 +517,7 @@ class PurchaseController extends Controller
                 ->with('error', __('Pembelian ini tidak dapat diubah (sudah ada pembayaran, distribusi, atau status tidak mengizinkan).'));
         }
 
-        $purchase->load(['details.product', 'service.customer', 'warehouse', 'branch']);
+        $purchase->load(['details.product', 'service.customer', 'warehouse', 'branch', 'proofs']);
 
         $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
         $isWarehouseUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]);
@@ -606,6 +613,8 @@ class PurchaseController extends Controller
         // Catatan: validasi saldo sumber dana sengaja dihilangkan.
         // Sistem tetap mencatat transaksi, meski saldo sumber kas bisa menjadi kurang.
 
+        $this->proofs->validateUploads($request, null, false, true);
+
         try {
             $jenisPembelian = (string) $request->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
             $serviceId = $request->filled('service_id') ? (int) $request->service_id : null;
@@ -624,8 +633,11 @@ class PurchaseController extends Controller
                 $request->invoice_number,
                 $request->boolean('confirm_reuse_sold_serials'),
                 $jenisPembelian,
-                $serviceId
+                $serviceId,
+                app(\App\Services\AuthorizationService::class)->enabled('purchases')
             );
+
+            $this->proofs->storeUploaded($request, $purchase, $user->id);
 
             AuditLog::create([
                 'user_id' => $user->id,
@@ -661,6 +673,8 @@ class PurchaseController extends Controller
                 ->with('error', __('Pembelian ini tidak dapat diubah.'));
         }
 
+        $this->proofs->validateUploads($request, $purchase, false, true);
+
         try {
             $updated = $this->purchaseService->updatePurchase(
                 $purchase,
@@ -675,6 +689,8 @@ class PurchaseController extends Controller
                 $request->boolean('confirm_reuse_sold_serials'),
             );
 
+            $this->proofs->storeUploaded($request, $updated, $user->id);
+
             AuditLog::create([
                 'user_id' => $user->id,
                 'action' => 'purchase.update',
@@ -687,6 +703,23 @@ class PurchaseController extends Controller
         }
 
         return redirect()->route('purchases.show', $purchase)->with('success', __('Pembelian berhasil diperbarui.'));
+    }
+
+    public function report(Purchase $purchase): View
+    {
+        $user = auth()->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        $purchase->load(['distributor', 'warehouse', 'branch', 'user', 'details.product.category', 'details.units', 'payments', 'proofs']);
+
+        return view('purchases.report', compact('purchase'));
     }
 
     public function show(Purchase $purchase): View
@@ -711,6 +744,7 @@ class PurchaseController extends Controller
             'payments.paymentMethod',
             'payments.user',
             'service',
+            'proofs',
         ]);
         $receivingSummary = $this->receivingService->summarize($purchase);
 
@@ -731,6 +765,9 @@ class PurchaseController extends Controller
 
         if ($purchase->isCancelled()) {
             return back()->with('error', __('Pembelian ini sudah dibatalkan.'));
+        }
+        if ($purchase->status === \App\Models\Purchase::STATUS_OPEN) {
+            return back()->with('error', __('Pembelian masih open. Release setelah otorisasi disetujui.'));
         }
 
         $paymentsInput = $request->input('payments', []);
@@ -798,6 +835,28 @@ class PurchaseController extends Controller
         return redirect()
             ->route('purchases.show', $showParams)
             ->with('success', __('Pembayaran berhasil dicatat.'));
+    }
+
+    public function release(Request $request, Purchase $purchase): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
+                abort(403, __('Unauthorized.'));
+            }
+            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
+                abort(403, __('Unauthorized.'));
+            }
+        }
+
+        try {
+            app(\App\Services\AuthorizationService::class)->assertCanRelease($purchase);
+            $this->purchaseService->releasePurchase($purchase, (int) $user->id);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('purchases.show', $purchase)->with('success', __('Pembelian berhasil di-release.'));
     }
 
     public function cancel(Request $request, Purchase $purchase): RedirectResponse

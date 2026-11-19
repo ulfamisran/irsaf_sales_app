@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Services\ModuleAccessService;
+use App\Support\UploadVault;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Console\ServeCommand;
 use Illuminate\Support\ServiceProvider;
@@ -26,8 +27,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if (PHP_OS_FAMILY === 'Windows' && ! in_array('SystemRoot', ServeCommand::$passthroughVariables, true)) {
-            ServeCommand::$passthroughVariables[] = 'SystemRoot';
+        UploadVault::protect();
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            foreach (['SystemRoot', 'TEMP', 'TMP'] as $variable) {
+                if (! in_array($variable, ServeCommand::$passthroughVariables, true)) {
+                    ServeCommand::$passthroughVariables[] = $variable;
+                }
+            }
         }
 
         Relation::morphMap([

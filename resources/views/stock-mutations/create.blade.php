@@ -22,7 +22,7 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('stock-mutations.store') }}" id="distribution-form">
+                    <form method="POST" action="{{ route('stock-mutations.store') }}" id="distribution-form" enctype="multipart/form-data">
                         @csrf
                         <div class="space-y-6">
                             {{-- Location From --}}
@@ -96,7 +96,7 @@
                             {{-- Grand Total + Payments --}}
                             <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                                 <h4 class="text-sm font-semibold text-slate-800 mb-1">{{ __('Biaya Distribusi') }}</h4>
-                                <p class="text-xs text-slate-500 mb-4">{{ __('Total biaya distribusi dari semua produk. Jika ada biaya, unit akan mengalami kenaikan HPP & Harga Jual. Wajib pakai nomor serial.') }}</p>
+                                <p class="text-xs text-slate-500 mb-4">{{ __('Total biaya distribusi dari semua produk. Di lokasi tujuan terbentuk utang pembelian internal sebesar biaya ini, dan utang itu belum lunas kecuali dibayar saat distribusi. Jika total biaya 0, dokumen utang tidak dibuat. Centang Mempengaruhi HPP bila biaya ini menambah HPP unit. Wajib pakai nomor serial jika ada biaya.') }}</p>
                                 <div class="rounded-md bg-white border border-slate-200 p-3 mb-4">
                                     <div class="text-xs text-slate-500">{{ __('Grand Total Biaya Distribusi') }}</div>
                                     <div id="grand_total_text" class="text-lg font-semibold text-emerald-700">Rp 0</div>
@@ -123,6 +123,10 @@
                                 <x-input-label for="notes" :value="__('Catatan')" />
                                 <textarea id="notes" name="notes" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" rows="2">{{ old('notes') }}</textarea>
                             </div>
+
+                            <x-transaction-proof-fields
+                                :hint="__('Opsional. Maksimal 2 file gambar atau PDF.')"
+                            />
 
                             {{-- Submit --}}
                             <div class="flex gap-4">
@@ -270,6 +274,9 @@
                     this.hppManuallySet = true;
                 }
                 if (data.biaya_distribusi_per_unit) this.biayaEl.value = data.biaya_distribusi_per_unit;
+                if (this.affectsEl && (data.product_id || data.biaya_distribusi_per_unit || data.quantity)) {
+                    this.affectsEl.checked = data.affects_hpp === true || data.affects_hpp === 1 || data.affects_hpp === '1';
+                }
 
                 this.loadProducts().then(() => {
                     if (data.product_id) {
@@ -302,6 +309,7 @@
                 this.qtyEl = this.el.querySelector('[data-field="quantity"]');
                 this.hppEl = this.el.querySelector('[data-field="hpp_per_unit"]');
                 this.biayaEl = this.el.querySelector('[data-field="biaya_distribusi_per_unit"]');
+                this.affectsEl = this.el.querySelector('[data-field="affects_hpp"]');
                 this.subtotalEl = this.el.querySelector('[data-field="item_subtotal"]');
                 this.formulaEl = this.el.querySelector('[data-field="item_formula"]');
             }
@@ -658,7 +666,10 @@
                 `<input type="number" name="items[${idx}][hpp_per_unit]" data-field="hpp_per_unit" min="0" step="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Otomatis dari serial">` +
                 `<p class="text-xs text-gray-500 mt-0.5">Kosongkan = otomatis dari unit.</p></div>` +
                 `<div><label class="block text-xs font-medium text-slate-700 mb-0.5">Biaya Distribusi/Unit (Rp)</label>` +
-                `<input type="number" name="items[${idx}][biaya_distribusi_per_unit]" data-field="biaya_distribusi_per_unit" min="0" step="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="0"></div>` +
+                `<input type="number" name="items[${idx}][biaya_distribusi_per_unit]" data-field="biaya_distribusi_per_unit" min="0" step="0.01" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="0">` +
+                `<label class="mt-2 flex items-start gap-2 text-xs text-slate-700">` +
+                `<input type="checkbox" name="items[${idx}][affects_hpp]" data-field="affects_hpp" value="1" checked class="mt-0.5 rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">` +
+                `<span>Mempengaruhi HPP<br><span class="text-slate-500">HPP unit = HPP sebelumnya + biaya distribusi.</span></span></label></div>` +
                 `<div class="flex items-end"><div class="rounded-md bg-white border border-slate-200 p-2 w-full">` +
                 `<div class="text-xs text-slate-500">Subtotal</div>` +
                 `<div data-field="item_subtotal" class="text-sm font-semibold text-emerald-700">Rp 0</div>` +

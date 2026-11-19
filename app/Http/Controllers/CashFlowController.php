@@ -81,10 +81,14 @@ class CashFlowController extends Controller
             ->whereNull('cancelled_at')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id');
-        // Exclude Reversal (transaksi cancel) - tidak dihitung & ditampilkan di pengeluaran
+        // Exclude Reversal (transaksi cancel) dan pengembalian tukar unit dari daftar pengeluaran operasional.
         $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
         if ($reversalCategoryId) {
             $query->where('expense_category_id', '!=', $reversalCategoryId);
+        }
+        $exchangeCategoryId = ExpenseCategory::where('code', 'TUKAR-UNIT')->value('id');
+        if ($exchangeCategoryId) {
+            $query->where('expense_category_id', '!=', $exchangeCategoryId);
         }
         // Exclude Pengeluaran Eksternal dari halaman Pengeluaran Dana (arus kas umum)
         $externalExpenseCategoryId = $this->resolveExternalExpenseCategoryId();
@@ -368,6 +372,10 @@ class CashFlowController extends Controller
         if ($reversalCategoryId && (int) $cashFlow->expense_category_id === (int) $reversalCategoryId) {
             abort(404);
         }
+        $exchangeCategoryId = ExpenseCategory::where('code', 'TUKAR-UNIT')->value('id');
+        if ($exchangeCategoryId && (int) $cashFlow->expense_category_id === (int) $exchangeCategoryId) {
+            abort(404);
+        }
 
         $cashFlow->load(['branch', 'warehouse', 'expenseCategory', 'paymentMethod', 'user']);
 
@@ -406,6 +414,10 @@ class CashFlowController extends Controller
 
         $reversalCategoryId = ExpenseCategory::where('code', 'REVERSAL')->value('id');
         if ($reversalCategoryId && (int) $cashFlow->expense_category_id === (int) $reversalCategoryId) {
+            abort(404);
+        }
+        $exchangeCategoryId = ExpenseCategory::where('code', 'TUKAR-UNIT')->value('id');
+        if ($exchangeCategoryId && (int) $cashFlow->expense_category_id === (int) $exchangeCategoryId) {
             abort(404);
         }
 
@@ -897,9 +909,9 @@ class CashFlowController extends Controller
 
         $query = CashFlow::with(['user', 'branch', 'warehouse', 'expenseCategory', 'incomeCategory', 'paymentMethod']);
         $applyFilters($query);
-        $query->orderBy('transaction_date')->orderBy('id');
+        $query->orderByDesc('transaction_date')->orderByDesc('id');
 
-        $cashFlowsRaw = $query->limit(1000)->get();
+        $cashFlowsRaw = $query->limit(1000)->get()->reverse()->values();
         $this->hydrateSaleCashFlowPaymentMethods($cashFlowsRaw);
         $runningBalance = 0.0;
         foreach ($cashFlowsRaw as $cf) {

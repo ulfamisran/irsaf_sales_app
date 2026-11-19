@@ -32,6 +32,7 @@ class CashFlow extends Model
     public const REFERENCE_SETOR_TUNAI = 'setor_tunai';
     public const REFERENCE_MUTASI_DANA = 'mutasi_dana';
     public const REFERENCE_PENYESUAIAN_SALDO = 'penyesuaian_saldo';
+    public const REFERENCE_UNIT_EXCHANGE = 'unit_exchange';
     public const REFERENCE_REVERSAL = 'reversal';
 
     protected $fillable = [

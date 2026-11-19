@@ -12,6 +12,8 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto space-y-8">
+        <x-authorization-dashboard-alert />
+
         <!-- Welcome Card -->
         <div class="card-modern">
             <div class="card-modern-header">

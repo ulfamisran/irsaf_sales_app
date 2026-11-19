@@ -41,7 +41,7 @@ class PurchaseReceivingController extends Controller
             return $this->indexHistory($request, $warehouses, $branches, $loc);
         }
 
-        $query = Purchase::with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units'])
+        $query = Purchase::with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments'])
             ->where('status', '!=', Purchase::STATUS_CANCELLED)
             ->where(function ($q) {
                 $q->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
@@ -52,20 +52,9 @@ class PurchaseReceivingController extends Controller
             ->orderByDesc('id');
 
         $this->applyLocationFilter($request, $query);
+        $this->receivingService->constrainNeedingCheck($query);
 
-        $all = $query->get();
-        $needingCheck = $all->filter(fn (Purchase $p) => $this->receivingService->purchaseNeedsCheck($p))->values();
-
-        $page = max(1, (int) $request->get('page', 1));
-        $perPage = 20;
-        $slice = $needingCheck->slice(($page - 1) * $perPage, $perPage)->values();
-        $paginator = new \Illuminate\Pagination\LengthAwarePaginator(
-            $slice,
-            $needingCheck->count(),
-            $perPage,
-            $page,
-            ['path' => $request->url(), 'query' => $request->query()]
-        );
+        $paginator = $query->paginate(20)->withQueryString();
 
         $rows = $paginator->getCollection()->map(function (Purchase $p) {
             return (object) [
@@ -149,6 +138,9 @@ class PurchaseReceivingController extends Controller
     public function show(Request $request, Purchase $purchase): View
     {
         $this->authorizePurchaseAccess($request, $purchase);
+        if ($purchase->status === \App\Models\Purchase::STATUS_OPEN) {
+            abort(403, __('Pengecekan pembelian dibuka setelah pembelian di-release.'));
+        }
         $purchase->load(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments']);
 
         $summary = $this->receivingService->summarize($purchase);

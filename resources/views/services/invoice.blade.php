@@ -1,3 +1,4 @@
+@unless(!empty($embedded))
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -5,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ __('Invoice') }} {{ $service->invoice_number }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+@endunless
     <style>
         @media print {
             .no-print { display: none !important; }
@@ -23,7 +25,9 @@
             --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
 
+        @if(empty($embedded))
         @page { size: A4 landscape; margin: 14mm 12mm; }
+        @endif
 
         body { color: var(--ink); }
 
@@ -34,7 +38,7 @@
             padding: 0;
             font-family: var(--print-font);
         }
-        body, .inv-page, .inv-page *{
+        .inv-page, .inv-page *{
             font-family: var(--print-font) !important;
             font-weight: var(--font-weight-base);
         }
@@ -270,8 +274,10 @@
             font-weight: 800;
         }
     </style>
+@unless(!empty($embedded))
 </head>
 <body class="bg-slate-100">
+@endunless
     @php
         $grandTotal = (float) $service->total_service_price;
         $totalPaid = (float) ($service->total_paid ?? $service->payments?->sum('amount') ?? 0);
@@ -307,10 +313,12 @@
         }
     @endphp
 
+    @unless(!empty($embedded))
     <div class="no-print max-w-4xl mx-auto px-4 py-4 flex justify-between">
         <a href="{{ route('services.show', $service) }}" class="px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300">{{ __('Kembali') }}</a>
         <button onclick="window.print()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">{{ __('Print') }}</button>
     </div>
+    @endunless
 
     <div class="inv-page px-4 pb-8">
         <div class="inv-card">
@@ -463,5 +471,16 @@
             </div>
         </div>
     </div>
+@unless(!empty($embedded))
 </body>
 </html>
+@endunless
+@if (!empty($forReport))
+<style>
+    :root { --font-scale: 2.2 !important; }
+    .inv-card { border: none !important; border-radius: 0 !important; padding: 0 !important; box-shadow: none !important; }
+    @media print {
+        .inv-page { width: 297mm !important; max-width: 297mm !important; }
+    }
+</style>
+@endif

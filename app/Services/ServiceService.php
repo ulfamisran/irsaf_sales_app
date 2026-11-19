@@ -155,6 +155,9 @@ class ServiceService
             }
 
             if ($targetStatus === Service::STATUS_COMPLETED) {
+                if ($service->requires_authorization) {
+                    app(AuthorizationService::class)->assertSparepartsReady($service);
+                }
                 $this->consumeLinkedSparepartOnRelease($service, $userId, $entryDate);
             }
 
@@ -182,6 +185,19 @@ class ServiceService
     ): Service {
         if ($service->status !== Service::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Service sudah completed atau dibatalkan.'));
+        }
+
+        $authorization = app(AuthorizationService::class);
+        if ($authorization->blocksMutation($service)) {
+            throw new InvalidArgumentException(__('Service sedang menunggu otorisasi.'));
+        }
+        // Simpan data lengkap (termasuk pembayaran) boleh setelah otorisasi open.
+        // Release ke completed hanya setelah otorisasi kedua.
+        if ($markAsReleased) {
+            $authorization->assertCanRelease($service);
+            if ($service->requires_authorization) {
+                $authorization->assertSparepartsReady($service);
+            }
         }
 
         if ($markAsReleased || ! empty($payments)) {
@@ -399,6 +415,12 @@ class ServiceService
     ): Service {
         if ($service->status !== Service::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Service sudah completed atau dibatalkan.'));
+        }
+
+        $authorization = app(AuthorizationService::class);
+        $authorization->assertCanRelease($service);
+        if ($service->requires_authorization) {
+            $authorization->assertSparepartsReady($service);
         }
 
         $updates = [

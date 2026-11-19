@@ -7,10 +7,15 @@
                 <p class="text-sm text-slate-600 mt-1">{{ $rental->invoice_number }}</p>
             </div>
             <div class="flex gap-2">
+                @if (! $rental->requires_authorization || $rental->status === \App\Models\Rental::STATUS_RELEASED)
                 <a href="{{ route('rentals.invoice', $rental) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                     {{ __('Invoice') }}
                 </a>
-                @if (auth()->user()?->canModule('rentals', 'update') && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
+                @endif
+                <a href="{{ route('rentals.report', $rental) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+                    {{ __('Cetak Laporan') }}
+                </a>
+                @if (auth()->user()?->canModule('rentals', 'update') && ! $rental->effects_pending && ! app(\App\Services\AuthorizationService::class)->blocksMutation($rental) && in_array($rental->status, [\App\Models\Rental::STATUS_OPEN, \App\Models\Rental::STATUS_RELEASED], true))
                     @if ($rental->status === \App\Models\Rental::STATUS_OPEN)
                         <a href="{{ route('rentals.edit', $rental) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
                             {{ __('Edit') }}
@@ -28,12 +33,17 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
+        <x-authorization-actions :model="$rental" module="rentals" :release-route="route('rentals.release', $rental)" />
         @if (session('success'))
             <div class="mb-6 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-800">{{ session('success') }}</div>
         @endif
         @if (session('error'))
             <div class="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-800">{{ session('error') }}</div>
         @endif
+
+        <div class="mb-4">
+            <a href="{{ route('rentals.report', $rental) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+        </div>
 
         @if ($rental->status === \App\Models\Rental::STATUS_CANCEL)
             <div class="card-modern overflow-hidden mb-6">
@@ -174,19 +184,37 @@
                         @endforelse
                     </tbody>
                 </table>
+                <div class="mt-4">
+                    <x-transaction-proof-fields
+                        :require-one="true"
+                        :slots="$rental->status === 'open' ? max(0, 2 - $rental->proofs->count()) : 0"
+                        :existing="$rental->proofs"
+                        :owner="$rental"
+                        :upload-url="$rental->status === 'open' ? route('rentals.proofs.store', $rental) : null"
+                        :can-delete="$rental->status === 'open'"
+                    />
+                </div>
             </div>
         </div>
 
-        @if ($rental->status === \App\Models\Rental::STATUS_OPEN)
+        @if ($rental->status === \App\Models\Rental::STATUS_OPEN && ! $rental->effects_pending && ! app(\App\Services\AuthorizationService::class)->blocksMutation($rental))
             @php
+                $authRental = app(\App\Services\AuthorizationService::class);
                 $rentalTotal = (float) $rental->total;
                 $rentalPaid = (float) $rental->total_paid;
                 if ($rentalPaid <= 0 && $rental->relationLoaded('payments')) {
                     $rentalPaid = (float) $rental->payments->sum('amount');
                 }
                 $rentalRemaining = max(0, $rentalTotal - $rentalPaid);
+                $needsReleaseAuth = $rental->requires_authorization && $authRental->rentalNeedsReleaseAuthorization($rental);
+                $readyToFinalize = ! $rental->requires_authorization || $authRental->rentalReadyToRelease($rental);
+                $canRecordReturn = $rental->return_status !== \App\Models\Rental::RETURN_SUDAH
+                    && (! $rental->requires_authorization || $needsReleaseAuth || $readyToFinalize);
+                $canRecordPaymentOnly = $rentalRemaining > 0.02
+                    && $rental->return_status !== \App\Models\Rental::RETURN_SUDAH
+                    && $canRecordReturn;
             @endphp
-            <div class="card-modern overflow-hidden mb-6">
+            <div class="card-modern overflow-hidden mb-6" id="pelunasan-pengembalian">
                 <div class="p-6">
                     <h3 class="font-semibold text-slate-800 mb-3">{{ __('Pelunasan & Pengembalian') }}</h3>
                     <div class="rounded-lg border {{ $rentalRemaining > 0 ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50' }} p-3 mb-3">
@@ -196,15 +224,39 @@
                             {{ __('Sisa pembayaran') }}: {{ number_format($rentalRemaining, 0, ',', '.') }}
                         </p>
                     </div>
-                    <p class="text-xs text-amber-700 mb-3">{{ __('Wajib pelunasan sebelum pengembalian. Isi pembayaran jika belum lunas.') }}</p>
-                    <form method="POST" action="{{ route('rentals.mark-returned', $rental) }}" id="rental-return-form">
-                        @csrf
-                        <div class="space-y-3" id="payment-rows"></div>
-                        <button type="button" id="add-payment" class="inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
-                        <div class="mt-4">
-                            <x-primary-button>{{ __('Simpan & Tandai Kembali') }}</x-primary-button>
+
+                    @if ($rental->return_status === \App\Models\Rental::RETURN_SUDAH)
+                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 mb-3">
+                            {{ __('Pengembalian unit sudah dicatat.') }}
+                            @if ($needsReleaseAuth)
+                                {{ __('Ajukan otorisasi release di kotak atas, lalu tekan Release untuk mengubah status.') }}
+                            @elseif ($readyToFinalize && $rental->requires_authorization)
+                                {{ __('Tekan Release di kotak atas untuk mengubah status sewa.') }}
+                            @endif
                         </div>
-                    </form>
+                    @elseif ($canRecordReturn)
+                        @if ($needsReleaseAuth)
+                            <div class="mb-3 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+                                {{ __('Catat pelunasan (jika belum lunas) dan pengembalian unit di sini. Status dokumen tetap Open sampai otorisasi release disetujui.') }}
+                            </div>
+                        @endif
+                        <p class="text-xs text-amber-700 mb-3">{{ __('Wajib pelunasan dan minimal 1 bukti transaksi sebelum pengembalian. Isi pembayaran jika belum lunas.') }}</p>
+                        <form method="POST" action="{{ route('rentals.mark-returned', $rental) }}" id="rental-return-form">
+                            @csrf
+                            <div class="space-y-3" id="payment-rows"></div>
+                            @if ($rentalRemaining > 0.02)
+                                <button type="button" id="add-payment" class="inline-flex items-center px-3 py-2 rounded-md bg-white border border-slate-200 text-sm hover:bg-slate-100">+ {{ __('Tambah') }}</button>
+                            @endif
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                @if ($canRecordPaymentOnly)
+                                    <button type="submit" formaction="{{ route('rentals.add-payment', $rental) }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm font-semibold hover:bg-slate-50">
+                                        {{ __('Simpan Pelunasan Saja') }}
+                                    </button>
+                                @endif
+                                <x-primary-button>{{ $rental->requires_authorization ? __('Simpan Pelunasan & Pengembalian Unit') : __('Simpan & Tandai Kembali (Release)') }}</x-primary-button>
+                            </div>
+                        </form>
+                    @endif
                 </div>
             </div>
         @endif
@@ -247,20 +299,14 @@
             if (!paymentRows) return;
             const idx = paymentIndex++;
             const div = document.createElement('div');
-            div.className = 'flex flex-col md:flex-row gap-2 items-end';
+            div.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
             div.innerHTML = `
-                <div class="flex-1">
-                    <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                        ${paymentOptionsHtml()}
-                    </select>
-                </div>
-                <div class="w-full md:w-48">
-                    <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
-                </div>
-                <div class="w-full md:w-64">
-                    <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)">
-                </div>
+                <select name="payments[${idx}][payment_method_id]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                    ${paymentOptionsHtml()}
+                </select>
+                <input type="text" name="payments[${idx}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Nominal" required>
                 <button type="button" class="remove-payment px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">-</button>
+                <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)" style="grid-column:1 / -1;">
             `;
             paymentRows.appendChild(div);
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
@@ -268,7 +314,7 @@
         }
 
         document.getElementById('add-payment')?.addEventListener('click', addPaymentRow);
-        if (paymentRows) {
+        if (paymentRows && document.getElementById('add-payment')) {
             addPaymentRow();
         }
     </script>

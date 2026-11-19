@@ -1,3 +1,4 @@
+@unless(!empty($embedded))
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -6,6 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ __('Invoice') }} {{ $sale->invoice_number }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+@endunless
     <style>
         @media print {
             .no-print { display: none !important; }
@@ -25,7 +27,9 @@
             --print-font: "Arial", "Helvetica Neue", "Segoe UI", sans-serif;
         }
         /* Continuous paper landscape: 11.5in x 9.5in — margin cukup besar agar tidak terpotong printer */
+        @if(empty($embedded))
         @page { size: 11.5in 9.5in; margin: 14mm 12mm; }
+        @endif
         body { color: var(--ink); }
         .inv-page{
             width: 100%;
@@ -35,7 +39,7 @@
             padding: 0;
             font-family: var(--print-font);
         }
-        body, .inv-page, .inv-page *{
+        .inv-page, .inv-page *{
             font-family: var(--print-font) !important;
             font-weight: var(--font-weight-base);
         }
@@ -325,12 +329,26 @@
         }
         /* keep name alignment following column */
     </style>
+@unless(!empty($embedded))
 </head>
 <body class="bg-slate-100">
+    <div class="no-print max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <a href="{{ route('sales.show', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300">
+            {{ __('Kembali') }}
+        </a>
+        <button onclick="window.print()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+            {{ __('Print') }}
+        </button>
+    </div>
+@endunless
     @php
         $sub = $sale->saleDetails->sum(fn($d) => (float) $d->quantity * (float) $d->price);
         $discount = (float) ($sale->discount_amount ?? 0);
         $adjustment = (float) ($sale->tax_amount ?? 0); // tampil sebagai "Penyesuaian" mengikuti format
+        $exchangeDiff = $sale->releasedUnitExchangeDifference();
+        $releasedExchanges = ($sale->relationLoaded('unitExchanges') ? $sale->unitExchanges : collect())
+            ->filter(fn ($exchange) => $exchange->status === \App\Models\UnitExchange::STATUS_RELEASED)
+            ->values();
         $grandTotal = (float) ($sale->total ?? 0);
 
         $totalPaid = (float) ($sale->total_paid ?? ($sale->payments?->sum(fn($p) => (float) $p->amount) ?? 0) + ($sale->tradeIns?->sum('trade_in_value') ?? 0));
@@ -375,15 +393,6 @@
             $logoUrl = asset('images/invoice-logo.png');
         }
     @endphp
-    <div class="no-print max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-        <a href="{{ route('sales.show', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300">
-            {{ __('Kembali') }}
-        </a>
-        <button onclick="window.print()" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-            {{ __('Print') }}
-        </button>
-    </div>
-
     <div class="inv-page px-4 pb-8">
         <div class="inv-card">
             <div class="inv-top">
@@ -507,6 +516,12 @@
                             <td class="lbl">Penyesuaian</td>
                             <td class="val">Rp {{ number_format($adjustment, 0, ',', '.') }}</td>
                         </tr>
+                        @if (abs($exchangeDiff) >= 0.01)
+                            <tr>
+                                <td class="lbl">Perubahan tukar unit</td>
+                                <td class="val">Rp {{ number_format($exchangeDiff, 0, ',', '.') }}</td>
+                            </tr>
+                        @endif
                         <tr>
                             <td class="lbl"><strong>Total</strong></td>
                             <td class="val"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
@@ -590,6 +605,21 @@
                                 <td class="num">Rp {{ number_format((float) $ti->trade_in_value, 0, ',', '.') }}</td>
                             </tr>
                         @endforeach
+                        @foreach ($releasedExchanges as $exchange)
+                            @foreach ($exchange->cashFlows as $flow)
+                                @php
+                                    $signed = $flow->type === \App\Models\CashFlow::TYPE_OUT ? -1 * (float) $flow->amount : (float) $flow->amount;
+                                    $method = $flow->paymentMethod ? strtoupper($flow->paymentMethod->display_label) : '-';
+                                    $flowDate = $flow->transaction_date ?? $exchange->exchange_date ?? $payDate;
+                                @endphp
+                                <tr>
+                                    <td class="center">{{ ++$payIdx }}</td>
+                                    <td class="center">{{ $flowDate->translatedFormat('d F Y') }}</td>
+                                    <td>TUKAR UNIT {{ $exchange->exchange_number }} ({{ $method }})</td>
+                                    <td class="num">Rp {{ number_format($signed, 0, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        @endforeach
                         @if ($payIdx === 0)
                             <tr>
                                 <td colspan="4" class="center">-</td>
@@ -618,6 +648,18 @@
             </div>
         </div>
     </div>
+@unless(!empty($embedded))
 </body>
 </html>
+@endunless
+@if (!empty($forReport))
+<style>
+    :root { --font-scale: 2.2 !important; }
+    .inv-card { border: none !important; border-radius: 0 !important; padding: 0 !important; box-shadow: none !important; }
+    .inv-header-duplicate { display: none !important; page-break-before: auto !important; break-before: auto !important; }
+    @media print {
+        .inv-page { width: 11.5in !important; max-width: 11.5in !important; }
+    }
+</style>
+@endif
 

@@ -173,8 +173,8 @@
                 @endif
 
                 <!-- Penjualan -->
-                @if ($see('sales') || $see('services') || $see('rentals'))
-                <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*') ? 'true' : 'false' }} }" class="pt-2">
+                @if ($see('sales') || $see('services') || $see('rentals') || $see('stock-mutations'))
+                <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*', 'print-reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -192,7 +192,8 @@
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         @if ($see('sales'))
-                            <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*')">Penjualan</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*') && ! request()->routeIs('sales.unit-exchanges.*')">Penjualan</x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('sales.unit-exchanges.index')" :active="request()->routeIs('sales.unit-exchanges.*')">Tukar Unit</x-sidebar-nav-link></li>
                         @endif
                         @if ($see('services'))
                             <li><x-sidebar-nav-link :href="route('services.index')" :active="request()->routeIs('services.*')">Service Laptop</x-sidebar-nav-link></li>
@@ -200,40 +201,51 @@
                         @if ($see('rentals'))
                             <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                         @endif
+                        @if ($see('sales') || $see('purchases') || $see('services') || $see('rentals') || $see('stock-mutations'))
+                            <li><x-sidebar-nav-link :href="route('print-reports.index')" :active="request()->routeIs('print-reports.*')">Cetak Laporan</x-sidebar-nav-link></li>
+                        @endif
                     </ul>
                 </li>
                 @endif
 
-                @if ($see('verification') && \Illuminate\Support\Facades\Route::has('verification.index'))
-                @php
-                    $verificationPending = $user
-                        ? app(\App\Services\TransactionVerificationService::class)->pendingTotal($user)
-                        : 0;
-                @endphp
-                <li x-data="{ open: {{ request()->routeIs('verification.*') ? 'true' : 'false' }} }" class="pt-2">
-                    <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
-                        <span class="flex items-center gap-3">
-                            <span class="menu-icon-orange flex items-center justify-center w-8 h-8 rounded-lg transition-colors">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
-                                    <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                @if (\Illuminate\Support\Facades\Route::has('authorizations.index') && \Illuminate\Support\Facades\Schema::hasTable('authorization_requests'))
+                    @php
+                        $canAuthorize = $user && app(\App\Services\AuthorizationService::class)->canOpenQueue($user);
+                        $authorizationPending = $canAuthorize
+                            ? app(\App\Services\AuthorizationService::class)->pendingFor($user)->count()
+                            : 0;
+                    @endphp
+                    @if ($canAuthorize)
+                    <li x-data="{ open: {{ request()->routeIs('authorizations.*') ? 'true' : 'false' }} }" class="pt-2">
+                        <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
+                            <span class="flex items-center gap-3">
+                                <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1a1 1 0 01.894.553l1.618 3.236 3.57.519a1 1 0 01.554 1.706l-2.584 2.52.61 3.555a1 1 0 01-1.451 1.054L10 12.347l-3.211 1.796a1 1 0 01-1.451-1.054l.61-3.555-2.584-2.52a1 1 0 01.554-1.706l3.57-.519L9.106 1.553A1 1 0 0110 1z" clip-rule="evenodd"/></svg>
+                                </span>
+                                Otorisasi
+                            </span>
+                            <span class="flex items-center gap-2">
+                                @if ($authorizationPending > 0)
+                                    <span style="min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:18px; text-align:center;">{{ $authorizationPending > 99 ? '99+' : $authorizationPending }}</span>
+                                @endif
+                                <svg class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': open }" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
                                 </svg>
                             </span>
-                            Verifikasi
-                        </span>
-                        <svg class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': open }" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
-                        </svg>
-                    </button>
-                    <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
-                        <li><x-sidebar-nav-link :href="route('verification.index')" :active="request()->routeIs('verification.*')">
-                            <span class="flex-1">Verifikasi</span>
-                            @if ($verificationPending > 0)
-                                <span style="min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:18px; text-align:center;">{{ $verificationPending > 99 ? '99+' : $verificationPending }}</span>
-                            @endif
-                        </x-sidebar-nav-link></li>
-                    </ul>
-                </li>
+                        </button>
+                        <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
+                            <li><x-sidebar-nav-link :href="route('authorizations.index', ['tab' => 'siap'])" :active="request()->routeIs('authorizations.*') && request('tab', 'siap') === 'siap'">
+                                <span class="flex-1">{{ __('Data Siap Otorisasi') }}</span>
+                                @if ($authorizationPending > 0)
+                                    <span style="min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:10px; font-weight:700; line-height:18px; text-align:center;">{{ $authorizationPending > 99 ? '99+' : $authorizationPending }}</span>
+                                @endif
+                            </x-sidebar-nav-link></li>
+                            <li><x-sidebar-nav-link :href="route('authorizations.index', ['tab' => 'riwayat'])" :active="request()->routeIs('authorizations.*') && request('tab') === 'riwayat'">
+                                <span class="flex-1">{{ __('Riwayat Otorisasi') }}</span>
+                            </x-sidebar-nav-link></li>
+                        </ul>
+                    </li>
+                    @endif
                 @endif
 
                 <!-- Kas (Pengeluaran & Pemasukan Lainnya) -->
@@ -340,7 +352,7 @@
 
                 <!-- Pengaturan -->
                 @if ($canManageAccess || $see('landing-page') || $see('users'))
-                <li x-data="{ open: {{ request()->routeIs('landing-page.*', 'users.*', 'role-access.*', 'verification-cutoff.*') ? 'true' : 'false' }} }" class="pt-2">
+                <li x-data="{ open: {{ request()->routeIs('landing-page.*', 'users.*', 'role-access.*', 'activity-logs.*', 'authorization-settings.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pengaturan</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
                         <span class="flex items-center gap-3">
@@ -357,11 +369,14 @@
                         </svg>
                     </button>
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
+                        @if ($user?->isStrictSuperAdmin() && \Illuminate\Support\Facades\Route::has('activity-logs.index'))
+                            <li><x-sidebar-nav-link :href="route('activity-logs.index')" :active="request()->routeIs('activity-logs.*')">Log Aktivitas</x-sidebar-nav-link></li>
+                        @endif
                         @if ($canManageAccess && \Illuminate\Support\Facades\Route::has('role-access.index'))
                             <li><x-sidebar-nav-link :href="route('role-access.index')" :active="request()->routeIs('role-access.*')">Akses Modul</x-sidebar-nav-link></li>
                         @endif
-                        @if ($canManageAccess && \Illuminate\Support\Facades\Route::has('verification-cutoff.edit'))
-                            <li><x-sidebar-nav-link :href="route('verification-cutoff.edit')" :active="request()->routeIs('verification-cutoff.*')">Cut-off Verifikasi</x-sidebar-nav-link></li>
+                        @if ($canManageAccess && \Illuminate\Support\Facades\Route::has('authorization-settings.edit'))
+                            <li><x-sidebar-nav-link :href="route('authorization-settings.edit')" :active="request()->routeIs('authorization-settings.*')">Konfigurasi Otorisasi</x-sidebar-nav-link></li>
                         @endif
                         @if ($see('landing-page'))
                             <li><x-sidebar-nav-link :href="route('landing-page.manage')" :active="request()->routeIs('landing-page.*')">Kelola Landing Page</x-sidebar-nav-link></li>

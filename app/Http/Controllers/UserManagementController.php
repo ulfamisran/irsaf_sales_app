@@ -96,6 +96,9 @@ class UserManagementController extends Controller
             $validated['branch_id'] = null;
         }
 
+        $roleChanged = (int) $user->roles()->value('roles.id') !== (int) $validated['role_id'];
+        $request->attributes->set('user_role_changed', $roleChanged);
+
         $user->update([
             'name' => $validated['name'],
             'email' => Str::lower($validated['email']),

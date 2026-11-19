@@ -21,9 +21,9 @@
             <!-- Main content area -->
             <div class="flex-1 flex flex-col min-w-0 bg-gradient-to-br from-slate-50 via-white to-indigo-50/30">
                 <!-- Top bar / Header -->
-                <header class="sticky top-0 z-40 flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm">
+                <header class="sticky top-0 z-40 flex items-center gap-4 sm:gap-6 h-16 px-4 sm:px-6 lg:px-8 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm" style="overflow: visible;">
                     <!-- Mobile menu button -->
-                    <button @click="sidebarOpen = !sidebarOpen" type="button" class="inline-flex items-center justify-center p-2.5 rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-100 lg:hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200">
+                    <button @click="sidebarOpen = !sidebarOpen" type="button" class="inline-flex items-center justify-center p-2.5 rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-100 lg:hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 shrink-0">
                         <span class="sr-only">Buka menu</span>
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -31,16 +31,17 @@
                     </button>
 
                     <!-- Page heading -->
-                    <div class="flex-1 flex items-center min-w-0 w-full">
+                    <div class="flex-1 flex items-center min-w-0">
                         @isset($header)
-                            <div class="px-4 sm:px-0 w-full">
+                            <div class="w-full min-w-0 pr-2">
                                 {{ $header }}
                             </div>
                         @endisset
                     </div>
 
-                    <!-- User dropdown -->
-                    <div class="flex items-center gap-3">
+                    <!-- Notifications + user -->
+                    <div class="flex items-center gap-3 sm:gap-4 shrink-0 pl-1" style="overflow: visible;">
+                        <x-authorization-bell />
                         <x-dropdown align="right" width="48">
                             <x-slot name="trigger">
                                 <button class="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200">
@@ -94,8 +95,31 @@
             </div>
         </div>
 
+        @php
+            $authNotifyUser = auth()->user();
+            $authNotifyCan = $authNotifyUser
+                && \Illuminate\Support\Facades\Route::has('authorizations.index')
+                && \Illuminate\Support\Facades\Schema::hasTable('authorization_requests')
+                && app(\App\Services\AuthorizationService::class)->canOpenQueue($authNotifyUser);
+            $webPush = app(\App\Services\WebPushService::class);
+        @endphp
+        @if ($authNotifyCan)
+            <script id="authorization-notify-config" type="application/json">
+                {!! json_encode([
+                    'canNotify' => true,
+                    'enabled' => $webPush->enabled(),
+                    'vapidPublicKey' => $webPush->publicKey(),
+                    'feedUrl' => route('authorizations.pending-feed'),
+                    'storeUrl' => route('push.subscriptions.store'),
+                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!}
+            </script>
+        @endif
+
         <!-- SweetAlert2 for beautiful alerts -->
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        @if ($authNotifyCan)
+            <script src="{{ asset('js/authorization-notify.js') }}?v=1" defer></script>
+        @endif
         @stack('scripts')
     </body>
 </html>

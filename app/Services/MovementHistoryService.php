@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\DamagedGood;
+use App\Models\DeletedProductUnit;
 use App\Models\IncomingGood;
 use App\Models\Product;
 use App\Models\ProductUnit;
@@ -45,15 +46,29 @@ class MovementHistoryService
         $this->addDamageForSerial($events, $serial, $unit);
         $this->addReceivingForUnit($events, $unit);
         $this->addChangeLogs($events, $unit);
+        $deleted = DeletedProductUnit::query()
+            ->with(['product', 'user'])
+            ->whereRaw('LOWER(serial_number) = ?', [mb_strtolower($serial)])
+            ->orderBy('deleted_at')
+            ->get();
+        $this->addDeletedUnits($events, $deleted);
         if ($unit && ! $this->hasEntryDocument($events)) {
             $this->addUnitRecorded($events, $unit);
         }
 
-        $product = $unit?->product;
+        $product = $unit?->product ?? $deleted->last()?->product;
         $title = $serial;
-        $subtitle = $product
-            ? trim(($product->sku ?? '').' · '.trim(($product->brand ?? '').' '.($product->series ?? '')))
-            : __('Nomor serial tidak tersimpan sebagai unit, riwayat diambil dari transaksi yang menyebut serial ini.');
+        if ($product) {
+            $subtitle = trim(($product->sku ?? '').' · '.trim(($product->brand ?? '').' '.($product->series ?? '')));
+        } elseif ($deleted->isNotEmpty()) {
+            $last = $deleted->last();
+            $subtitle = trim((string) $last->sku.($last->product_label ? ' · '.$last->product_label : ''));
+        } else {
+            $subtitle = __('Nomor serial tidak tersimpan sebagai unit, riwayat diambil dari transaksi yang menyebut serial ini.');
+        }
+        if (! $unit && $deleted->isNotEmpty()) {
+            $subtitle = trim($subtitle.' · '.__('Nomor serial sudah dihapus dari unit.'));
+        }
 
         return [
             'found' => $unit !== null || $events !== [],
@@ -88,6 +103,11 @@ class MovementHistoryService
         $this->addServiceMaterialsForProduct($events, (int) $product->id);
         $this->addTradeInsForProduct($events, (int) $product->id);
         $this->addDamageForProduct($events, (int) $product->id);
+        $this->addDeletedUnits($events, DeletedProductUnit::query()
+            ->with('user')
+            ->where('product_id', $product->id)
+            ->orderBy('deleted_at')
+            ->get());
 
         return [
             'found' => true,
@@ -154,6 +174,10 @@ class MovementHistoryService
         $place = $this->locationName($purchase->warehouse_id ? 'warehouse' : 'branch', (int) ($purchase->warehouse_id ?: $purchase->branch_id));
         if ($place) {
             $detail .= ' · '.$place;
+        }
+
+        if ($purchase->isDistribusiUnit() || (int) $purchase->stock_mutation_id > 0) {
+            return;
         }
 
         $this->push($events, $purchase->purchase_date, 10, [
@@ -273,6 +297,14 @@ class MovementHistoryService
         } else {
             $detail .= ' · '.__('Qty :qty', ['qty' => (int) $row->quantity]);
         }
+        $cost = round((float) $row->biaya_distribusi_per_unit, 2);
+        if ($cost > 0) {
+            $detail .= ' · '.__('Biaya').' Rp '.number_format($cost, 0, ',', '.');
+        }
+        $hpp = $row->hppChangeLabel($serial);
+        if ($hpp !== '') {
+            $detail .= ' · '.$hpp;
+        }
         $this->push($events, $row->mutation_date, 30, [
             'type' => __('Distribusi'),
             'document' => (string) ($row->invoice_number ?: 'DS-'.$row->id),
@@ -283,7 +315,7 @@ class MovementHistoryService
             'location_key' => $this->placeKeyFromType($row->from_location_type, (int) $row->from_location_id),
             'to_location_key' => $this->placeKeyFromType($row->to_location_type, (int) $row->to_location_id),
             'recorded_at' => $row->created_at,
-            'url' => $row->distribution_id ? $this->url('stock-mutations.invoice', $row->distribution_id) : null,
+            'url' => $row->distribution_id ? $this->url('stock-mutations.show', $row->distribution_id) : null,
         ]);
     }
 
@@ -520,7 +552,28 @@ class MovementHistoryService
 
     /**
      * @param  list<array<string, mixed>>  $events
+     * @param  iterable<int, DeletedProductUnit>  $rows
      */
+    private function addDeletedUnits(array &$events, iterable $rows): void
+    {
+        foreach ($rows as $row) {
+            $place = $this->locationName($row->location_type, (int) $row->location_id);
+            $deletedOn = $row->deleted_at?->copy()->timezone('Asia/Makassar')->toDateString();
+            $detail = trim((string) $row->serial_number.($place ? ' · '.$place : '').' · '.(string) $row->reason);
+            $this->push($events, $deletedOn, 90, [
+                'type' => __('Hapus Nomor Serial'),
+                'document' => 'HS-'.$row->id,
+                'actor' => $row->user?->name,
+                'detail' => $detail,
+                'status' => __('Dihapus'),
+                'direction' => 'out',
+                'location_key' => $this->placeKeyFromType($row->location_type, (int) $row->location_id),
+                'recorded_at' => $row->deleted_at,
+                'url' => null,
+            ]);
+        }
+    }
+
     private function addUnitRecorded(array &$events, ProductUnit $unit): void
     {
         $this->push($events, $unit->received_date ?: $unit->created_at, 5, [

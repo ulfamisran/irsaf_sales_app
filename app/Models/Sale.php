@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Facades\Schema;
 
 class Sale extends Model
 {
@@ -36,6 +38,7 @@ class Sale extends Model
         'cancel_date',
         'cancel_user_id',
         'cancel_reason',
+        'requires_authorization',
     ];
 
     protected function casts(): array
@@ -48,11 +51,12 @@ class Sale extends Model
             'sale_date' => 'date',
             'released_at' => 'datetime',
             'cancel_date' => 'date',
+            'requires_authorization' => 'boolean',
         ];
     }
 
     /**
-     * Total pembayaran untuk laporan laba rugi: tunai (sale_payments) + tukar tambah.
+     * Total penjualan untuk laba rugi: pembayaran tunai + tukar tambah + selisih tukar unit yang sudah release.
      */
     public function getPaymentTotalForReportAttribute(): float
     {
@@ -62,10 +66,32 @@ class Sale extends Model
 
         $combined = round($cash + $this->trade_in_total, 2);
         if ($combined > 0) {
-            return $combined;
+            return round($combined + $this->releasedUnitExchangeDifference(), 2);
         }
 
         return (float) $this->total_paid ?: (float) $this->total;
+    }
+
+    /**
+     * Selisih harga tukar unit yang sudah release. Nilai negatif mengurangi omzet penjualan.
+     */
+    public function releasedUnitExchangeDifference(): float
+    {
+        static $ready = null;
+        if ($ready === null) {
+            $ready = Schema::hasTable('unit_exchanges') && Schema::hasTable('unit_exchange_items');
+        }
+        if (! $ready) {
+            return 0.0;
+        }
+
+        $exchanges = $this->relationLoaded('unitExchanges')
+            ? $this->unitExchanges
+            : $this->unitExchanges()->where('status', UnitExchange::STATUS_RELEASED)->with('items')->get();
+
+        return round((float) $exchanges
+            ->filter(fn (UnitExchange $exchange) => $exchange->status === UnitExchange::STATUS_RELEASED)
+            ->sum(fn (UnitExchange $exchange) => (float) $exchange->items->sum('price_difference')), 2);
     }
 
     /**
@@ -121,6 +147,11 @@ class Sale extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function proofs(): MorphMany
+    {
+        return $this->morphMany(TransactionProof::class, 'proofable');
+    }
+
     public function cancelUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancel_user_id');
@@ -142,6 +173,33 @@ class Sale extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(SalePayment::class);
+    }
+
+    public function unitExchanges(): HasMany
+    {
+        return $this->hasMany(UnitExchange::class);
+    }
+
+    /**
+     * Relasi yang dipakai cetakan invoice penjualan, termasuk tukar unit yang sudah release.
+     *
+     * @return array<int|string, mixed>
+     */
+    public static function invoiceEagerLoads(): array
+    {
+        return [
+            'branch',
+            'warehouse',
+            'user',
+            'customer',
+            'saleDetails.product',
+            'payments.paymentMethod',
+            'tradeIns.category',
+            'unitExchanges' => function ($query) {
+                $query->where('status', UnitExchange::STATUS_RELEASED)
+                    ->with(['items.product', 'items.paymentMethod', 'cashFlows.paymentMethod']);
+            },
+        ];
     }
 
     /**

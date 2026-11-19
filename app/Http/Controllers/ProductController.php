@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProductRequest;
 use App\Http\Requests\ProductUnitRequest;
 use App\Models\Branch;
+use App\Models\DeletedProductUnit;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Role;
@@ -314,8 +315,29 @@ class ProductController extends Controller
             }
         }
 
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ], [
+            'reason.required' => __('Alasan hapus wajib diisi.'),
+        ]);
+
         $serialNumber = $unit->serial_number;
-        $unit->delete();
+        DB::transaction(function () use ($unit, $product, $user, $validated) {
+            DeletedProductUnit::create([
+                'product_unit_id' => $unit->id,
+                'product_id' => $unit->product_id,
+                'serial_number' => $unit->serial_number,
+                'sku' => $product->sku,
+                'product_label' => trim(($product->brand ?? '').' '.($product->series ?? '')),
+                'location_type' => $unit->location_type,
+                'location_id' => $unit->location_id,
+                'status' => $unit->status,
+                'reason' => trim($validated['reason']),
+                'deleted_by' => $user->id,
+                'deleted_at' => now(),
+            ]);
+            $unit->delete();
+        });
 
         return redirect()->back()->with('success', __('Product unit :serial berhasil dihapus.', ['serial' => $serialNumber]));
     }

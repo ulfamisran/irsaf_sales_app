@@ -14,19 +14,36 @@
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('services.update', $service) }}">
+                    <form method="POST" action="{{ route('services.update', $service) }}" enctype="multipart/form-data">
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="branch_id" value="{{ $service->branch_id }}">
                         <input type="hidden" name="warehouse_id" value="{{ $service->warehouse_id }}">
                         <input type="hidden" name="location_type" value="{{ $service->location_type ?? 'branch' }}">
                         <div class="space-y-4">
-                            <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
-                                <label class="inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" name="mark_release" value="1" id="mark_release" {{ old('mark_release') ? 'checked' : '' }} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                    <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Ubah ke Release (wajib input material dan pembayaran)') }}</span>
-                                </label>
-                            </div>
+                            @php
+                                $authSvc = app(\App\Services\AuthorizationService::class);
+                                $authRequired = (bool) $service->requires_authorization;
+                                $canMarkRelease = ! $authRequired || $authSvc->serviceReadyToRelease($service);
+                                $needsReleaseAuth = $authRequired && $authSvc->serviceNeedsReleaseAuthorization($service);
+                            @endphp
+                            @if ($authRequired && ! $canMarkRelease)
+                                <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950">
+                                    <p class="font-medium">{{ __('Alur otorisasi service') }}</p>
+                                    <p class="mt-1 text-indigo-900/80">{{ __('Simpan data lengkap di sini (tarif, pembayaran, bukti). Setelah itu ajukan otorisasi release dari halaman detail. Baru setelah disetujui, opsi Release aktif.') }}</p>
+                                    @if ($needsReleaseAuth)
+                                        <p class="mt-2 text-indigo-800">{{ __('Status: otorisasi open sudah ada — lengkapi data lalu ajukan otorisasi release.') }}</p>
+                                    @endif
+                                </div>
+                            @endif
+                            @if ($canMarkRelease)
+                                <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                                    <label class="inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" name="mark_release" value="1" id="mark_release" {{ old('mark_release') ? 'checked' : '' }} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Ubah ke Release (wajib input material, pembayaran, dan minimal 1 bukti transaksi)') }}</span>
+                                    </label>
+                                </div>
+                            @endif
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <x-input-label :value="__('Tipe Lokasi')" />
@@ -159,6 +176,13 @@
                                 </div>
                             </div>
 
+                            <x-transaction-proof-fields
+                                :require-one="true"
+                                :slots="max(0, 2 - $service->proofs->count())"
+                                :existing="$service->proofs"
+                                :owner="$service"
+                            />
+
                             <div class="flex gap-4">
                                 <x-primary-button>{{ __('Update Service') }}</x-primary-button>
                                 <a href="{{ route('services.show', $service) }}" class="inline-flex items-center px-4 py-2 bg-gray-200 rounded-md">Batal</a>
@@ -226,12 +250,12 @@
         function addPayRow(p = {}) {
             const i = paymentIdx++;
             const div = document.createElement('div');
-            div.className = 'flex gap-2 items-end';
+            div.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;';
             div.innerHTML = `
-                <div class="flex-1"><select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>${paymentOpts()}</select></div>
-                <div class="w-40"><input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300" placeholder="Nominal" required></div>
-                <div class="flex-1"><input type="text" name="payments[${i}][notes]" class="block w-full rounded-md border-gray-300" placeholder="Catatan"></div>
+                <select name="payments[${i}][payment_method_id]" class="block w-full rounded-md border-gray-300" required>${paymentOpts()}</select>
+                <input type="text" name="payments[${i}][amount]" data-rupiah="true" class="block w-full rounded-md border-gray-300" placeholder="Nominal" required>
                 <button type="button" class="remove-pay px-3 py-2 bg-red-100 text-red-700 rounded">-</button>
+                <input type="text" name="payments[${i}][notes]" class="block w-full rounded-md border-gray-300" placeholder="Catatan" style="grid-column:1 / -1;">
             `;
             paymentRows.appendChild(div);
             if (p.payment_method_id) div.querySelector('select').value = p.payment_method_id;

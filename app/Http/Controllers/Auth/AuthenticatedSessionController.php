@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginLog;
+use App\Services\UserActivityLogger;
 use App\Support\ClientIp;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -24,9 +26,14 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request, UserActivityLogger $activity): RedirectResponse
     {
-        $request->authenticate();
+        try {
+            $request->authenticate();
+        } catch (ValidationException $e) {
+            $activity->loginFailed($request);
+            throw $e;
+        }
 
         $request->session()->regenerate();
 
@@ -37,6 +44,9 @@ class AuthenticatedSessionController extends Controller
             'user_agent' => $agent !== '' ? mb_substr($agent, 0, 500) : null,
             'logged_in_at' => now(),
         ]);
+        if ($request->user()) {
+            $activity->login($request, $request->user());
+        }
 
         return redirect()->intended(route('dashboard', absolute: false));
     }
@@ -44,8 +54,10 @@ class AuthenticatedSessionController extends Controller
     /**
      * Destroy an authenticated session.
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request, UserActivityLogger $activity): RedirectResponse
     {
+        $activity->logout($request, $request->user());
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

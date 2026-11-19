@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Rental extends Model
 {
@@ -50,6 +51,8 @@ class Rental extends Model
         'cancel_date',
         'cancel_user_id',
         'cancel_reason',
+        'requires_authorization',
+        'effects_pending',
     ];
 
     protected function casts(): array
@@ -63,6 +66,8 @@ class Rental extends Model
             'total' => 'decimal:2',
             'total_paid' => 'decimal:2',
             'cancel_date' => 'date',
+            'requires_authorization' => 'boolean',
+            'effects_pending' => 'boolean',
         ];
     }
 
@@ -84,6 +89,11 @@ class Rental extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function proofs(): MorphMany
+    {
+        return $this->morphMany(TransactionProof::class, 'proofable');
     }
 
     public function cancelUser(): BelongsTo

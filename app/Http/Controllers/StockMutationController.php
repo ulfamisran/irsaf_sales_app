@@ -20,6 +20,7 @@ use App\Models\StockMutation;
 use App\Models\Warehouse;
 use App\Services\PurchaseService;
 use App\Services\StockMutationService;
+use App\Services\TransactionProofService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -131,7 +132,7 @@ class StockMutationController extends Controller
             }
             if ($request->filled('status') && $isDistribution) {
                 $status = (string) $request->status;
-                if (in_array($status, [Distribution::STATUS_ACTIVE, Distribution::STATUS_CANCELLED], true)) {
+                if (in_array($status, [Distribution::STATUS_OPEN, Distribution::STATUS_ACTIVE, Distribution::STATUS_CANCELLED], true)) {
                     $query->where('status', $status);
                 } elseif ($status === 'paid_off') {
                     $query->where('status', '!=', Distribution::STATUS_CANCELLED)
@@ -253,12 +254,38 @@ class StockMutationController extends Controller
         ));
     }
 
+    public function show(Distribution $distribution): View
+    {
+        $this->authorizeDistributionAccess($distribution, auth()->user());
+
+        $data = $this->distributionInvoiceViewData($distribution);
+        $distribution->loadMissing('stockMutations');
+
+        return view('stock-mutations.show', array_merge(
+            $data,
+            ['canCancelDistribution' => auth()->user()->canModule('stock-mutations', 'cancel')]
+        ));
+    }
+
     public function invoice(Distribution $distribution): View
     {
         $user = auth()->user();
         $this->authorizeDistributionAccess($distribution, $user);
+        try {
+            app(\App\Services\AuthorizationService::class)->assertInvoice($distribution);
+        } catch (\InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
 
         return view('stock-mutations.invoice', $this->distributionInvoiceViewData($distribution));
+    }
+
+    public function report(Distribution $distribution): View
+    {
+        $this->authorizeDistributionAccess($distribution, auth()->user());
+        $distribution->load(['user', 'details.product', 'payments.paymentMethod', 'proofs']);
+
+        return view('stock-mutations.report', compact('distribution'));
     }
 
     public function showCancel(Distribution $distribution): View|RedirectResponse
@@ -288,11 +315,19 @@ class StockMutationController extends Controller
         ]);
 
         try {
-            $this->stockMutationService->cancelDistribution(
-                $distribution,
-                (int) $user->id,
-                $validated['cancel_reason']
-            );
+            if ($distribution->status === Distribution::STATUS_OPEN) {
+                $this->stockMutationService->cancelOpenDistribution(
+                    $distribution,
+                    (int) $user->id,
+                    $validated['cancel_reason']
+                );
+            } else {
+                $this->stockMutationService->cancelDistribution(
+                    $distribution,
+                    (int) $user->id,
+                    $validated['cancel_reason']
+                );
+            }
             AuditLog::create([
                 'user_id' => $user->id,
                 'action' => 'distribution.cancel',
@@ -307,12 +342,80 @@ class StockMutationController extends Controller
         return redirect()->route('stock-mutations.index')->with('success', __('Distribusi berhasil dibatalkan.'));
     }
 
+    public function release(Request $request, Distribution $distribution): RedirectResponse
+    {
+        $user = $request->user();
+        $this->authorizeDistributionAccess($distribution, $user);
+
+        try {
+            app(\App\Services\AuthorizationService::class)->assertCanRelease($distribution);
+            \Illuminate\Support\Facades\DB::transaction(function () use ($distribution, $user) {
+                $mutations = $this->stockMutationService->releaseOpenDistribution($distribution, (int) $user->id);
+                $distribution->refresh()->load('payments.paymentMethod');
+                if ((float) $distribution->total <= 0 || $distribution->payments->isEmpty()) {
+                    return;
+                }
+                $already = CashFlow::query()
+                    ->where('reference_type', CashFlow::REFERENCE_DISTRIBUTION)
+                    ->where('reference_id', $distribution->id)
+                    ->exists();
+                if ($already) {
+                    return;
+                }
+
+                $incomeCategory = IncomeCategory::firstOrCreate(
+                    ['code' => 'DIST-BRG'],
+                    [
+                        'name' => 'Distribusi Barang',
+                        'description' => 'Pemasukan dari biaya distribusi barang antar lokasi',
+                        'is_active' => true,
+                    ]
+                );
+                $fromBranchId = $distribution->from_location_type === Stock::LOCATION_BRANCH ? $distribution->from_location_id : null;
+                $fromWarehouseId = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE ? $distribution->from_location_id : null;
+                $distributionPayments = [];
+                foreach ($distribution->payments as $payment) {
+                    CashFlow::create([
+                        'branch_id' => $fromBranchId,
+                        'warehouse_id' => $fromWarehouseId,
+                        'type' => CashFlow::TYPE_IN,
+                        'amount' => $payment->amount,
+                        'description' => __('Distribusi Barang') . ' ' . $distribution->invoice_number . ' - ' . ($payment->paymentMethod?->display_label ?? __('Pembayaran')),
+                        'reference_type' => CashFlow::REFERENCE_DISTRIBUTION,
+                        'reference_id' => $distribution->id,
+                        'income_category_id' => $incomeCategory->id,
+                        'payment_method_id' => $payment->payment_method_id,
+                        'transaction_date' => $distribution->distribution_date?->toDateString() ?? now()->toDateString(),
+                        'user_id' => $user->id,
+                    ]);
+                    $distributionPayments[] = [
+                        'payment_method_id' => (int) $payment->payment_method_id,
+                        'amount' => (float) $payment->amount,
+                    ];
+                }
+                $this->autoFillDestinationPurchasePayments(
+                    $mutations,
+                    $distributionPayments,
+                    $distribution->to_location_type,
+                    (int) $distribution->to_location_id,
+                    $distribution->distribution_date?->toDateString() ?? now()->toDateString(),
+                    (int) $user->id,
+                    $distribution->invoice_number
+                );
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('stock-mutations.show', $distribution)->with('success', __('Distribusi berhasil di-release.'));
+    }
+
     /**
      * @return array<string, mixed>
      */
     private function distributionInvoiceViewData(Distribution $distribution): array
     {
-        $distribution->load(['details.product', 'payments.paymentMethod', 'user', 'cancelUser']);
+        $distribution->load(['details.product', 'payments.paymentMethod', 'user', 'cancelUser', 'proofs']);
 
         $fromLocation = $distribution->from_location_type === Stock::LOCATION_WAREHOUSE
             ? Warehouse::find($distribution->from_location_id)
@@ -333,6 +436,16 @@ class StockMutationController extends Controller
             'totalPaid' => $totalPaid,
             'isLunas' => $isLunas,
         ];
+    }
+
+    public function proofs(Distribution $distribution): View
+    {
+        $this->authorizeDistributionAccess($distribution, auth()->user());
+        $distribution->load('proofs');
+
+        return view('stock-mutations.proofs', [
+            'distribution' => $distribution,
+        ]);
     }
 
     public function addPayment(Distribution $distribution): View|RedirectResponse
@@ -391,6 +504,9 @@ class StockMutationController extends Controller
 
         if ($distribution->isCancelled()) {
             return redirect()->route('stock-mutations.index')->with('error', __('Distribusi ini sudah dibatalkan.'));
+        }
+        if ($distribution->status === Distribution::STATUS_OPEN) {
+            return back()->with('error', __('Distribusi masih open. Release setelah otorisasi disetujui.'));
         }
         $totalBiaya = (float) $distribution->total;
         $totalPaid = (float) $distribution->total_paid;
@@ -725,6 +841,8 @@ class StockMutationController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
+        app(TransactionProofService::class)->validateUploads($request, null, false);
+
         try {
             $fromLocationType = $request->from_location_type;
             $fromLocationId = (int) $request->from_location_id;
@@ -755,6 +873,7 @@ class StockMutationController extends Controller
                 $serialNumbers = $this->normalizeSerialNumbersInput($item['serial_numbers'] ?? null);
                 $quantity = ! empty($serialNumbers) ? count($serialNumbers) : (int) ($item['quantity'] ?? 0);
                 $biayaDistribusi = (float) ($item['biaya_distribusi_per_unit'] ?? 0);
+                $affectsHpp = filter_var($item['affects_hpp'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
                 if ($biayaDistribusi > 0 && empty($serialNumbers)) {
                     throw new \InvalidArgumentException(
@@ -772,6 +891,7 @@ class StockMutationController extends Controller
                     'serial_numbers' => $serialNumbers,
                     'quantity' => $quantity,
                     'biaya_distribusi' => $biayaDistribusi,
+                    'affects_hpp' => $affectsHpp,
                     'hpp_per_unit' => $hppPerUnit,
                 ];
             }
@@ -787,6 +907,7 @@ class StockMutationController extends Controller
 
             $totalPaid = collect($distributionPayments)->sum('amount');
 
+            $deferAuthorization = app(\App\Services\AuthorizationService::class)->enabled('stock-mutations');
             $distribution = Distribution::create([
                 'invoice_number' => $invoiceNumber,
                 'from_location_type' => $fromLocationType,
@@ -798,11 +919,14 @@ class StockMutationController extends Controller
                 'notes' => $request->notes,
                 'user_id' => $user->id,
                 'distribution_date' => $request->mutation_date,
-                'status' => Distribution::STATUS_ACTIVE,
+                'status' => $deferAuthorization ? Distribution::STATUS_OPEN : Distribution::STATUS_ACTIVE,
+                'requires_authorization' => $deferAuthorization,
             ]);
 
             $mutations = [];
             foreach ($details as $detail) {
+                $mutation = null;
+                if (! $deferAuthorization) {
                 $mutation = $this->stockMutationService->mutate(
                     $detail['product'],
                     $fromLocationType,
@@ -817,25 +941,37 @@ class StockMutationController extends Controller
                     $detail['biaya_distribusi'],
                     [],
                     $invoiceNumber,
-                    $distribution->id
+                    $distribution->id,
+                    (bool) $detail['affects_hpp']
                 );
                 $mutations[] = $mutation;
+                }
 
                 $finalHpp = $detail['hpp_per_unit'] !== null
                     ? $detail['hpp_per_unit']
-                    : (float) $mutation->hpp_per_unit;
+                    : (float) ($mutation?->hpp_per_unit ?? 0);
 
                 DistributionDetail::create([
                     'distribution_id' => $distribution->id,
                     'product_id' => $detail['product']->id,
                     'quantity' => $detail['quantity'],
                     'biaya_distribusi_per_unit' => $detail['biaya_distribusi'],
+                    'affects_hpp' => (bool) $detail['affects_hpp'],
                     'hpp_per_unit' => $finalHpp,
                     'serial_numbers' => ! empty($detail['serial_numbers']) ? implode("\n", $detail['serial_numbers']) : null,
                 ]);
             }
 
-            if ($totalBiaya > 0 && ! empty($distributionPayments)) {
+            if ($deferAuthorization) {
+                foreach ($distributionPayments as $payment) {
+                    DistributionPayment::create([
+                        'distribution_id' => $distribution->id,
+                        'payment_method_id' => (int) $payment['payment_method_id'],
+                        'amount' => round((float) $payment['amount'], 2),
+                    ]);
+                }
+                $this->stockMutationService->reserveDistributionUnits($distribution);
+            } elseif ($totalBiaya > 0 && ! empty($distributionPayments)) {
                 $incomeCategory = IncomeCategory::firstOrCreate(
                     ['code' => 'DIST-BRG'],
                     [
@@ -897,6 +1033,8 @@ class StockMutationController extends Controller
                     $invoiceNumber
                 );
             }
+
+            app(TransactionProofService::class)->storeUploaded($request, $distribution, $user->id);
 
             DB::commit();
         } catch (\Exception $e) {

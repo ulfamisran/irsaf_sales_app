@@ -11,6 +11,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class RoleAccessController extends Controller
@@ -41,6 +43,44 @@ class RoleAccessController extends Controller
         ]);
     }
 
+    public function store(Request $request): RedirectResponse
+    {
+        $this->authorizeManager();
+
+        $displayName = trim((string) $request->input('display_name'));
+        $rawName = trim((string) $request->input('name'));
+        $name = $this->roleCode($rawName !== '' ? $rawName : $displayName);
+        $request->merge([
+            'display_name' => $displayName,
+            'name' => $name,
+        ]);
+
+        $validated = $request->validate([
+            'display_name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:50', 'regex:/^[a-z][a-z0-9_]*$/', Rule::unique('roles', 'name')],
+            'description' => ['nullable', 'string', 'max:255'],
+        ], [
+            'name.regex' => __('Kode role harus diawali huruf dan hanya berisi huruf kecil, angka, atau garis bawah.'),
+            'name.unique' => __('Kode role ini sudah dipakai.'),
+        ]);
+
+        if ($validated['name'] === Role::SUPER_ADMIN) {
+            return back()
+                ->withErrors(['name' => __('Role Super Admin tidak dapat dibuat ulang.')])
+                ->withInput();
+        }
+
+        $role = Role::query()->create([
+            'name' => $validated['name'],
+            'display_name' => $validated['display_name'],
+            'description' => trim((string) ($validated['description'] ?? '')) ?: null,
+        ]);
+
+        return redirect()
+            ->route('role-access.edit', $role)
+            ->with('success', __('Role berhasil ditambahkan. Atur akses modulnya di halaman ini.'));
+    }
+
     public function edit(Role $role, ModuleAccessService $access): View
     {
         $this->authorizeManager();
@@ -49,7 +89,9 @@ class RoleAccessController extends Controller
         ModuleAccessCatalog::install();
         $access->flush();
 
-        $modules = AppModule::query()->orderBy('sort_order')->orderBy('name')->get();
+        $modules = AppModule::query()->orderBy('sort_order')->orderBy('name')->get()
+            ->reject(fn (AppModule $module) => $module->slug === 'verification')
+            ->values();
         $granted = RoleModulePermission::query()
             ->where('role_id', $role->id)
             ->get()
@@ -103,6 +145,23 @@ class RoleAccessController extends Controller
             }
         }
 
+        $verificationId = AppModule::query()->where('slug', 'verification')->value('id');
+        if ($verificationId) {
+            $kept = DB::table('role_module_permissions')
+                ->where('role_id', $role->id)
+                ->where('module_id', $verificationId)
+                ->get();
+            foreach ($kept as $keptRow) {
+                $rows[] = [
+                    'role_id' => $role->id,
+                    'module_id' => $verificationId,
+                    'action' => $keptRow->action,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
         DB::transaction(function () use ($role, $rows): void {
             DB::table('role_module_permissions')->where('role_id', $role->id)->delete();
             foreach (array_chunk($rows, 400) as $chunk) {
@@ -115,6 +174,18 @@ class RoleAccessController extends Controller
         return redirect()
             ->route('role-access.edit', $role)
             ->with('success', __('Akses role berhasil disimpan.'));
+    }
+
+    private function roleCode(string $value): string
+    {
+        $code = Str::of($value)
+            ->ascii()
+            ->lower()
+            ->replaceMatches('/[^a-z0-9]+/', '_')
+            ->trim('_')
+            ->toString();
+
+        return mb_substr($code, 0, 50);
     }
 
     private function authorizeManager(): void

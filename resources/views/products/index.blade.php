@@ -188,16 +188,6 @@
                                                 </button>
                                             </form>
                                         @endif
-                                        @if ($product->is_active)
-                                            <a href="{{ route('incoming-goods.create', ['product_id' => $product->id]) }}"
-                                               class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
-                                                {{ __('Tambah Unit') }}
-                                            </a>
-                                        @else
-                                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-400">
-                                                {{ __('Tambah Unit') }}
-                                            </span>
-                                        @endif
                                     </div>
                                 </td>
                             </tr>

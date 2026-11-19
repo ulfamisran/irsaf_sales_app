@@ -399,6 +399,11 @@
                                 @if ($serialText !== '')
                                     <div class="muted">{{ $serialText }}</div>
                                 @endif
+                                @if ($detail->affects_hpp === true)
+                                    <div class="muted">{{ __('Mempengaruhi HPP') }}</div>
+                                @elseif ($detail->affects_hpp === false)
+                                    <div class="muted">{{ __('Tidak mempengaruhi HPP') }}</div>
+                                @endif
                                 @if ($distribution->notes && $idx === 0)
                                     <div>{{ $distribution->notes }}</div>
                                 @endif

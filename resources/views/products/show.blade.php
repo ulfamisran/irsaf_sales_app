@@ -27,6 +27,11 @@
     </x-slot>
 
     <div class="max-w-7xl mx-auto">
+        @if ($errors->any())
+            <div class="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-800">
+                {{ $errors->first() }}
+            </div>
+        @endif
         @if (session('error'))
             <div class="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 text-red-800 flex items-center gap-3">
                 <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -187,10 +192,11 @@
                                             <x-icon-btn-edit :href="route('products.units.edit', [$product, $u])" :label="__('Edit')" />
                                         @endif
                                         @if ($canDeleteUnit)
-                                            <form action="{{ route('products.units.destroy', [$product, $u]) }}" method="POST" class="inline">
+                                            <form action="{{ route('products.units.destroy', [$product, $u]) }}" method="POST" class="js-delete-serial inline" data-serial="{{ $u->serial_number }}">
                                                 @csrf
                                                 @method('DELETE')
-                                                <x-icon-btn-delete :label="__('Hapus')" />
+                                                <input type="hidden" name="reason" value="">
+                                                <x-icon-btn-delete :label="__('Hapus')" :confirm="false" />
                                             </form>
                                         @elseif (! $canEditUnit)
                                             <span class="text-slate-400 text-sm">-</span>
@@ -209,5 +215,42 @@
             </div>
         </div>
     </div>
+    @push('scripts')
+        <script>
+            document.querySelectorAll('.js-delete-serial').forEach((form) => {
+                form.addEventListener('submit', async (event) => {
+                    if (form.dataset.confirmed === '1') {
+                        return;
+                    }
+                    event.preventDefault();
+                    const result = await Swal.fire({
+                        icon: 'warning',
+                        title: @json(__('Hapus nomor serial?')),
+                        text: form.dataset.serial || '',
+                        input: 'textarea',
+                        inputLabel: @json(__('Alasan hapus')),
+                        inputPlaceholder: @json(__('Tuliskan alasan penghapusan')),
+                        inputAttributes: { maxlength: 500 },
+                        showCancelButton: true,
+                        confirmButtonText: @json(__('Hapus')),
+                        cancelButtonText: @json(__('Batal')),
+                        confirmButtonColor: '#dc2626',
+                        cancelButtonColor: '#64748b',
+                        inputValidator: (value) => {
+                            if (!value || !value.trim()) {
+                                return @json(__('Alasan hapus wajib diisi.'));
+                            }
+                        },
+                    });
+                    if (!result.isConfirmed) {
+                        return;
+                    }
+                    form.querySelector('[name="reason"]').value = result.value.trim();
+                    form.dataset.confirmed = '1';
+                    form.submit();
+                });
+            });
+        </script>
+    @endpush
 </x-app-layout>
 
