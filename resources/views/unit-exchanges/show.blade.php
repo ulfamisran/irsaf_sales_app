@@ -1,17 +1,15 @@
 <x-app-layout>
     <x-slot name="title">{{ $exchange->exchange_number }}</x-slot>
     <x-slot name="header">
-        <div class="flex flex-wrap justify-between items-center gap-3">
-            <div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
                 <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ $exchange->exchange_number }}</h2>
                 <p class="text-sm text-slate-600 mt-1">{{ __('Bukti tukar unit') }}</p>
             </div>
-            <div class="flex flex-wrap gap-2">
-                <a href="{{ route('sales.unit-exchanges.report', $exchange) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
-                    {{ __('Cetak Laporan') }}
-                </a>
+            <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                <x-action-btn variant="report" :href="route('sales.unit-exchanges.report', $exchange)" target="_blank" />
                 @if ($exchange->status === \App\Models\UnitExchange::STATUS_OPEN && ! app(\App\Services\AuthorizationService::class)->blocksMutation($exchange))
-                    <a href="{{ route('sales.unit-exchanges.edit', $exchange) }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">{{ __('Edit') }}</a>
+                    <x-action-btn variant="edit" :href="route('sales.unit-exchanges.edit', $exchange)" />
                 @endif
                 <x-icon-btn-back :href="route('sales.unit-exchanges.index')" :label="__('Kembali')" />
             </div>
@@ -26,7 +24,7 @@
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-3">
-                    <a href="{{ route('sales.unit-exchanges.report', $exchange) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+                    <x-action-btn variant="report" :href="route('sales.unit-exchanges.report', $exchange)" target="_blank" />
                 </div>
                 <div>
                     <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('No. Tukar Unit') }}</p>

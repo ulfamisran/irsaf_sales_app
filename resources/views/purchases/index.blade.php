@@ -134,16 +134,7 @@
                         </select>
                     </div>
                     @elseif ($activeTab === 'daftar')
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
-                        <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>{{ __('Release') }}</option>
-                            <option value="cancelled" {{ request('status') === 'cancelled' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
-                            <option value="paid_off" {{ request('status') === 'paid_off' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
-                            <option value="unpaid" {{ request('status') === 'unpaid' ? 'selected' : '' }}>{{ __('Belum Lunas') }}</option>
-                        </select>
-                    </div>
+                    <x-document-status-filter module="purchases" :include-payment-filters="true" class="min-w-[160px]" />
                     @endif
                     <div class="md:col-span-2 flex flex-wrap gap-2 md:justify-end">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
@@ -276,6 +267,7 @@
                                 <td class="px-4 py-3 text-center">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <x-release-list-action :model="$p" />
                                         <a href="{{ route('purchases.show', $p) }}" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                             {{ __('Detail') }}
@@ -375,6 +367,7 @@
                                 <td class="px-4 py-3 text-center">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <x-release-list-action :model="$p" />
                                         <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}#payment-form-section" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
                                             {{ __('Bayar') }}
@@ -451,7 +444,7 @@
                                                 @endif
                                                 <p class="text-xs text-amber-700 mt-1">Rp {{ number_format($item['value'], 0, ',', '.') }}</p>
                                                 <div class="mt-2 flex flex-wrap gap-2">
-                                                    <form method="POST" action="{{ route('purchases.resolve-deferred', $p) }}" class="inline">
+                                                    <form method="POST" action="{{ route('purchases.resolve-deferred', $p) }}" class="inline" data-swal-confirm="{{ __('Tandai unit sebagai diterima (masuk stok)?') }}" data-swal-confirm-color="#059669">
                                                         @csrf
                                                         <input type="hidden" name="action" value="diterima">
                                                         @if (!empty($item['unit_id']))
@@ -460,12 +453,11 @@
                                                             <input type="hidden" name="purchase_detail_id" value="{{ $item['purchase_detail_id'] }}">
                                                             <input type="hidden" name="qty" value="{{ $item['qty'] }}">
                                                         @endif
-                                                        <button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700"
-                                                                onclick="return confirm(@json(__('Tandai unit sebagai diterima (masuk stok)?')))">
+                                                        <button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700">
                                                             {{ __('Unit diterima') }}
                                                         </button>
                                                     </form>
-                                                    <form method="POST" action="{{ route('purchases.resolve-deferred', $p) }}" class="inline">
+                                                    <form method="POST" action="{{ route('purchases.resolve-deferred', $p) }}" class="inline" data-swal-confirm="{{ __('Tandai unit sebagai diretur?') }}" data-swal-confirm-color="#dc2626">
                                                         @csrf
                                                         <input type="hidden" name="action" value="diretur">
                                                         @if (!empty($item['unit_id']))
@@ -474,8 +466,7 @@
                                                             <input type="hidden" name="purchase_detail_id" value="{{ $item['purchase_detail_id'] }}">
                                                             <input type="hidden" name="qty" value="{{ $item['qty'] }}">
                                                         @endif
-                                                        <button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700"
-                                                                onclick="return confirm(@json(__('Tandai unit sebagai diretur?')))">
+                                                        <button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700">
                                                             {{ __('Unit diretur') }}
                                                         </button>
                                                     </form>
@@ -487,6 +478,7 @@
                                 <td class="px-4 py-3 text-center">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <x-release-list-action :model="$p" />
                                         <a href="{{ route('purchases.show', $p) }}" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                             {{ __('Detail') }}
@@ -524,6 +516,7 @@
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Total') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Utang Terakui') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Terbayar') }}</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Dokumen') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase">{{ __('Status Bayar') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
@@ -550,12 +543,7 @@
                                 @if ($needsAuthSubmit) style="background-color:#fef2f2; box-shadow: inset 4px 0 0 #ef4444;" @endif>
                                 <td class="px-4 py-3 font-medium">
                                     <div class="flex flex-col gap-1">
-                                        <div>
-                                            {{ $p->invoice_number }}
-                                            @if ($p->isCancelled())
-                                                <span class="ml-2 inline-flex px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
-                                            @endif
-                                        </div>
+                                        <span>{{ $p->invoice_number }}</span>
                                         <x-authorization-list-badge :model="$p" />
                                     </div>
                                 </td>
@@ -577,15 +565,18 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 text-center">
+                                    <x-document-status-badge :status="$p->status" />
+                                </td>
+                                <td class="px-4 py-3 text-center">
                                     @if ($p->isCancelled())
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">{{ __('Dibatalkan') }}</span>
+                                        <span class="text-slate-400">-</span>
                                     @elseif ($s)
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium
                                             {{ ($s['payment_status'] ?? '') === 'paid' ? 'bg-emerald-100 text-emerald-700' : (($s['payment_status'] ?? '') === 'partial' ? 'bg-amber-100 text-amber-800' : (($s['payment_status'] ?? '') === 'no_recognized' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-700')) }}">
                                             {{ $s['payment_status_label'] }}
                                         </span>
                                     @else
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">-</span>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-500">-</span>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $p->user?->name ?? '-' }}</td>
@@ -594,6 +585,7 @@
                                 <td class="px-4 py-3">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$p" module="purchases" />
+                                        <x-release-list-action :model="$p" />
                                         <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'detail']) }}" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                             {{ __('Detail') }}
@@ -601,13 +593,13 @@
                                         @if ($p->canBeEdited())
                                             <a href="{{ route('purchases.edit', $p) }}" style="color:#b45309;">
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                                {{ __('Ubah') }}
+                                                {{ __('Edit') }}
                                             </a>
                                         @endif
                                         @if (!$p->isCancelled() && auth()->user()->canModule('purchases', 'cancel'))
                                             <a href="{{ route('purchases.show', ['purchase' => $p, 'view' => 'cancel']) }}" style="color:#dc2626;">
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                                {{ __('Cancel') }}
+                                                {{ __('Batalkan') }}
                                             </a>
                                         @endif
                                         <a href="{{ route('purchases.report', $p) }}" target="_blank" style="color:#1d4ed8;">
@@ -619,7 +611,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="13" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
+                                <td colspan="14" class="px-4 py-12 text-center text-slate-500">{{ __('Tidak ada data pembelian.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>

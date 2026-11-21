@@ -165,7 +165,8 @@
             <p class="font-semibold text-red-800 mb-2">{{ __('Batalkan transaksi distribusi') }}</p>
             <p class="text-sm text-red-900/80 mb-4">{{ __('Tindakan ini tidak dapat diurungkan. Pastikan kondisi stok dan kas sudah sesuai.') }}</p>
             <form method="POST" action="{{ route('stock-mutations.cancel', $distribution) }}"
-                onsubmit="return confirm(@json(__('Batalkan seluruh distribusi untuk invoice ini?')))">
+                data-swal-confirm="{{ __('Batalkan seluruh distribusi untuk invoice ini?') }}"
+                data-swal-confirm-color="#dc2626">
                 @csrf
                 <div class="flex flex-col gap-3 mb-4">
                     <label for="cancel_reason" class="text-sm font-medium text-slate-700">{{ __('Alasan pembatalan') }} <span class="text-red-600">*</span></label>

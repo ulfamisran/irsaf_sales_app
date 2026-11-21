@@ -34,6 +34,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ServiceController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         protected ServiceService $serviceService,
         protected TransactionProofService $proofs
@@ -473,6 +475,7 @@ class ServiceController extends Controller
             $materialsTotal = is_array($materialsInput) ? $this->sumMaterialsTotalPrice($materialsInput) : null;
 
             $markAsReleased = (bool) $request->input('mark_release');
+            $markPickedUp = $request->boolean('mark_picked_up');
             $this->proofs->validateUploads($request, $service, $markAsReleased);
             if (! $user->isSuperAdminOrAdminPusat()) {
                 $request->merge([
@@ -493,7 +496,8 @@ class ServiceController extends Controller
                 $request->input('payments', []),
                 $request->description,
                 $materialsTotal,
-                $markAsReleased
+                $markAsReleased,
+                $markPickedUp
             );
 
             if (is_array($materialsInput)) {
@@ -503,7 +507,7 @@ class ServiceController extends Controller
 
             $this->proofs->storeUploaded($request, $service, $user->id);
 
-            $pickupStatus = $request->boolean('mark_picked_up') ? Service::PICKUP_SUDAH : Service::PICKUP_BELUM;
+            $pickupStatus = $markPickedUp ? Service::PICKUP_SUDAH : Service::PICKUP_BELUM;
             $service->update(['pickup_status' => $pickupStatus]);
 
             AuditLog::create([
@@ -631,6 +635,31 @@ class ServiceController extends Controller
         }
 
         return redirect()->route('services.show', $service)->with('success', __('Service berhasil diselesaikan.'));
+    }
+
+    public function release(Request $request, Service $service): RedirectResponse
+    {
+        $this->authorizeServiceAccess($service);
+
+        try {
+            if ($service->status !== Service::STATUS_OPEN) {
+                throw new InvalidArgumentException(__('Service sudah selesai atau dibatalkan.'));
+            }
+            $auth = app(\App\Services\AuthorizationService::class);
+            $auth->assertCanRelease($service);
+            $this->proofs->assertHasProof($service);
+            $auth->assertReadyForRelease($service);
+
+            $this->serviceService->complete(
+                $service,
+                $service->exit_date?->toDateString() ?? now()->toDateString(),
+                true
+            );
+        } catch (InvalidArgumentException $e) {
+            return $this->redirectReleaseFailure($request, $service, $e->getMessage());
+        }
+
+        return redirect()->route('services.show', $service)->with('success', __('Service berhasil di-release.'));
     }
 
     public function markPickedUp(Service $service): RedirectResponse

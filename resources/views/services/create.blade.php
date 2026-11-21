@@ -14,21 +14,15 @@
                     <form method="POST" action="{{ route('services.store') }}" id="service-form" enctype="multipart/form-data">
                         @csrf
                         <div class="space-y-4">
-                            <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
-                                <x-input-label :value="__('Status Transaksi')" class="font-semibold" />
-                                <p class="text-xs text-slate-600 mt-1 mb-3">{{ __('Alur disarankan: Open = invoice kosong (data pelanggan & laptop). Sparepart dibeli lewat menu Pembelian dengan jenis “Pembelian Sparepart Service” dan pilih nomor invoice ini. Setelah itu Edit/Release untuk tarif jasa, pembayaran, dan cetak invoice lengkap.') }}</p>
+                            <x-document-status-radio
+                                module="services"
+                                :value="old('status', 'open')"
+                                :label="__('Status Dokumen')"
+                                :hint="false"
+                            >
+                                <p class="text-xs text-slate-600 mb-2">{{ __('Alur disarankan: Open = invoice kosong (data pelanggan & laptop). Sparepart dibeli lewat menu Pembelian dengan jenis “Pembelian Sparepart Service” dan pilih nomor invoice ini. Setelah itu Edit/Release untuk tarif jasa, pembayaran, dan cetak invoice lengkap.') }}</p>
                                 <p class="text-xs text-slate-600 mb-3">{{ __('Release: input lengkap termasuk material manual (opsional), tarif jasa, pembayaran, dan minimal 1 bukti transaksi.') }}</p>
-                                <div class="flex gap-6">
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="status" value="open" {{ old('status', 'open') === 'open' ? 'checked' : '' }} id="status_open" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Open') }}</span>
-                                    </label>
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="status" value="release" {{ old('status') === 'release' ? 'checked' : '' }} id="status_release" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Release') }}</span>
-                                    </label>
-                                </div>
-                            </div>
+                            </x-document-status-radio>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <x-input-label for="location_type" :value="__('Tipe Lokasi')" />
@@ -199,7 +193,8 @@
         const branchesList = @json(($branches ?? collect())->map(fn($b) => ['id' => $b->id, 'name' => $b->name])->values());
         const warehousesList = @json(($warehouses ?? collect())->map(fn($w) => ['id' => $w->id, 'name' => $w->name])->values());
         const defaultLocationType = @json($defaultLocationType ?? 'branch');
-        const defaultLocationId = @json($defaultLocationId ?? null);
+        const defaultLocationId = @json(old('warehouse_id', old('branch_id', $defaultLocationId ?? null)));
+        const keepServiceCustomerId = @json(old('customer_id'));
 
         function updateLocationSelect() {
             const locTypeSel = document.getElementById('location_type');
@@ -210,7 +205,7 @@
             const options = type === 'warehouse' ? warehousesList : branchesList;
             locIdSel.innerHTML = '<option value="">' + @json(__('Pilih Lokasi')) + '</option>' +
                 options.map(o => '<option value="' + o.id + '">' + o.name + '</option>').join('');
-            if (defaultLocationId && type === defaultLocationType) {
+            if (defaultLocationId) {
                 locIdSel.value = String(defaultLocationId);
             }
         }
@@ -248,8 +243,12 @@
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
+                    const prevCustomer = custSel.value || keepServiceCustomerId || '';
                     custSel.innerHTML = '<option value="">' + @json(__('Pilih Pelanggan (atau isi pelanggan baru)')) + '</option>' +
                         customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
+                    if (prevCustomer && customers.some(c => String(c.id) === String(prevCustomer))) {
+                        custSel.value = String(prevCustomer);
+                    }
                 }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
                     const oldVal = sel.value;

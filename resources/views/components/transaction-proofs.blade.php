@@ -48,7 +48,7 @@
                         <p style="margin:4px 0 0;font-size:13px;color:#475569;">{{ $proof->note ?: '-' }}</p>
                     </div>
                     @if ($open)
-                        <form method="POST" action="{{ route($proofRoute.'.proofs.destroy', [$proofParam => $owner, 'proof' => $proof]) }}" onsubmit="return confirm('{{ __('Hapus bukti ini?') }}')">
+                        <form method="POST" action="{{ route($proofRoute.'.proofs.destroy', [$proofParam => $owner, 'proof' => $proof]) }}" data-swal-confirm="{{ __('Hapus bukti ini?') }}" data-swal-confirm-color="#dc2626">
                             @csrf
                             @method('DELETE')
                             <button type="submit" style="border:0;background:transparent;color:#be123c;font-size:12px;font-weight:600;cursor:pointer;">{{ __('Hapus') }}</button>

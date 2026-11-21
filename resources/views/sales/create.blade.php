@@ -94,19 +94,7 @@
                                 </div>
                             </div>
 
-                            <div class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
-                                <x-input-label :value="__('Status')" class="font-semibold" />
-                                <div class="mt-2 flex gap-6">
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="status" value="open" {{ old('status', 'open') === 'open' ? 'checked' : '' }} id="status_open" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Open') }}</span>
-                                    </label>
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="status" value="released" {{ old('status') === 'released' ? 'checked' : '' }} id="status_released" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">{{ __('Release') }}</span>
-                                    </label>
-                                </div>
-                            </div>
+                            <x-document-status-radio module="sales" :value="old('status', 'open')" />
                             <div>
                                 <x-input-label for="customer_id" :value="__('Pelanggan')" />
                                 <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -447,12 +435,18 @@
         }
 
         let itemIndex = 1;
-        document.getElementById('add-item')?.addEventListener('click', function() {
+        const oldSaleItems = @json(old('items') ? array_values(old('items')) : []);
+        const keepSaleCustomerId = @json(old('customer_id'));
+
+        function addSaleItemRow(pref = {}) {
             const container = document.getElementById('sale-items');
-            if (!container) return;
+            if (!container) return null;
             const itemNum = container.querySelectorAll('.sale-item').length + 1;
+            const idx = itemIndex++;
             const div = document.createElement('div');
             div.className = 'sale-item';
+            const qty = pref.quantity != null && pref.quantity !== '' ? pref.quantity : 1;
+            const price = pref.price != null && pref.price !== '' ? pref.price : '';
             div.innerHTML =
                 '<div class="flex items-center justify-between px-4 py-2 bg-slate-50/80">' +
                 '<span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">' +
@@ -465,18 +459,36 @@
                 '</button>' +
                 '</div>' +
                 '<div class="px-4 py-3 space-y-3">' +
-                productSelectorHtml(itemIndex) +
-                createSerialSelectHtml('items[' + itemIndex + '][serial_numbers][]') +
+                productSelectorHtml(idx) +
+                createSerialSelectHtml('items[' + idx + '][serial_numbers][]') +
                 '<div class="grid grid-cols-2 gap-3">' +
-                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.quantity + '</label><input type="number" name="items[' + itemIndex + '][quantity]" min="1" value="1" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Qty" required></div>' +
-                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.hargaJual + '</label><input type="text" name="items[' + itemIndex + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Harga" required></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.quantity + '</label><input type="number" name="items[' + idx + '][quantity]" min="1" value="' + qty + '" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Qty" required></div>' +
+                '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + i18n.hargaJual + '</label><input type="text" name="items[' + idx + '][price]" data-rupiah="true" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Harga" value="' + String(price).replace(/"/g, '&quot;') + '" required></div>' +
                 '</div>' +
                 '</div>';
             container.appendChild(div);
             populateRowProductDropdown(div);
-            itemIndex++;
+            if (pref.product_id) {
+                const productIdInput = div.querySelector('.product-id-input');
+                if (productIdInput) productIdInput.value = String(pref.product_id);
+                const p = products.find(x => String(x.id) === String(pref.product_id));
+                const label = div.querySelector('.product-select-label');
+                if (label && p) {
+                    label.innerHTML = '<span class="text-xs text-slate-500">' + (p.sku || '') + '</span> <span class="text-slate-800">' + (p.brand || '') + ' ' + (p.series || '') + '</span>';
+                    label.classList.remove('text-slate-500');
+                }
+            }
+            if (Array.isArray(pref.serial_numbers) && pref.serial_numbers.length) {
+                rowPendingSerial.set(div, String(pref.serial_numbers[0]));
+                div.dataset.restoreSerials = JSON.stringify(pref.serial_numbers.map(String));
+            }
+            if (window.attachRupiahFormatter) window.attachRupiahFormatter();
             toggleRemoveButtons();
             renumberItems();
+            return div;
+        }
+        document.getElementById('add-item')?.addEventListener('click', function() {
+            addSaleItemRow();
         });
 
         document.getElementById('sale-items')?.addEventListener('click', function(e) {
@@ -836,7 +848,7 @@
                 serial.textContent = hit.serial_number || '';
                 const meta = document.createElement('div');
                 meta.className = 'text-xs text-slate-500';
-                meta.textContent = [hit.sku, hit.brand, hit.series, hit.color].filter(Boolean).join(' Â· ');
+                meta.textContent = [hit.sku, hit.brand, hit.series, hit.color].filter(Boolean).join(' · ');
                 button.appendChild(serial);
                 button.appendChild(meta);
                 button.addEventListener('click', function (event) {
@@ -853,7 +865,7 @@
             const serial = String(hit.serial_number || '');
             if (!serial || !hit.product_id) return;
             if (serialAlreadyUsed(row, serial)) {
-                alert('Serial sudah dipilih di item lain.');
+                void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                 return;
             }
 
@@ -887,7 +899,7 @@
             const serialSelect = row.querySelector('.serial-select');
             const selected = Array.from(serialSelect?.selectedOptions || []).some(option => option.value === serial);
             if (!selected) {
-                alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.');
+                void (typeof window.appAlert === 'function' ? window.appAlert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.'));
             }
             const lookup = row.querySelector('.unit-lookup-input');
             if (lookup) lookup.value = serial;
@@ -1008,8 +1020,12 @@
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
+                    const prevCustomer = custSel.value || keepSaleCustomerId || '';
                     custSel.innerHTML = '<option value="">' + i18n.pilihPelanggan + '</option>' +
                         customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
+                    if (prevCustomer && customers.some(c => String(c.id) === String(prevCustomer))) {
+                        custSel.value = String(prevCustomer);
+                    }
                 }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
                     const oldVal = sel.value;
@@ -1073,7 +1089,7 @@
                     }
                 });
                 if (changed) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                 }
                 syncQtyFromSerials(row);
                 syncPriceFromSerials(row);
@@ -1152,14 +1168,14 @@
                     Array.from(s.selectedOptions || []).forEach(opt => otherSelected.add(opt.value));
                 });
                 if (otherSelected.has(serial)) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                     return;
                 }
 
                 // Only allow serials that are currently available (in_stock) from server list.
                 // This prevents selecting reserved/invalid units for OPEN sales.
                 if (!exists) {
-                    alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.'));
                     return;
                 }
 
@@ -1174,9 +1190,53 @@
         });
 
         // initial load (ensure runs even if page uses partial navigation)
+        async function restoreSaleItemsFromOld() {
+            if (!Array.isArray(oldSaleItems) || oldSaleItems.length === 0) {
+                return;
+            }
+            const container = document.getElementById('sale-items');
+            if (!container) return;
+            container.innerHTML = '';
+            itemIndex = 0;
+            for (const item of oldSaleItems) {
+                addSaleItemRow(item || {});
+            }
+            for (const row of container.querySelectorAll('.sale-item')) {
+                await loadSerialsForRow(row);
+                let serials = [];
+                try { serials = JSON.parse(row.dataset.restoreSerials || '[]'); } catch (e) { serials = []; }
+                const serialSelect = row.querySelector('.serial-select');
+                if (serialSelect && Array.isArray(serials) && serials.length) {
+                    Array.from(serialSelect.options).forEach(opt => {
+                        opt.selected = serials.includes(opt.value);
+                    });
+                    if (!Array.from(serialSelect.options).some(o => o.selected)) {
+                        serials.forEach(sn => {
+                            if (![...serialSelect.options].some(o => o.value === sn)) {
+                                const opt = document.createElement('option');
+                                opt.value = sn;
+                                opt.textContent = sn;
+                                opt.selected = true;
+                                serialSelect.appendChild(opt);
+                            }
+                        });
+                    }
+                    serialSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                syncQtyFromSerials(row);
+            }
+            toggleRemoveButtons();
+            renumberItems();
+            if (typeof refreshTotals === 'function') refreshTotals();
+        }
+
         function initSalesCreate() {
-            loadProductsForBranch().then(() => {
-                document.querySelectorAll('.sale-item').forEach(row => loadSerialsForRow(row));
+            loadProductsForBranch().then(async () => {
+                if (Array.isArray(oldSaleItems) && oldSaleItems.length > 0) {
+                    await restoreSaleItemsFromOld();
+                } else {
+                    document.querySelectorAll('.sale-item').forEach(row => loadSerialsForRow(row));
+                }
             });
             loadFormDataForBranch();
             document.querySelectorAll('.sale-item').forEach(row => syncQtyFromSerials(row));
@@ -1446,7 +1506,7 @@
                                 btn.type = 'button';
                                 btn.className = 'w-full text-left px-3 py-2 text-sm hover:bg-amber-100 border-b border-amber-100/80 last:border-0';
                                 const st = item.status || '';
-                                btn.textContent = (item.serial_number || '') + ' â€” ' + [item.brand, item.series].filter(Boolean).join(' ') + (st ? ' (' + st + ')' : '');
+                                btn.textContent = (item.serial_number || '') + ' — ' + [item.brand, item.series].filter(Boolean).join(' ') + (st ? ' (' + st + ')' : '');
                                 btn.addEventListener('mousedown', (ev) => {
                                     ev.preventDefault();
                                     fillTradeInRowFromSerialResult(row, item);

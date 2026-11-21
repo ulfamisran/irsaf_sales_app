@@ -193,7 +193,7 @@
                 }
                 saleInput.value = invoice.id;
                 searchInput.value = invoice.invoice_number;
-                meta.textContent = @json(__('Pelanggan')) + ': ' + (invoice.customer || '-') + ' Â· ' + (invoice.sale_date || '');
+                meta.textContent = @json(__('Pelanggan')) + ': ' + (invoice.customer || '-') + ' · ' + (invoice.sale_date || '');
                 const units = invoice.units || [];
                 if (!units.length) {
                     unitRows.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">' + @json(__('Invoice ini tidak memiliki nomor serial.')) + '</td></tr>';
@@ -355,7 +355,7 @@
                 const select = panel.querySelector('[data-replace-product]');
                 select.innerHTML = '<option value="">' + @json(__('Pilih Produk')) + '</option>'
                     + filteredProducts(panel).map((product) => {
-                        const name = [product.sku, product.brand, product.series, product.color].filter(Boolean).join(' Â· ');
+                        const name = [product.sku, product.brand, product.series, product.color].filter(Boolean).join(' · ');
                         return optionHtml(product.id, name);
                     }).join('');
                 if (selectedId) select.value = String(selectedId);
@@ -399,11 +399,11 @@
                     return (other.querySelector('[data-field="new_serial"]').value || '').toLowerCase() === needle;
                 });
                 if (used) {
-                    alert(@json(__('Nomor serial ini sudah dipilih pada baris tukar lain.')));
+                    void (typeof window.appAlert === 'function' ? window.appAlert(@json(__('Nomor serial ini sudah dipilih pada baris tukar lain.')), { icon: 'warning', title: 'Perhatian' }) : alert(@json(__('Nomor serial ini sudah dipilih pada baris tukar lain.'))));
                     return;
                 }
                 panel.querySelector('[data-field="new_serial"]').value = unit.serial || '';
-                panel.querySelector('[data-replacement]').textContent = [unit.sku, unit.product].filter(Boolean).join(' Â· ');
+                panel.querySelector('[data-replacement]').textContent = [unit.sku, unit.product].filter(Boolean).join(' · ');
                 const difference = Math.round((Number(unit.price) || 0) - Number(panel.dataset.oldPrice || 0));
                 panel.querySelector('[data-field="price_difference"]').value = String(difference);
                 panel.querySelector('[data-payment-wrap]').classList.toggle('hidden', difference === 0);
@@ -470,7 +470,7 @@
                 }
                 panel._lookupHits = units;
                 box.innerHTML = units.length
-                    ? units.map((unit, index) => '<button type="button" class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-replace-hit="' + index + '">' + esc(unit.serial) + ' Â· ' + esc(unit.sku) + ' Â· ' + esc(unit.product) + '</button>').join('')
+                    ? units.map((unit, index) => '<button type="button" class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-replace-hit="' + index + '">' + esc(unit.serial) + ' · ' + esc(unit.sku) + ' · ' + esc(unit.product) + '</button>').join('')
                     : '<p class="px-3 py-2 text-sm text-slate-500">' + @json(__('Serial stok tidak ditemukan di lokasi ini.')) + '</p>';
                 box.classList.remove('hidden');
             }

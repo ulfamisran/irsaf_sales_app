@@ -38,6 +38,10 @@ class Rental extends Model
         'client_user_agent',
         'pickup_date',
         'return_date',
+        'actual_return_date',
+        'return_recorded_at',
+        'return_user_id',
+        'return_notes',
         'total_days',
         'subtotal',
         'tax_amount',
@@ -60,6 +64,8 @@ class Rental extends Model
         return [
             'pickup_date' => 'date',
             'return_date' => 'date',
+            'actual_return_date' => 'date',
+            'return_recorded_at' => 'datetime',
             'subtotal' => 'decimal:2',
             'tax_amount' => 'decimal:2',
             'penalty_amount' => 'decimal:2',
@@ -99,6 +105,11 @@ class Rental extends Model
     public function cancelUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancel_user_id');
+    }
+
+    public function returnUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'return_user_id');
     }
 
     public function items(): HasMany

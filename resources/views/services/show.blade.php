@@ -1,28 +1,20 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Detail Servis') }}</x-slot>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight min-w-0">
                 {{ __('Service') }}: {{ $service->invoice_number }}
             </h2>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 @if (! $service->requires_authorization || $service->status === \App\Models\Service::STATUS_COMPLETED)
-                <a href="{{ route('services.invoice', $service) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-                    {{ __('Print Invoice') }}
-                </a>
+                    <x-action-btn variant="invoice" :href="route('services.invoice', $service)" target="_blank" />
                 @endif
-                <a href="{{ route('services.report', $service) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
-                    {{ __('Cetak Laporan') }}
-                </a>
+                <x-action-btn variant="report" :href="route('services.report', $service)" target="_blank" />
                 @if ($service->status === \App\Models\Service::STATUS_OPEN && ! app(\App\Services\AuthorizationService::class)->blocksMutation($service) && (auth()->user()?->isSuperAdminOrAdminPusat() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])))
-                    <a href="{{ route('services.edit', $service) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
-                        {{ __('Edit') }}
-                    </a>
+                    <x-action-btn variant="edit" :href="route('services.edit', $service)" />
                 @endif
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && $service->status !== \App\Models\Service::STATUS_CANCEL)
-                    <a href="{{ route('admin-tx.edit-service', $service) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
-                        {{ __('Update Transaksi') }}
-                    </a>
+                    <x-action-btn variant="update-tx" :href="route('admin-tx.edit-service', $service)" />
                 @endif
                 <x-icon-btn-back :href="route('services.index')" :label="__('Kembali')" />
             </div>
@@ -42,7 +34,7 @@
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
                     <div class="mb-4">
-                        <a href="{{ route('services.report', $service) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+                        <x-action-btn variant="report" :href="route('services.report', $service)" target="_blank" />
                     </div>
                     @if ($service->status === \App\Models\Service::STATUS_CANCEL)
                         <div class="mb-6 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
@@ -75,9 +67,7 @@
                             </p>
                         </div>
                         <div><p class="text-sm text-gray-500">{{ __('Status') }}</p>
-                            <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $service->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($service->status === 'cancel' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800') }}">
-                                {{ $service->status === 'cancel' ? __('Dibatalkan') : ($service->status === 'completed' ? __('Selesai') : __('Open')) }}
-                            </span>
+                            <x-document-status-badge :status="$service->status" />
                             <span class="ml-1 px-2 py-1 rounded-lg text-xs font-medium {{ $service->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
                                 {{ $service->isPaidOff() ? __('Lunas') : __('Belum Lunas') }}
                             </span>
@@ -238,7 +228,7 @@
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             <div class="mt-10 border border-red-200 rounded-lg p-4 bg-red-50/40">
                 <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
-                <form method="POST" action="{{ route('services.cancel', $service) }}" onsubmit="return confirm('{{ $service->status === \App\Models\Service::STATUS_COMPLETED ? __('Transaksi sudah RELEASED. Batalkan service ini?') : __('Batalkan service ini?') }}')">
+                <form method="POST" action="{{ route('services.cancel', $service) }}" data-swal-confirm="{{ $service->status === \App\Models\Service::STATUS_COMPLETED ? __('Transaksi sudah RELEASED. Batalkan service ini?') : __('Batalkan service ini?') }}" data-swal-confirm-color="#dc2626">
                     @csrf
                     <div class="flex flex-col gap-2 mb-3">
                         <textarea name="cancel_reason" class="w-full rounded-md border-gray-300" rows="2" placeholder="{{ __('Alasan pembatalan') }}" required></textarea>

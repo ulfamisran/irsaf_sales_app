@@ -11,6 +11,17 @@ export default {
         'text-teal-800', 'text-teal-900', 'text-violet-800', 'text-violet-900',
         'text-rose-800', 'text-rose-900', 'text-cyan-800', 'text-cyan-900',
         'text-slate-700', 'text-slate-900',
+        // Detail action buttons
+        'bg-indigo-600', 'hover:bg-indigo-700',
+        'bg-teal-600', 'hover:bg-teal-700',
+        'bg-sky-600', 'hover:bg-sky-700',
+        'bg-amber-600', 'hover:bg-amber-700',
+        'bg-orange-600', 'hover:bg-orange-700',
+        'bg-violet-600', 'hover:bg-violet-700',
+        'bg-blue-600', 'hover:bg-blue-700',
+        'bg-emerald-600', 'hover:bg-emerald-700',
+        'bg-red-600', 'hover:bg-red-700',
+        'text-white',
     ],
     content: [
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',

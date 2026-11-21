@@ -267,6 +267,128 @@ class AuthorizationService
         }
     }
 
+    /**
+     * Syarat bisnis sebelum Release: lunas; service sudah diambil; sewa sudah dikembalikan.
+     */
+    public function assertReadyForRelease(Model $model): void
+    {
+        match (true) {
+            $model instanceof Sale => $this->assertDocumentPaidOff(
+                $model->isPaidOff(),
+                __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.')
+            ),
+            $model instanceof Purchase => $this->assertDocumentPaidOff(
+                $model->isPaidOffAgainstInvoice(),
+                __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.')
+            ),
+            $model instanceof Distribution => $this->assertDocumentPaidOff(
+                $model->isPaidOff(),
+                __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di halaman tambah pembayaran.')
+            ),
+            $model instanceof Service => $this->assertServiceReadyForRelease($model),
+            $model instanceof Rental => $this->assertRentalReadyForRelease($model),
+            default => null,
+        };
+    }
+
+    private function assertDocumentPaidOff(bool $paidOff, string $message): void
+    {
+        if (! $paidOff) {
+            throw new InvalidArgumentException($message);
+        }
+    }
+
+    private function assertServiceReadyForRelease(Service $service): void
+    {
+        $total = (float) $service->total_service_price;
+        $paid = (float) $service->total_paid;
+        if ($paid <= 0 && $service->relationLoaded('payments')) {
+            $paid = (float) $service->payments->sum('amount');
+        } elseif ($paid <= 0) {
+            $paid = (float) $service->payments()->sum('amount');
+        }
+        if ($total > 0 && $paid < $total - 0.02) {
+            throw new InvalidArgumentException(__('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.'));
+        }
+        if ($service->pickup_status !== Service::PICKUP_SUDAH) {
+            throw new InvalidArgumentException(__('Barang service harus sudah diambil sebelum release. Tandai pengambilan di form edit.'));
+        }
+    }
+
+    private function assertRentalReadyForRelease(Rental $rental): void
+    {
+        if ($rental->effects_pending) {
+            return;
+        }
+        if ($rental->return_status !== Rental::RETURN_SUDAH) {
+            throw new InvalidArgumentException(__('Barang sewa harus sudah dikembalikan sebelum release. Lengkapi pelunasan & pengembalian di form.'));
+        }
+        if (! $rental->isPaidOff()) {
+            throw new InvalidArgumentException(__('Transaksi harus lunas sebelum release. Lengkapi pelunasan di form edit.'));
+        }
+    }
+
+    /**
+     * Tampilkan tombol Release di daftar aksi jika dokumen masih open dan boleh di-commit.
+     */
+    public function showListRelease(Model $model): bool
+    {
+        if ($this->blocksMutation($model)) {
+            return false;
+        }
+
+        return match (true) {
+            $model instanceof Purchase => $model->status === Purchase::STATUS_OPEN && $this->allowsCommit($model),
+            $model instanceof Distribution => $model->status === Distribution::STATUS_OPEN && $this->allowsCommit($model),
+            $model instanceof Sale => $model->status === Sale::STATUS_OPEN && $this->allowsCommit($model),
+            $model instanceof UnitExchange => $model->status === UnitExchange::STATUS_OPEN && $this->allowsCommit($model),
+            $model instanceof Service => $model->status === Service::STATUS_OPEN
+                && $this->allowsCommit($model)
+                && $this->serviceReadyToRelease($model),
+            $model instanceof Rental => $model->status === Rental::STATUS_OPEN
+                && $this->allowsCommit($model)
+                && (
+                    (bool) $model->effects_pending
+                    || ($this->rentalReadyToRelease($model) && $model->return_status === Rental::RETURN_SUDAH && $model->isPaidOff())
+                ),
+            default => false,
+        };
+    }
+
+    /**
+     * URL form untuk melengkapi data jika release dari daftar gagal validasi.
+     */
+    public function releaseCompletionUrl(Model $model): string
+    {
+        return match (true) {
+            $model instanceof Purchase => route('purchases.edit', $model),
+            $model instanceof Distribution => route('stock-mutations.add-payment', $model),
+            $model instanceof Sale => route('sales.edit', $model),
+            $model instanceof UnitExchange => route('sales.unit-exchanges.edit', $model),
+            $model instanceof Service => route('services.edit', $model),
+            $model instanceof Rental => (! $model->isPaidOff() || $model->return_status !== Rental::RETURN_SUDAH)
+                ? route('rentals.show', $model).'#pelunasan-pengembalian'
+                : route('rentals.show', $model),
+            default => url()->previous() ?: url('/'),
+        };
+    }
+
+    /**
+     * Route POST untuk aksi Release dari daftar.
+     */
+    public function listReleaseRoute(Model $model): ?string
+    {
+        return match (true) {
+            $model instanceof Purchase => route('purchases.release', $model),
+            $model instanceof Distribution => route('stock-mutations.release', $model),
+            $model instanceof Sale => route('sales.release', $model),
+            $model instanceof UnitExchange => route('sales.unit-exchanges.release', $model),
+            $model instanceof Service => route('services.release', $model),
+            $model instanceof Rental => route('rentals.list-release', $model),
+            default => null,
+        };
+    }
+
     public function assertFollowUp(Model $model): void
     {
         if ($this->blocksMutation($model) || ! $this->allowsCommit($model)) {

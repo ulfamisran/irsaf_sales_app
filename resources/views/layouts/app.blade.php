@@ -117,6 +117,23 @@
 
         <!-- SweetAlert2 for beautiful alerts -->
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        @php
+            $appFlashErrors = $errors->any() ? $errors->all() : [];
+            $appFlashError = session('error');
+            $appFlashSuccess = session('success');
+            $appFlashWarning = session('warning');
+        @endphp
+        @if ($appFlashError || $appFlashSuccess || $appFlashWarning || count($appFlashErrors) > 0)
+            <script id="app-flash-messages" type="application/json">
+                {!! json_encode([
+                    'error' => $appFlashError ? (string) $appFlashError : null,
+                    'success' => $appFlashSuccess ? (string) $appFlashSuccess : null,
+                    'warning' => $appFlashWarning ? (string) $appFlashWarning : null,
+                    'validation' => array_values(array_unique(array_map('strval', $appFlashErrors))),
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}
+            </script>
+        @endif
+        <script src="{{ asset('js/app-swal.js') }}?v=2"></script>
         @if ($authNotifyCan)
             <script src="{{ asset('js/authorization-notify.js') }}?v=1" defer></script>
         @endif

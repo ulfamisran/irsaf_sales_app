@@ -10,7 +10,12 @@
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             @if (session('error'))
-                <div class="mb-4 rounded-md bg-red-50 p-4 text-red-800">{{ session('error') }}</div>
+                <div class="mb-4 rounded-md bg-red-50 p-4 text-red-800 {{ session('release_incomplete') ? 'ring-2 ring-amber-400' : '' }}">{{ session('error') }}</div>
+            @endif
+            @if (session('release_incomplete'))
+                <div class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-4 text-amber-900 text-sm">
+                    {{ __('Release dari daftar belum bisa dilanjutkan. Lengkapi kekurangan di form ini (pembayaran, pengambilan, bukti, otorisasi), lalu coba Release lagi.') }}
+                </div>
             @endif
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
