@@ -72,7 +72,11 @@
                     <div class="md:col-span-2">
                         <label for="invoice_search" class="block text-sm font-medium text-slate-700">{{ __('Invoice Penjualan Release') }}</label>
                         <input id="invoice_search" type="text" readonly placeholder="{{ __('Klik untuk memilih invoice...') }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm cursor-pointer" value="{{ $initial['invoice_number'] ?? '' }}">
-                        <p id="invoice_meta" class="mt-2 text-sm text-slate-600">{{ $initial ? __('Pelanggan').': '.($initial['customer'] ?? '-') : '' }}</p>
+                        <div id="invoice_meta" class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-600 {{ $initial ? '' : 'hidden' }}">
+                            <p><span class="text-slate-500">{{ __('Pelanggan') }}:</span> <span data-invoice-customer class="font-medium text-slate-800">{{ $initial['customer'] ?? '-' }}</span></p>
+                            <p><span class="text-slate-500">{{ __('Tanggal Invoice') }}:</span> <span data-invoice-date class="font-medium text-slate-800">{{ $initial['sale_date'] ?? '-' }}</span></p>
+                            <p><span class="text-slate-500">{{ __('Pembuat Invoice') }}:</span> <span data-invoice-user class="font-medium text-slate-800">{{ $initial['invoice_user'] ?? '-' }}</span></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -193,7 +197,10 @@
                 }
                 saleInput.value = invoice.id;
                 searchInput.value = invoice.invoice_number;
-                meta.textContent = @json(__('Pelanggan')) + ': ' + (invoice.customer || '-') + ' · ' + (invoice.sale_date || '');
+                meta.classList.remove('hidden');
+                meta.querySelector('[data-invoice-customer]').textContent = invoice.customer || '-';
+                meta.querySelector('[data-invoice-date]').textContent = invoice.sale_date || '-';
+                meta.querySelector('[data-invoice-user]').textContent = invoice.invoice_user || '-';
                 const units = invoice.units || [];
                 if (!units.length) {
                     unitRows.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">' + @json(__('Invoice ini tidak memiliki nomor serial.')) + '</td></tr>';
@@ -224,7 +231,13 @@
                     + '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Nomor Serial')) + '</label><input type="text" data-replace-serial-search class="' + field + '" placeholder="' + @json(__('Search serial...')) + '"></div>'
                     + '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Scan Serial')) + '</label><input type="text" data-replace-scan class="' + field + '" placeholder="' + @json(__('Scan barcode/QR + Enter')) + '"></div>'
                     + '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Serial Dipilih')) + '</label><select data-replace-serial size="3" class="' + field + '"></select></div>'
-                    + '</div></div></div>';
+                    + '</div>'
+                    + '<div data-replace-prices class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 hidden">'
+                    + '<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p class="text-xs text-slate-500">' + @json(__('HPP Unit Pengganti')) + '</p><p data-replace-hpp class="text-sm font-semibold text-slate-800">-</p></div>'
+                    + '<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p class="text-xs text-slate-500">' + @json(__('Nilai Jual Unit Pengganti')) + '</p><p data-replace-jual class="text-sm font-semibold text-slate-800">-</p></div>'
+                    + '<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p class="text-xs text-slate-500">' + @json(__('Harga Unit Ditukar')) + '</p><p data-replace-old-price class="text-sm font-semibold text-slate-800">-</p></div>'
+                    + '</div>'
+                    + '</div></div>';
             }
 
             function rowHtml(unit, index) {
@@ -245,8 +258,8 @@
                     + '<input type="text" data-field="new_serial" class="block w-full rounded-md border-gray-300 text-sm bg-slate-100" readonly disabled>'
                     + '<p data-replacement class="mt-1 text-xs text-slate-500"></p></div>'
                     + '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Selisih harga')) + '</label>'
-                    + '<input type="number" step="1" data-field="price_difference" value="0" class="block w-full rounded-md border-gray-300 text-sm" disabled>'
-                    + '<p class="mt-1 text-xs text-slate-500">' + @json(__('Positif = pemasukan. Negatif = pengembalian dana.')) + '</p></div>'
+                    + '<input type="number" step="1" data-field="price_difference" value="0" class="block w-full rounded-md border-gray-300 text-sm bg-slate-100" readonly disabled>'
+                    + '<p class="mt-1 text-xs text-slate-500">' + @json(__('Otomatis: nilai jual unit pengganti dikurangi harga unit yang ditukar. Positif = pemasukan, negatif = pengembalian.')) + '</p></div>'
                     + '<div data-payment-wrap class="hidden"><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Metode pembayaran')) + '</label>'
                     + '<select data-field="payment_method_id" class="block w-full rounded-md border-gray-300 text-sm" disabled><option value="">' + @json(__('Pilih metode')) + '</option>' + options + '</select></div>'
                     + '</div></td></tr>';
@@ -392,6 +405,15 @@
                 refreshBrandSeries(panel);
             }
 
+            function clearReplacement(panel) {
+                panel.querySelector('[data-field="new_serial"]').value = '';
+                panel.querySelector('[data-replacement]').textContent = '';
+                panel.querySelector('[data-field="price_difference"]').value = '0';
+                panel.querySelector('[data-payment-wrap]').classList.add('hidden');
+                const priceBox = panel.querySelector('[data-replace-prices]');
+                if (priceBox) priceBox.classList.add('hidden');
+            }
+
             function applyReplacement(panel, unit) {
                 const needle = String(unit.serial || '').toLowerCase();
                 const used = Array.from(unitRows.querySelectorAll('[data-exchange-panel]')).some((other) => {
@@ -404,7 +426,18 @@
                 }
                 panel.querySelector('[data-field="new_serial"]').value = unit.serial || '';
                 panel.querySelector('[data-replacement]').textContent = [unit.sku, unit.product].filter(Boolean).join(' · ');
-                const difference = Math.round((Number(unit.price) || 0) - Number(panel.dataset.oldPrice || 0));
+                const hpp = Number(unit.hpp ?? unit.harga_hpp ?? 0);
+                const jual = Number(unit.price ?? 0);
+                const oldPrice = Number(panel.dataset.oldPrice || 0);
+                const priceBox = panel.querySelector('[data-replace-prices]');
+                if (priceBox) {
+                    priceBox.classList.remove('hidden');
+                    panel.querySelector('[data-replace-hpp]').textContent = 'Rp ' + money(hpp);
+                    panel.querySelector('[data-replace-jual]').textContent = 'Rp ' + money(jual);
+                    const oldPriceEl = panel.querySelector('[data-replace-old-price]');
+                    if (oldPriceEl) oldPriceEl.textContent = 'Rp ' + money(oldPrice);
+                }
+                const difference = Math.round(jual - oldPrice);
                 panel.querySelector('[data-field="price_difference"]').value = String(difference);
                 panel.querySelector('[data-payment-wrap]').classList.toggle('hidden', difference === 0);
                 panel.querySelector('[data-replace-results]').classList.add('hidden');
@@ -470,7 +503,9 @@
                 }
                 panel._lookupHits = units;
                 box.innerHTML = units.length
-                    ? units.map((unit, index) => '<button type="button" class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-replace-hit="' + index + '">' + esc(unit.serial) + ' · ' + esc(unit.sku) + ' · ' + esc(unit.product) + '</button>').join('')
+                    ? units.map((unit, index) => '<button type="button" class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-replace-hit="' + index + '">'
+                        + esc(unit.serial) + ' · ' + esc(unit.sku) + ' · ' + esc(unit.product)
+                        + '</button>').join('')
                     : '<p class="px-3 py-2 text-sm text-slate-500">' + @json(__('Serial stok tidak ditemukan di lokasi ini.')) + '</p>';
                 box.classList.remove('hidden');
             }
@@ -507,15 +542,18 @@
                     panel.querySelector('[data-replace-product]').value = '';
                     refreshBrandSeries(panel);
                     panel.querySelector('[data-replace-serial]').innerHTML = '';
+                    clearReplacement(panel);
                     return;
                 }
                 if (field.matches('[data-replace-series]')) {
                     panel.querySelector('[data-replace-product]').value = '';
                     fillProductSelect(panel, '');
                     panel.querySelector('[data-replace-serial]').innerHTML = '';
+                    clearReplacement(panel);
                     return;
                 }
                 if (field.matches('[data-replace-product]')) {
+                    clearReplacement(panel);
                     await loadPanelSerials(panel);
                     return;
                 }

@@ -57,6 +57,14 @@
                     </p>
                 </div>
                 <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Tanggal Invoice') }}</p>
+                    <p class="font-medium text-slate-800">{{ $exchange->sale?->sale_date?->format('d/m/Y') ?? '-' }}</p>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Pembuat Invoice') }}</p>
+                    <p class="font-medium text-slate-800">{{ $exchange->sale?->user?->name ?? '-' }}</p>
+                </div>
+                <div>
                     <p class="text-xs uppercase tracking-wider text-slate-500">{{ __('Pelanggan') }}</p>
                     <p class="font-medium text-slate-800">{{ $exchange->sale?->customer?->name ?? '-' }}</p>
                 </div>

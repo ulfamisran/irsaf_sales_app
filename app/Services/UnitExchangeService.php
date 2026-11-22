@@ -86,7 +86,6 @@ class UnitExchangeService
             foreach ($items as $item) {
                 $oldSerial = trim((string) ($item['old_serial'] ?? ''));
                 $newSerial = trim((string) ($item['new_serial'] ?? ''));
-                $difference = round((float) ($item['price_difference'] ?? 0), 2);
                 $paymentMethodId = isset($item['payment_method_id']) && $item['payment_method_id'] !== ''
                     ? (int) $item['payment_method_id']
                     : null;
@@ -105,12 +104,6 @@ class UnitExchangeService
                 $usedOld[$oldKey] = true;
                 $usedNew[$newKey] = true;
 
-                if (abs($difference) >= 0.01 && ! $paymentMethodId) {
-                    throw new InvalidArgumentException(__('Metode pembayaran wajib diisi bila ada selisih harga.'));
-                }
-                if ($paymentMethodId) {
-                    $this->assertPaymentMethod($sale, $paymentMethodId);
-                }
                 $this->assertSerialNotDrafted($sale, $oldSerial, $newSerial, $existing);
 
                 [$detail, $serials, $index] = $this->findDetailSerial($sale, $oldSerial);
@@ -118,6 +111,14 @@ class UnitExchangeService
                 $newUnit = $this->findReplacement($newSerial, $locType, $locId);
 
                 $unitPrice = round((float) $detail->price, 2);
+                $difference = round((float) $newUnit->harga_jual - $unitPrice, 2);
+
+                if (abs($difference) >= 0.01 && ! $paymentMethodId) {
+                    throw new InvalidArgumentException(__('Metode pembayaran wajib diisi bila ada selisih harga.'));
+                }
+                if ($paymentMethodId) {
+                    $this->assertPaymentMethod($sale, $paymentMethodId);
+                }
                 if ($releasing) {
                     $this->swapSerialOnSale($sale, $detail, $serials, $index, $newUnit, $unitPrice);
                     $this->swapUnitStatus($oldUnit, $newUnit, $locType, $locId, $exchangeDate);
@@ -165,7 +166,7 @@ class UnitExchangeService
      */
     public function invoicePayload(Sale $sale): array
     {
-        $sale->loadMissing(['saleDetails.product', 'customer']);
+        $sale->loadMissing(['saleDetails.product', 'customer', 'user:id,name']);
         $units = [];
         foreach ($sale->saleDetails as $detail) {
             $product = $detail->product;
@@ -194,6 +195,7 @@ class UnitExchangeService
             'invoice_number' => $sale->invoice_number,
             'customer' => (string) ($sale->customer?->name ?? '-'),
             'sale_date' => $sale->sale_date?->format('d/m/Y') ?? '-',
+            'invoice_user' => (string) ($sale->user?->name ?? '-'),
             'units' => $units,
             'payment_methods' => $methods->map(fn (PaymentMethod $method) => [
                 'id' => $method->id,

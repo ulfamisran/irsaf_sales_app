@@ -51,7 +51,7 @@ class UnitExchangeController extends Controller
         $initial = null;
         $saleId = (int) ($request->old('sale_id') ?: $request->integer('sale'));
         if ($saleId > 0) {
-            $sale = Sale::query()->with(['saleDetails.product', 'customer'])->find($saleId);
+            $sale = Sale::query()->with(['saleDetails.product', 'customer', 'user:id,name'])->find($saleId);
             if ($sale && $sale->status === Sale::STATUS_RELEASED) {
                 $this->authorizeSale($sale);
                 $initial = $this->exchanges->invoicePayload($sale);
@@ -89,7 +89,7 @@ class UnitExchangeController extends Controller
         if ($exchange->status !== UnitExchange::STATUS_OPEN) {
             abort(403, __('Tukar unit yang sudah Release tidak dapat diubah.'));
         }
-        $exchange->load(['sale.saleDetails.product', 'sale.customer', 'items.product', 'user', 'proofs']);
+        $exchange->load(['sale.saleDetails.product', 'sale.customer', 'sale.user:id,name', 'items.product', 'user', 'proofs']);
         $this->authorizeSale($exchange->sale);
 
         return view('unit-exchanges.create', [
@@ -241,6 +241,7 @@ class UnitExchangeController extends Controller
                     'category_id' => $unit->product?->category_id,
                     'product' => $name !== '' ? $name : (string) ($unit->product?->sku ?? ''),
                     'price' => round((float) $unit->harga_jual, 2),
+                    'hpp' => round((float) $unit->harga_hpp, 2),
                 ];
             })->values(),
         ]);
@@ -262,7 +263,7 @@ class UnitExchangeController extends Controller
 
     public function show(Request $request, UnitExchange $exchange): View
     {
-        $exchange->load(['sale.customer', 'user', 'branch', 'warehouse', 'items.product', 'items.paymentMethod', 'proofs']);
+        $exchange->load(['sale.customer', 'sale.user:id,name', 'user', 'branch', 'warehouse', 'items.product', 'items.paymentMethod', 'proofs']);
         $this->authorizeSale($exchange->sale);
 
         return view('unit-exchanges.show', compact('exchange'));
