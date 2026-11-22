@@ -258,8 +258,8 @@
                     + '<input type="text" data-field="new_serial" class="block w-full rounded-md border-gray-300 text-sm bg-slate-100" readonly disabled>'
                     + '<p data-replacement class="mt-1 text-xs text-slate-500"></p></div>'
                     + '<div><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Selisih harga')) + '</label>'
-                    + '<input type="number" step="1" data-field="price_difference" value="0" class="block w-full rounded-md border-gray-300 text-sm bg-slate-100" readonly disabled>'
-                    + '<p class="mt-1 text-xs text-slate-500">' + @json(__('Otomatis: nilai jual unit pengganti dikurangi harga unit yang ditukar. Positif = pemasukan, negatif = pengembalian.')) + '</p></div>'
+                    + '<input type="number" step="1" data-field="price_difference" value="0" class="block w-full rounded-md border-gray-300 text-sm" disabled>'
+                    + '<p class="mt-1 text-xs text-slate-500">' + @json(__('Default: nilai jual unit pengganti ? harga unit yang ditukar (bisa diubah). Positif = pemasukan, negatif = pengembalian.')) + '</p></div>'
                     + '<div data-payment-wrap class="hidden"><label class="block text-xs font-medium text-slate-600 mb-1">' + @json(__('Metode pembayaran')) + '</label>'
                     + '<select data-field="payment_method_id" class="block w-full rounded-md border-gray-300 text-sm" disabled><option value="">' + @json(__('Pilih metode')) + '</option>' + options + '</select></div>'
                     + '</div></td></tr>';
