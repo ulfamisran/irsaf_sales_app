@@ -65,15 +65,7 @@
                         <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                     </div>
                     @endif
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
-                        <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
-                            <option value="released" {{ request('status') === 'released' ? 'selected' : '' }}>{{ __('Released') }}</option>
-                            <option value="cancel" {{ request('status') === 'cancel' ? 'selected' : '' }}>{{ __('Cancel') }}</option>
-                        </select>
-                    </div>
+                    <x-document-status-filter module="rentals" />
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status Pengembalian') }}</label>
                         <select name="return_status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -180,13 +172,7 @@
                                     </div>
                                 </td>
                                 <td class="px-4 py-3">
-                                    @if ($rental->status === \App\Models\Rental::STATUS_CANCEL)
-                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800">{{ __('Cancel') }}</span>
-                                    @elseif ($rental->status === \App\Models\Rental::STATUS_RELEASED)
-                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-800">{{ __('Released') }}</span>
-                                    @else
-                                        <span class="px-2 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-800">{{ __('Open') }}</span>
-                                    @endif
+                                    <x-document-status-badge :status="$rental->status" />
                                 </td>
                                 <td class="px-4 py-3">{{ ($rental->location_type ?? 'warehouse') === 'branch' ? ($rental->branch?->name ?? '-') : ($rental->warehouse?->name ?? '-') }}</td>
                                 <td class="px-4 py-3">{{ $rental->customer?->name ?? '-' }}</td>
@@ -213,6 +199,7 @@
                                 <td class="px-4 py-3 text-right">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$rental" module="rentals" />
+                                        <x-release-list-action :model="$rental" />
                                         <a href="{{ route('rentals.show', $rental) }}" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                             {{ __('Lihat') }}

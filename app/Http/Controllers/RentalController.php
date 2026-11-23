@@ -29,6 +29,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RentalController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         protected RentalService $rentalService,
         protected TransactionProofService $proofs
@@ -358,14 +360,8 @@ class RentalController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs']);
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->forLocation($rental->branch_id, $rental->warehouse_id)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('id')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+        $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs', 'returnUser', 'cancelUser']);
+        $paymentMethods = $this->paymentMethodsForRental($rental);
 
         return view('rentals.show', compact('rental', 'paymentMethods'));
     }
@@ -376,25 +372,36 @@ class RentalController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if ($rental->status !== Rental::STATUS_OPEN) {
-            abort(403, __('Penyewaan tidak dapat diedit (sudah dirilis atau dibatalkan).'));
+        if ($rental->status !== Rental::STATUS_OPEN || $rental->effects_pending || $rental->return_status === Rental::RETURN_SUDAH) {
+            abort(403, __('Penyewaan tidak dapat diedit (sudah diaktifkan menunggu otorisasi, unit sudah dikembalikan, dirilis, atau dibatalkan).'));
+        }
+        if (app(\App\Services\AuthorizationService::class)->blocksMutation($rental)) {
+            abort(403, __('Dokumen sedang menunggu otorisasi.'));
         }
 
         $rental->load(['items.product', 'customer', 'payments.paymentMethod', 'proofs']);
         $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
         $branches = Branch::orderBy('name')->get(['id', 'name']);
         $customers = Customer::query()
-            ->where('is_active', true)
+            ->where(function ($q) use ($rental) {
+                $q->where('is_active', true);
+                if ($rental->customer_id) {
+                    $q->orWhere('id', $rental->customer_id);
+                }
+            })
             ->orderBy('name')
             ->limit(500)
             ->get(['id', 'name', 'phone']);
-        $paymentMethods = PaymentMethod::query()
-            ->where('is_active', true)
-            ->forLocation($rental->branch_id, $rental->warehouse_id)
-            ->orderBy('jenis_pembayaran')
-            ->orderBy('nama_bank')
-            ->orderBy('id')
-            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+
+        // Pastikan pelanggan transaksi selalu ada di opsi (meski di luar limit / nonaktif).
+        if ($rental->customer_id && ! $customers->contains(fn ($c) => (int) $c->id === (int) $rental->customer_id)) {
+            $currentCustomer = $rental->customer ?? Customer::query()->find($rental->customer_id);
+            if ($currentCustomer) {
+                $customers = $customers->prepend($currentCustomer)->unique('id')->values();
+            }
+        }
+
+        $paymentMethods = $this->paymentMethodsForRental($rental);
 
         return view('rentals.edit', compact('rental', 'warehouses', 'branches', 'customers', 'paymentMethods'));
     }
@@ -405,8 +412,11 @@ class RentalController extends Controller
         if (! $user->isSuperAdminOrAdminPusat()) {
             abort(403, __('Unauthorized.'));
         }
-        if ($rental->status !== Rental::STATUS_OPEN || $rental->effects_pending) {
-            return back()->with('error', __('Penyewaan tidak dapat diedit (sudah dirilis, menunggu otorisasi, atau dibatalkan).'));
+        if ($rental->status !== Rental::STATUS_OPEN || $rental->effects_pending || $rental->return_status === Rental::RETURN_SUDAH) {
+            return back()->with('error', __('Penyewaan tidak dapat diedit (unit sudah dikembalikan, dirilis, menunggu aktivasi, atau dibatalkan).'));
+        }
+        if (app(\App\Services\AuthorizationService::class)->blocksMutation($rental)) {
+            return back()->with('error', __('Dokumen sedang menunggu otorisasi.'));
         }
 
         $this->proofs->validateUploads($request, $rental, false);
@@ -497,21 +507,41 @@ class RentalController extends Controller
 
         $this->proofs->assertHasProof($rental);
 
+        $itemIds = $rental->items()->pluck('id')->map(fn ($id) => (int) $id)->all();
         $validated = request()->validate([
+            'actual_return_date' => ['required', 'date', 'after_or_equal:'.$rental->pickup_date?->toDateString()],
+            'return_notes' => ['nullable', 'string', 'max:2000'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['required', 'integer', 'in:'.implode(',', $itemIds ?: [0])],
+            'items.*.returned' => ['accepted'],
+            'items.*.return_condition' => ['required', 'in:baik,bermasalah'],
+            'items.*.return_notes' => ['nullable', 'string', 'max:1000'],
             'payments' => ['nullable', 'array'],
             'payments.*.payment_method_id' => ['required_with:payments', 'exists:payment_methods,id'],
             'payments.*.amount' => ['required_with:payments', 'numeric', 'min:0.01'],
             'payments.*.notes' => ['nullable', 'string'],
+        ], [
+            'items.required' => __('Centang dan lengkapi kondisi semua unit yang dikembalikan.'),
+            'items.*.returned.accepted' => __('Semua unit harus dicentang sebagai dikembalikan.'),
+            'items.*.return_condition.required' => __('Pilih kondisi Baik atau Bermasalah untuk setiap unit.'),
+            'actual_return_date.required' => __('Tanggal pengembalian wajib diisi.'),
         ]);
+
+        if (count($validated['items']) !== count($itemIds)) {
+            return back()->withInput()->with('error', __('Centang dan lengkapi kondisi semua unit yang dikembalikan.'));
+        }
 
         try {
             $this->rentalService->markReturned(
                 $rental,
                 $validated['payments'] ?? [],
-                $user->id
+                $user->id,
+                $validated['actual_return_date'],
+                $validated['return_notes'] ?? null,
+                $validated['items']
             );
         } catch (InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->withInput()->with('error', $e->getMessage());
         }
 
         $msg = $rental->fresh()->status === Rental::STATUS_RELEASED
@@ -531,7 +561,49 @@ class RentalController extends Controller
         try {
             $this->rentalService->finalizeRelease($rental);
         } catch (InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $rental, $e->getMessage());
+        }
+
+        return redirect()->route('rentals.show', $rental)->with('success', __('Status penyewaan diubah menjadi Release.'));
+    }
+
+    /**
+     * Release dari daftar: aktifkan efek, atau finalize status jika pengembalian sudah dicatat.
+     */
+    public function listRelease(Request $request, Rental $rental): RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
+            abort(403, __('Unauthorized.'));
+        }
+
+        $auth = app(\App\Services\AuthorizationService::class);
+
+        try {
+            if ($rental->status !== Rental::STATUS_OPEN) {
+                throw new InvalidArgumentException(__('Penyewaan sudah selesai atau dibatalkan.'));
+            }
+
+            if ($rental->effects_pending) {
+                $auth->assertCanApplyDeferredEffects($rental);
+                $this->rentalService->releaseEffects($rental, (int) $user->id);
+
+                return redirect()
+                    ->route('rentals.show', $rental)
+                    ->with('success', __('Penyewaan diaktifkan. Lengkapi pelunasan & pengembalian, lalu release lagi.'))
+                    ->with('release_incomplete', true);
+            }
+
+            $auth->assertReadyForRelease($rental);
+
+            if (! $rental->requires_authorization) {
+                $this->rentalService->finalizeRelease($rental);
+            } else {
+                $auth->assertCanRelease($rental);
+                $this->rentalService->finalizeRelease($rental);
+            }
+        } catch (InvalidArgumentException $e) {
+            return $this->redirectReleaseFailure($request, $rental, $e->getMessage());
         }
 
         return redirect()->route('rentals.show', $rental)->with('success', __('Status penyewaan diubah menjadi Release.'));
@@ -694,6 +766,44 @@ class RentalController extends Controller
             'serial_numbers' => $serials,
             'is_serial_tracked' => true,
         ]);
+    }
+
+    /**
+     * Metode pembayaran untuk lokasi sewa + metode yang sudah dipakai transaksi
+     * (agar baris pembayaran lama tetap bisa ditampilkan di edit/show).
+     *
+     * @return \Illuminate\Support\Collection<int, PaymentMethod>
+     */
+    private function paymentMethodsForRental(Rental $rental)
+    {
+        $locationType = $rental->location_type
+            ?? ($rental->warehouse_id ? Rental::LOCATION_WAREHOUSE : Rental::LOCATION_BRANCH);
+        $branchId = $locationType === Rental::LOCATION_BRANCH ? $rental->branch_id : null;
+        $warehouseId = $locationType === Rental::LOCATION_WAREHOUSE ? $rental->warehouse_id : null;
+
+        $paymentMethods = PaymentMethod::query()
+            ->where('is_active', true)
+            ->forLocation($branchId, $warehouseId)
+            ->orderBy('jenis_pembayaran')
+            ->orderBy('nama_bank')
+            ->orderBy('id')
+            ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+
+        $usedIds = $rental->payments
+            ->pluck('payment_method_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+        $missingIds = $usedIds->diff($paymentMethods->pluck('id')->map(fn ($id) => (int) $id));
+        if ($missingIds->isNotEmpty()) {
+            $extra = PaymentMethod::query()
+                ->whereIn('id', $missingIds->all())
+                ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
+            $paymentMethods = $paymentMethods->concat($extra)->unique('id')->values();
+        }
+
+        return $paymentMethods;
     }
 
     private function resolveCustomerId(Request $request): ?int

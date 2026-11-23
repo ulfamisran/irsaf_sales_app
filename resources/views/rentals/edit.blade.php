@@ -54,10 +54,11 @@
 
                             <div>
                                 <x-input-label for="customer_id" :value="__('Penyewa')" />
-                                <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                @php $selectedCustomerId = old('customer_id', $rental->customer_id); @endphp
+                                <select id="customer_id" name="customer_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" data-selected-customer="{{ $selectedCustomerId }}">
                                     <option value="">{{ __('Pilih Penyewa (atau isi penyewa baru)') }}</option>
                                     @foreach ($customers as $c)
-                                        <option value="{{ $c->id }}" {{ old('customer_id', $rental->customer_id) == $c->id ? 'selected' : '' }}>
+                                        <option value="{{ $c->id }}" @selected((string) $selectedCustomerId === (string) $c->id)>
                                             {{ $c->name }}{{ $c->phone ? ' - '.$c->phone : '' }}
                                         </option>
                                     @endforeach
@@ -180,7 +181,12 @@
 
     @php
         $editPaymentMethods = ($paymentMethods ?? collect())->map(fn ($m) => ['id' => $m->id, 'label' => $m->display_label])->values()->toArray();
-        $editPayments = old('payments', ($rental->payments ?? collect())->map(fn ($p) => ['payment_method_id' => $p->payment_method_id, 'amount' => (float)$p->amount, 'notes' => $p->notes])->toArray());
+        $editPayments = old('payments', ($rental->payments ?? collect())->map(fn ($p) => [
+            'payment_method_id' => $p->payment_method_id,
+            'payment_method_label' => $p->paymentMethod?->display_label,
+            'amount' => (float) $p->amount,
+            'notes' => $p->notes,
+        ])->toArray());
         $editItems = old('items', ($rental->items ?? collect())->map(fn ($i) => ['product_id' => $i->product_id, 'serial_number' => $i->serial_number, 'rental_price' => (float)$i->rental_price])->toArray());
     @endphp
     <script>
@@ -540,7 +546,7 @@
                     if (chk.checked) otherSelected.add(chk.value);
                 });
                 if (current.checked && otherSelected.has(current.value)) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                     current.checked = false;
                 }
                 refreshTotals();
@@ -572,12 +578,29 @@
                 <input type="text" name="payments[${idx}][notes]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Catatan (opsional)" style="grid-column:1 / -1;">
             `;
             paymentRows.appendChild(div);
-            if (pref.payment_method_id) div.querySelector('select').value = String(pref.payment_method_id);
-            if (pref.amount) div.querySelector('input[name*="[amount]"]').value = String(pref.amount);
+            const methodSel = div.querySelector('select');
+            if (pref.payment_method_id && methodSel) {
+                const want = String(pref.payment_method_id);
+                if (![...methodSel.options].some(o => o.value === want)) {
+                    const opt = document.createElement('option');
+                    opt.value = want;
+                    opt.textContent = pref.payment_method_label || ('Metode #' + want);
+                    methodSel.appendChild(opt);
+                    if (!paymentMethods.some(m => String(m.id) === want)) {
+                        paymentMethods.push({ id: pref.payment_method_id, label: opt.textContent });
+                    }
+                }
+                methodSel.value = want;
+            }
+            const amountInp = div.querySelector('input[name*="[amount]"]');
+            if (amountInp && pref.amount !== undefined && pref.amount !== null && pref.amount !== '') {
+                amountInp.value = String(pref.amount);
+            }
             if (pref.notes) div.querySelector('input[name*="[notes]"]').value = String(pref.notes || '');
             div.querySelectorAll('select,input').forEach(el => el.addEventListener('input', refreshPaymentSum));
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
             div.querySelector('.remove-payment')?.addEventListener('click', () => { div.remove(); refreshPaymentSum(); });
+            refreshPaymentSum();
         }
         document.getElementById('add-payment')?.addEventListener('click', () => addPaymentRow());
         if (Array.isArray(editPayments) && editPayments.length > 0) {
@@ -586,15 +609,27 @@
             addPaymentRow();
         }
 
-        // Customer toggle
+        // Customer toggle + pastikan pelanggan transaksi terpilih
         const customerSelect = document.getElementById('customer_id');
         const newCustomerFields = document.getElementById('new-customer-fields');
+        const keepEditCustomerId = @json(old('customer_id', $rental->customer_id));
         const toggleCustomerFields = () => {
             const hasCustomer = !!(customerSelect && customerSelect.value);
             if (newCustomerFields) newCustomerFields.style.display = hasCustomer ? 'none' : '';
         };
+        function ensureCustomerSelected() {
+            if (!customerSelect || keepEditCustomerId == null || keepEditCustomerId === '') return;
+            const want = String(keepEditCustomerId);
+            if (customerSelect.value !== want) {
+                const exists = Array.from(customerSelect.options).some(o => o.value === want);
+                if (exists) {
+                    customerSelect.value = want;
+                }
+            }
+            toggleCustomerFields();
+        }
         customerSelect?.addEventListener('change', toggleCustomerFields);
-        toggleCustomerFields();
+        ensureCustomerSelected();
 
         async function loadFormDataForLocation() {
             const locationType = document.getElementById('location_type')?.value;
@@ -679,7 +714,9 @@
 
         async function initRentalEdit() {
             updateLocationSelect();
+            ensureCustomerSelected();
             await loadProductsForLocation();
+            ensureCustomerSelected();
             const body = document.getElementById('rental-items');
             body.innerHTML = '';
             const groups = groupItems(editItems);
@@ -709,6 +746,7 @@
             toggleRemoveButtons();
             refreshDays();
             refreshTotals();
+            ensureCustomerSelected();
         }
 
         if (document.readyState === 'loading') {

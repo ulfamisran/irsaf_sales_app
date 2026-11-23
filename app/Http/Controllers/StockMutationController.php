@@ -30,6 +30,8 @@ use InvalidArgumentException;
 
 class StockMutationController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         protected StockMutationService $stockMutationService,
         protected PurchaseService $purchaseService
@@ -348,7 +350,9 @@ class StockMutationController extends Controller
         $this->authorizeDistributionAccess($distribution, $user);
 
         try {
-            app(\App\Services\AuthorizationService::class)->assertCanRelease($distribution);
+            $auth = app(\App\Services\AuthorizationService::class);
+            $auth->assertCanRelease($distribution);
+            $auth->assertReadyForRelease($distribution);
             \Illuminate\Support\Facades\DB::transaction(function () use ($distribution, $user) {
                 $mutations = $this->stockMutationService->releaseOpenDistribution($distribution, (int) $user->id);
                 $distribution->refresh()->load('payments.paymentMethod');
@@ -404,7 +408,7 @@ class StockMutationController extends Controller
                 );
             });
         } catch (InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $distribution, $e->getMessage());
         }
 
         return redirect()->route('stock-mutations.show', $distribution)->with('success', __('Distribusi berhasil di-release.'));

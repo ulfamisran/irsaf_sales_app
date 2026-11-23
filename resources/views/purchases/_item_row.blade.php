@@ -1,16 +1,28 @@
 @php
     $detail = $detail ?? null;
-    $pid = old('items.'.$idx.'.product_id', $detail?->product_id);
-    $qty = old('items.'.$idx.'.quantity', $detail?->quantity ?? 1);
-    $price = old('items.'.$idx.'.unit_price', $detail?->unit_price);
-    $serialsText = old('items.'.$idx.'.serial_numbers_text');
-    if ($serialsText === null && $detail?->serial_numbers) {
+    $itemOld = is_array($itemOld ?? null) ? $itemOld : null;
+    $pid = $itemOld['product_id'] ?? old('items.'.$idx.'.product_id', $detail?->product_id);
+    $qty = $itemOld['quantity'] ?? old('items.'.$idx.'.quantity', $detail?->quantity ?? 1);
+    $price = $itemOld['unit_price'] ?? old('items.'.$idx.'.unit_price', $detail?->unit_price);
+    $serialsText = $itemOld['serial_numbers_text'] ?? old('items.'.$idx.'.serial_numbers_text');
+    if ($serialsText === null || $serialsText === '') {
+        $serialArr = $itemOld['serial_numbers'] ?? old('items.'.$idx.'.serial_numbers');
+        if (is_array($serialArr) && count($serialArr) > 0) {
+            $serialsText = implode("\n", array_values(array_filter(array_map('trim', $serialArr))));
+        }
+    }
+    if (($serialsText === null || $serialsText === '') && $detail?->serial_numbers) {
         $serialsText = trim((string) $detail->serial_numbers);
     }
     $serialsText = $serialsText ?? '';
     $p = $detail?->product;
+    if (! $p && $pid && isset($products)) {
+        $p = collect($products)->firstWhere('id', (int) $pid);
+    }
     $labelText = $p ? (($p->sku ?? '').' — '.trim(($p->brand ?? '').' '.($p->series ?? ''))) : __('Pilih Produk');
-    $requiresSerial = $p ? (bool) ($p->category?->requires_serial ?? true) : true;
+    $requiresSerial = $p
+        ? (bool) (is_object($p) && isset($p->category) ? ($p->category?->requires_serial ?? true) : ($p->requires_serial ?? true))
+        : true;
 @endphp
 <div class="purchase-item rounded-lg border border-slate-200 bg-slate-50/50 p-4" data-requires-serial="{{ $requiresSerial ? 1 : 0 }}">
     <div class="purchase-serial-autocomplete serial-optional-block relative rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 {{ $requiresSerial ? '' : 'hidden' }}">

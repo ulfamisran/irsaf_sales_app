@@ -4,7 +4,7 @@
     $module = $module ?: $auth->moduleFor($model);
 @endphp
 @if ($module && $auth->needsSubmitHighlight($model))
-    <form method="POST" action="{{ route('authorizations.submit') }}" onsubmit="return confirm(@json(__('Ajukan otorisasi untuk dokumen ini?')));">
+    <form method="POST" action="{{ route('authorizations.submit') }}" data-swal-confirm="{{ __('Ajukan otorisasi untuk dokumen ini?') }}">
         @csrf
         <input type="hidden" name="module" value="{{ $module }}">
         <input type="hidden" name="document_id" value="{{ $model->getKey() }}">

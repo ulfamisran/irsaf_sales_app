@@ -37,6 +37,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SaleController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         protected SaleService $saleService,
         protected TransactionProofService $proofs
@@ -510,22 +512,51 @@ class SaleController extends Controller
         $user = $request->user();
         $this->authorizeSaleForUser($sale);
         if ($sale->status !== Sale::STATUS_OPEN) {
-            return back()->with('error', __('Sale sudah release.'));
+            return $this->redirectReleaseFailure($request, $sale, __('Sale sudah release.'));
         }
         try {
-            app(\App\Services\AuthorizationService::class)->assertCanRelease($sale);
+            $auth = app(\App\Services\AuthorizationService::class);
+            $auth->assertCanRelease($sale);
+            $this->proofs->assertHasProof($sale);
+            if ($request->boolean('from_list')) {
+                $auth->assertReadyForRelease($sale);
+            }
         } catch (\InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $sale, $e->getMessage());
         }
 
-        $this->proofs->assertHasProof($sale);
+        $fromList = $request->boolean('from_list');
+        if ($fromList && ! $request->filled('sale_date')) {
+            $request->merge([
+                'sale_date' => $sale->sale_date?->toDateString()
+                    ?? \Illuminate\Support\Carbon::now('Asia/Makassar')->toDateString(),
+            ]);
+        }
+        if ($fromList && ! $request->filled('payments')) {
+            $sale->loadMissing('payments');
+            $request->merge([
+                'payments' => $sale->payments->map(fn (SalePayment $p) => [
+                    'payment_method_id' => $p->payment_method_id,
+                    'amount' => (float) $p->amount,
+                    'notes' => $p->notes,
+                ])->values()->all(),
+            ]);
+        }
 
-        $validated = $request->validate([
-            'sale_date' => ['required', 'date'],
-            'payments' => ['nullable', 'array'],
-            'payments.*.payment_method_id' => ['nullable', 'exists:payment_methods,id'],
-            'payments.*.amount' => ['nullable', 'numeric', 'min:0'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'sale_date' => ['required', 'date'],
+                'payments' => ['nullable', 'array'],
+                'payments.*.payment_method_id' => ['nullable', 'exists:payment_methods,id'],
+                'payments.*.amount' => ['nullable', 'numeric', 'min:0'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->redirectReleaseFailure(
+                $request,
+                $sale,
+                __('Lengkapi tanggal dan pembayaran sebelum release.')
+            );
+        }
 
         try {
             $payments = $validated['payments'] ?? [];
@@ -539,7 +570,7 @@ class SaleController extends Controller
                 $user->id
             );
         } catch (\InvalidArgumentException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $sale, $e->getMessage());
         }
 
         return redirect()->route('sales.show', $sale)->with('success', __('Penjualan berhasil dirilis.'));
@@ -941,6 +972,12 @@ class SaleController extends Controller
         CatatRange::apply($query, $request, 'sales.created_at');
         CatatRange::applyBackdate($query, $request, 'sales.sale_date', 'sales.created_at');
         DocumentSearch::applySale($query, $request->input('search'));
+        if ($request->filled('status')) {
+            $status = (string) $request->status;
+            if (in_array($status, [Sale::STATUS_OPEN, Sale::STATUS_RELEASED, Sale::STATUS_CANCEL], true)) {
+                $query->where('status', $status);
+            }
+        }
 
         return compact('query', 'canFilterLocation', 'filterLocked', 'locationLabel');
     }

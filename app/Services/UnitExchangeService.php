@@ -165,7 +165,7 @@ class UnitExchangeService
      */
     public function invoicePayload(Sale $sale): array
     {
-        $sale->loadMissing(['saleDetails.product', 'customer']);
+        $sale->loadMissing(['saleDetails.product', 'customer', 'user:id,name']);
         $units = [];
         foreach ($sale->saleDetails as $detail) {
             $product = $detail->product;
@@ -194,6 +194,7 @@ class UnitExchangeService
             'invoice_number' => $sale->invoice_number,
             'customer' => (string) ($sale->customer?->name ?? '-'),
             'sale_date' => $sale->sale_date?->format('d/m/Y') ?? '-',
+            'invoice_user' => (string) ($sale->user?->name ?? '-'),
             'units' => $units,
             'payment_methods' => $methods->map(fn (PaymentMethod $method) => [
                 'id' => $method->id,

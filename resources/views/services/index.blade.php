@@ -73,15 +73,7 @@
                         <x-locked-location label="{{ __('Lokasi') }}" :value="$locationLabel ?? ''" />
                     </div>
                     @endif
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
-                        <select name="status" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <option value="">{{ __('Semua') }}</option>
-                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
-                            <option value="completed" {{ request('status') === 'completed' ? 'selected' : '' }}>{{ __('Selesai') }}</option>
-                            <option value="cancel" {{ request('status') === 'cancel' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
-                        </select>
-                    </div>
+                    <x-document-status-filter module="services" />
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Dari Tanggal') }}</label>
                         <input type="date" name="date_from" value="{{ request('date_from') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
@@ -198,16 +190,7 @@
                                 <td class="px-4 py-3">{{ Str::limit($svc->laptop_type, 25) }}</td>
                                 <td class="px-4 py-3">{{ $svc->entry_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">
-                                    @php
-                                        $statusClass = match($svc->status) {
-                                            'completed' => 'bg-emerald-100 text-emerald-800',
-                                            'cancel' => 'bg-red-100 text-red-800',
-                                            default => 'bg-blue-100 text-blue-800',
-                                        };
-                                    @endphp
-                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $statusClass }}">
-                                        {{ $svc->status === 'cancel' ? __('Dibatalkan') : ($svc->status === 'completed' ? __('Selesai') : __('Open')) }}
-                                    </span>
+                                    <x-document-status-badge :status="$svc->status" />
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $svc->isPaidOff() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">
@@ -220,6 +203,7 @@
                                 <td class="px-4 py-3 text-right">
                                     <x-row-actions>
                                         <x-authorization-submit-action :model="$svc" module="services" />
+                                        <x-release-list-action :model="$svc" />
                                         <a href="{{ route('services.show', $svc) }}" style="color:#047857;">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                             {{ __('Lihat') }}

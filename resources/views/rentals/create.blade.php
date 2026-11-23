@@ -219,8 +219,10 @@
         const availableSerialsUrl = appBaseUrl + availableSerialsPath;
         const warehouses = @json($warehouses ?? []);
         const branches = @json($branches ?? []);
-        const defaultLocationType = @json($defaultLocationType ?? 'warehouse');
-        const defaultLocationId = @json($defaultLocationId ?? null);
+        const defaultLocationType = @json(old('location_type', $defaultLocationType ?? 'warehouse'));
+        const defaultLocationId = @json(old('location_id', $defaultLocationId ?? null));
+        const keepRentalCustomerId = @json(old('customer_id'));
+        const oldRentalItems = @json(old('items') ? array_values(old('items')) : []);
         let products = [];
 
         function toNumber(val) {
@@ -368,7 +370,7 @@
             if (!locSel) return;
             const options = type === 'warehouse' ? warehouses : branches;
             locSel.innerHTML = '<option value="">' + @json(__('Pilih lokasi')) + '</option>' + options.map(o => '<option value="' + o.id + '">' + o.name + '</option>').join('');
-            if (defaultLocationId && type === defaultLocationType) {
+            if (defaultLocationId) {
                 locSel.value = String(defaultLocationId);
             }
         }
@@ -394,8 +396,12 @@
                 const customers = data.customers || [];
                 const custSel = document.getElementById('customer_id');
                 if (custSel) {
+                    const prevCustomer = custSel.value || keepRentalCustomerId || '';
                     custSel.innerHTML = '<option value="">' + @json(__('Pilih Penyewa (atau isi penyewa baru)')) + '</option>' +
                         customers.map(c => '<option value="' + c.id + '">' + (c.name || '') + (c.phone ? ' - ' + c.phone : '') + '</option>').join('');
+                    if (prevCustomer && customers.some(c => String(c.id) === String(prevCustomer))) {
+                        custSel.value = String(prevCustomer);
+                    }
                 }
                 document.querySelectorAll('#payment-rows select[name*="payment_method_id"]').forEach(sel => {
                     const oldVal = sel.value;
@@ -546,10 +552,13 @@
             `;
         }
 
-        document.getElementById('add-item')?.addEventListener('click', () => {
+        function addRentalItemRow(pref = {}) {
             const body = document.getElementById('rental-items');
+            if (!body) return null;
+            const idx = itemIndex++;
             const div = document.createElement('div');
             div.className = 'rental-item border border-slate-200 rounded-lg p-4 bg-slate-50/30';
+            const priceVal = pref.rental_price != null ? String(pref.rental_price) : '';
             div.innerHTML = `
                 <div class="space-y-3">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -568,7 +577,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700">{{ __('Produk') }}</label>
-                        ${getProductDropdownHtml(itemIndex)}
+                        ${getProductDropdownHtml(idx)}
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700">{{ __('Nomor Serial') }}</label>
@@ -579,7 +588,7 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label class="block text-sm font-medium text-slate-700">{{ __('Harga Sewa / Hari') }}</label>
-                            <input type="text" name="items[${itemIndex}][rental_price]" data-rupiah="true" class="rental-price block w-full mt-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right" placeholder="Harga" required>
+                            <input type="text" name="items[${idx}][rental_price]" data-rupiah="true" class="rental-price block w-full mt-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right" placeholder="Harga" value="${priceVal.replace(/"/g, '&quot;')}" required>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700">{{ __('Total') }}</label>
@@ -592,13 +601,27 @@
                 </div>
             `;
             body.appendChild(div);
-            itemIndex++;
             toggleRemoveButtons();
             initProductDropdown(div.querySelector('.product-dropdown-wrapper'));
             initRowMerkSeries(div);
             updateAllRowBrandSeries();
+            if (pref.product_id) {
+                const idInput = div.querySelector('.product-id-input');
+                if (idInput) idInput.value = String(pref.product_id);
+                const p = products.find(x => String(x.id) === String(pref.product_id));
+                const labelEl = div.querySelector('.product-label');
+                if (labelEl && p) {
+                    labelEl.textContent = (p.sku || '') + ' - ' + (p.brand || '') + ' ' + (p.series || '');
+                    labelEl.classList.remove('text-slate-500');
+                }
+            }
+            if (Array.isArray(pref.serials) && pref.serials.length) {
+                div.dataset.restoreSerials = JSON.stringify(pref.serials.map(String));
+            }
             if (window.attachRupiahFormatter) window.attachRupiahFormatter();
-        });
+            return div;
+        }
+        document.getElementById('add-item')?.addEventListener('click', () => addRentalItemRow());
 
         function initProductDropdown(wrapper) {
             if (!wrapper) return;
@@ -646,7 +669,7 @@
                     if (chk.checked) otherSelected.add(chk.value);
                 });
                 if (current.checked && otherSelected.has(current.value)) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                     current.checked = false;
                 }
                 refreshTotals();
@@ -728,11 +751,46 @@
         document.getElementById('tax_amount')?.addEventListener('input', refreshTotals);
         document.getElementById('penalty_amount')?.addEventListener('input', refreshTotals);
 
+        async function restoreRentalItemsFromOld() {
+            if (!Array.isArray(oldRentalItems) || oldRentalItems.length === 0) return;
+            const groups = {};
+            oldRentalItems.forEach((it) => {
+                if (!it || !it.product_id) return;
+                const key = String(it.product_id) + '|' + String(it.rental_price ?? '');
+                if (!groups[key]) {
+                    groups[key] = { product_id: it.product_id, rental_price: it.rental_price, serials: [] };
+                }
+                if (it.serial_number) groups[key].serials.push(String(it.serial_number));
+            });
+            const groupList = Object.values(groups);
+            if (!groupList.length) return;
+            const body = document.getElementById('rental-items');
+            if (!body) return;
+            body.innerHTML = '';
+            itemIndex = 0;
+            for (const group of groupList) {
+                const row = addRentalItemRow(group);
+                if (!row) continue;
+                await loadSerialsForRow(row);
+                let serials = [];
+                try { serials = JSON.parse(row.dataset.restoreSerials || '[]'); } catch (e) { serials = []; }
+                row.querySelectorAll('.serial-check').forEach((chk) => {
+                    chk.checked = serials.includes(chk.value);
+                });
+            }
+            toggleRemoveButtons();
+            refreshTotals();
+        }
+
         function initRentalCreate() {
             updateLocationSelect();
             loadFormDataForLocation().then(() => {
-                loadProductsForLocation().then(() => {
-                    document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
+                loadProductsForLocation().then(async () => {
+                    if (Array.isArray(oldRentalItems) && oldRentalItems.length > 0) {
+                        await restoreRentalItemsFromOld();
+                    } else {
+                        document.querySelectorAll('.rental-item').forEach(row => loadSerialsForRow(row));
+                    }
                 });
             });
             refreshDays();

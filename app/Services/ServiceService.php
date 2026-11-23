@@ -167,7 +167,7 @@ class ServiceService
 
     /**
      * Update service (only when status open).
-     * When $markAsReleased=true: wajib payments, set status ke completed.
+     * When $markAsReleased=true: wajib lunas + barang sudah diambil, set status ke completed.
      */
     public function update(
         Service $service,
@@ -181,7 +181,8 @@ class ServiceService
         array $payments,
         ?string $description = null,
         ?float $materialsTotalPrice = null,
-        bool $markAsReleased = false
+        bool $markAsReleased = false,
+        bool $markPickedUp = false
     ): Service {
         if ($service->status !== Service::STATUS_OPEN) {
             throw new InvalidArgumentException(__('Service sudah completed atau dibatalkan.'));
@@ -218,6 +219,13 @@ class ServiceService
         if ($paymentSum > $totalPrice + 0.02) {
             throw new InvalidArgumentException(__('Total pembayaran tidak boleh melebihi total service.'));
         }
+        if ($markAsReleased && $totalPrice > 0 && $paymentSum < $totalPrice - 0.02) {
+            throw new InvalidArgumentException(__('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.'));
+        }
+        $willBePickedUp = $markPickedUp || $service->pickup_status === Service::PICKUP_SUDAH;
+        if ($markAsReleased && ! $willBePickedUp) {
+            throw new InvalidArgumentException(__('Barang service harus sudah diambil sebelum release. Tandai pengambilan di form edit.'));
+        }
 
         $branch = $service->branch_id ? Branch::find($service->branch_id) : null;
         $isPaidOff = $markAsReleased && $paymentSum >= $totalPrice - 0.02;
@@ -237,7 +245,8 @@ class ServiceService
             $totalPrice,
             $isPaidOff,
             $description,
-            $markAsReleased
+            $markAsReleased,
+            $markPickedUp
         ) {
             $oldPayments = ServicePayment::where('service_id', $service->id)->get();
             $oldTotal = $oldPayments->sum('amount');
@@ -254,6 +263,9 @@ class ServiceService
                 'payment_status' => $isPaidOff ? Service::PAYMENT_LUNAS : Service::PAYMENT_BELUM_LUNAS,
                 'description' => $description,
             ];
+            if ($markPickedUp) {
+                $updates['pickup_status'] = Service::PICKUP_SUDAH;
+            }
             if ($markAsReleased) {
                 $updates['status'] = Service::STATUS_COMPLETED;
                 $updates['exit_date'] = $entryDate;

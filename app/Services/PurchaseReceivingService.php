@@ -183,7 +183,8 @@ class PurchaseReceivingService
                 }
             }
 
-            if ($units->isEmpty() && ! empty($detail->serial_numbers)) {
+            // Tidak ada unit teratribusi: hitung sisa dari qty detail (termasuk serial kosong).
+            if ($units->isEmpty()) {
                 $recognizedQty = (int) $detail->qty_baik;
                 $returnQty = (int) $detail->qty_reture;
                 $pendingQty = (int) $detail->qty_pending;
@@ -320,7 +321,10 @@ class PurchaseReceivingService
             }
         }
 
-        $count = $query->count();
+        $count = $query->with(['details.product.category', 'details.units', 'payments'])
+            ->get()
+            ->filter(fn (Purchase $p) => $this->purchaseNeedsCheck($p))
+            ->count();
         request()->attributes->set($key, $count);
 
         return $count;
