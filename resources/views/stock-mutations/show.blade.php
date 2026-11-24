@@ -2,19 +2,22 @@
     <x-slot name="title">{{ __('Detail Distribusi') }} - {{ $distribution->invoice_number }}</x-slot>
     <x-slot name="header">
         <div class="flex flex-wrap justify-between items-center gap-3">
-            <h2 class="font-semibold text-xl text-slate-800 leading-tight flex items-center gap-3">
+            <h2 class="font-semibold text-xl text-slate-800 leading-tight flex items-center gap-3 flex-wrap">
                 {{ __('Distribusi') }}: {{ $distribution->invoice_number }}
-                @if ($distribution->isCancelled())
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
-                @elseif ($totalBiaya <= 0)
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-slate-100 text-slate-600">{{ __('Gratis') }}</span>
-                @elseif ($isLunas)
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
-                @else
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-700">{{ __('Belum Lunas') }}</span>
+                <x-document-status-badge :status="$distribution->status" />
+                @if (! $distribution->isCancelled())
+                    @if ($totalBiaya <= 0)
+                        <span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600">{{ __('Gratis') }}</span>
+                    @elseif ($isLunas)
+                        <span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
+                    @else
+                        <span class="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-100 text-red-700">{{ __('Belum Lunas') }}</span>
+                    @endif
                 @endif
             </h2>
-            <a href="{{ route('stock-mutations.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300">{{ __('Kembali') }}</a>
+            <div class="flex flex-wrap items-center gap-2 justify-end">
+                <x-icon-btn-back :href="route('stock-mutations.index')" :label="__('Kembali')" />
+            </div>
         </div>
     </x-slot>
 
@@ -26,17 +29,17 @@
 
     <div class="max-w-6xl mx-auto space-y-6">
         <x-authorization-actions :model="$distribution" module="stock-mutations" :release-route="route('stock-mutations.release', $distribution)" />
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap items-center gap-2">
             @if ($distribution->status !== \App\Models\Distribution::STATUS_OPEN)
-            <a href="{{ route('stock-mutations.invoice', $distribution) }}" target="_blank" class="inline-flex items-center px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700">{{ __('Invoice') }}</a>
+                <x-action-btn variant="invoice" :href="route('stock-mutations.invoice', $distribution)" target="_blank" :label="__('Invoice')" />
             @endif
-            <a href="{{ route('stock-mutations.report', $distribution) }}" target="_blank" class="inline-flex items-center px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">{{ __('Cetak Laporan') }}</a>
-            <a href="{{ route('stock-mutations.proofs', $distribution) }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">{{ __('Bukti') }}</a>
-            @if (! $distribution->isCancelled() && $distribution->status !== \App\Models\Distribution::STATUS_OPEN && $totalBiaya > 0 && ! $isLunas)
-                <a href="{{ route('stock-mutations.add-payment', $distribution) }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700">{{ __('Bayar') }}</a>
+            <x-action-btn variant="report" :href="route('stock-mutations.report', $distribution)" target="_blank" />
+            <x-action-btn variant="proof" :href="route('stock-mutations.proofs', $distribution)" />
+            @if ($canAddPayment ?? false)
+                <x-action-btn variant="pay" :href="route('stock-mutations.add-payment', $distribution)" />
             @endif
             @if (($canCancelDistribution ?? false) && ! $distribution->isCancelled())
-                <a href="{{ route('stock-mutations.cancel.show', $distribution) }}" class="inline-flex items-center px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">{{ __('Batal') }}</a>
+                <x-action-btn variant="cancel" :href="route('stock-mutations.cancel.show', $distribution)" />
             @endif
         </div>
 

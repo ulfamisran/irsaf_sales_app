@@ -1,34 +1,23 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Detail Pembelian') }} - {{ $purchase->invoice_number }}</x-slot>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight flex items-center gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight flex flex-wrap items-center gap-3 min-w-0">
                 {{ __('Pembelian') }}: {{ $purchase->invoice_number }}
-                @if ($purchase->isCancelled())
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">{{ __('Dibatalkan') }}</span>
-                @endif
+                <x-document-status-badge :status="$purchase->status" />
             </h2>
-            <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('purchases.report', $purchase) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
-                    {{ __('Cetak Laporan') }}
-                </a>
+            <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                <x-action-btn variant="report" :href="route('purchases.report', $purchase)" target="_blank" />
                 @if ($purchase->canBeEdited())
-                    <a href="{{ route('purchases.edit', $purchase) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                        {{ __('Ubah pembelian') }}
-                    </a>
+                    <x-action-btn variant="edit" :href="route('purchases.edit', $purchase)" />
                 @endif
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && ! $purchase->isCancelled())
-                    <a href="{{ route('admin-tx.edit-purchase', $purchase) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
-                        {{ __('Update Transaksi') }}
-                    </a>
+                    <x-action-btn variant="update-tx" :href="route('admin-tx.edit-purchase', $purchase)" />
                 @endif
                 @if (request('from') === 'debts')
-                    <x-icon-btn-back :href="route('debts.index')" :label="__('Kembali ke Data Utang')" />
+                    <x-icon-btn-back :href="route('debts.index')" :label="__('Kembali')" />
                 @else
-                    <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali ke Riwayat')" />
+                    <x-icon-btn-back :href="route('purchases.index')" :label="__('Kembali')" />
                 @endif
             </div>
         </div>
@@ -57,7 +46,7 @@
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
                     <div class="mb-4">
-                        <a href="{{ route('purchases.report', $purchase) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">{{ __('Cetak Laporan') }}</a>
+                        <x-action-btn variant="report" :href="route('purchases.report', $purchase)" target="_blank" />
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
@@ -254,7 +243,7 @@
                         <div id="cancel-section" class="mt-6 border rounded-lg p-4 bg-red-50 border-red-200">
                             <p class="font-semibold text-slate-800">{{ __('Batalkan / Retur Pembelian') }}</p>
                             <p class="text-xs text-slate-600 mt-1">{{ __('Pembatalan akan mengubah status unit menjadi cancel, produk menjadi nonaktif, dan mengembalikan dana pembayaran sebagai pemasukan (Retur Pembelian).') }}</p>
-                            <form method="POST" action="{{ route('purchases.cancel', $purchase) }}" class="mt-4" onsubmit="return confirm('{{ __('Yakin ingin membatalkan pembelian ini?') }}');">
+                            <form method="POST" action="{{ route('purchases.cancel', $purchase) }}" class="mt-4" data-swal-confirm="{{ __('Yakin ingin membatalkan pembelian ini?') }}" data-swal-confirm-color="#dc2626">
                                 @csrf
                                 <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

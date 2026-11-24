@@ -52,17 +52,25 @@ class PurchaseReceivingController extends Controller
             ->orderByDesc('id');
 
         $this->applyLocationFilter($request, $query);
+        // Prefilter kasar di SQL, lalu pastikan hanya yang needs_check=true (sumber kebenaran UI).
         $this->receivingService->constrainNeedingCheck($query);
 
-        $paginator = $query->paginate(20)->withQueryString();
-
-        $rows = $paginator->getCollection()->map(function (Purchase $p) {
+        $rows = $query->get()->map(function (Purchase $p) {
             return (object) [
                 'purchase' => $p,
                 'summary' => $this->receivingService->summarize($p),
             ];
-        });
-        $paginator->setCollection($rows);
+        })->filter(fn ($row) => (bool) ($row->summary['needs_check'] ?? false))->values();
+
+        $page = max(1, (int) $request->get('page', 1));
+        $perPage = 20;
+        $paginator = new \Illuminate\Pagination\LengthAwarePaginator(
+            $rows->slice(($page - 1) * $perPage, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
 
         return view('purchase-receiving.index', [
             'tab' => 'pengecekan',

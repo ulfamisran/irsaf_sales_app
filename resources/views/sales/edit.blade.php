@@ -560,7 +560,7 @@
                     }
                 });
                 if (changed) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                 }
                 syncQtyFromSerials(row);
                 syncPriceFromSerials(row);
@@ -607,13 +607,13 @@
                     Array.from(s.selectedOptions || []).forEach(opt => otherSelected.add(opt.value));
                 });
                 if (otherSelected.has(serial)) {
-                    alert('Serial sudah dipilih di item lain.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial sudah dipilih di item lain.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial sudah dipilih di item lain.'));
                     return;
                 }
 
                 // Only allow serials that are currently available (in_stock) from server list.
                 if (!exists) {
-                    alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.');
+                    void (typeof window.appAlert === 'function' ? window.appAlert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.', { icon: 'warning', title: 'Perhatian' }) : alert('Serial tidak tersedia (bukan IN STOCK). Silakan pilih dari daftar.'));
                     return;
                 }
 
@@ -805,7 +805,7 @@
                                 btn.type = 'button';
                                 btn.className = 'w-full text-left px-3 py-2 text-sm hover:bg-amber-100 border-b border-amber-100/80 last:border-0';
                                 const st = item.status || '';
-                                btn.textContent = (item.serial_number || '') + ' â€” ' + [item.brand, item.series].filter(Boolean).join(' ') + (st ? ' (' + st + ')' : '');
+                                btn.textContent = (item.serial_number || '') + ' — ' + [item.brand, item.series].filter(Boolean).join(' ') + (st ? ' (' + st + ')' : '');
                                 btn.addEventListener('mousedown', (ev) => {
                                     ev.preventDefault();
                                     fillTradeInRowFromSerialResult(row, item);

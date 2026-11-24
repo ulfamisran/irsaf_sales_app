@@ -74,6 +74,7 @@
                         <input type="date" name="date_to" value="{{ request('date_to') }}" class="rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <x-catat-range-filter backdate />
+                    <x-document-status-filter module="sales" />
                     <div class="flex gap-2">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -182,16 +183,7 @@
                                 <td class="px-4 py-3">{{ $sale->customer?->name ?? '-' }}</td>
                                 <td class="px-4 py-3">{{ $sale->sale_date->format('d/m/Y') }}</td>
                                 <td class="px-4 py-3">
-                                    @php
-                                        $statusClass = match($sale->status) {
-                                            'released' => 'bg-emerald-100 text-emerald-800',
-                                            'cancel' => 'bg-red-100 text-red-800',
-                                            default => 'bg-blue-100 text-blue-800',
-                                        };
-                                    @endphp
-                                    <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $statusClass }}">
-                                        {{ $sale->status === 'cancel' ? __('Dibatalkan') : $sale->status }}
-                                    </span>
+                                    <x-document-status-badge :status="$sale->status" />
                                 </td>
                                 <td class="px-4 py-3">
                                     @if ($sale->status === \App\Models\Sale::STATUS_OPEN)
@@ -230,6 +222,7 @@
                                 <td class="px-4 py-3 text-right">
                                     <x-row-actions>
                                             <x-authorization-submit-action :model="$sale" module="sales" />
+                                            <x-release-list-action :model="$sale" />
                                             <a href="{{ route('sales.show', $sale) }}" style="color:#047857;">
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                                 {{ __('Lihat') }}

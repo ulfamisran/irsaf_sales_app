@@ -33,6 +33,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PurchaseController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         protected PurchaseService $purchaseService,
         protected PurchaseReceivingService $receivingService,
@@ -311,7 +313,7 @@ class PurchaseController extends Controller
         }
         if ($request->filled('status')) {
             $status = (string) $request->status;
-            if (in_array($status, [Purchase::STATUS_ACTIVE, Purchase::STATUS_CANCELLED], true)) {
+            if (in_array($status, [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE, Purchase::STATUS_CANCELLED], true)) {
                 $query->where('status', $status);
             } elseif ($status === 'paid_off') {
                 $query->where('status', '!=', Purchase::STATUS_CANCELLED)
@@ -850,10 +852,12 @@ class PurchaseController extends Controller
         }
 
         try {
-            app(\App\Services\AuthorizationService::class)->assertCanRelease($purchase);
+            $auth = app(\App\Services\AuthorizationService::class);
+            $auth->assertCanRelease($purchase);
+            $auth->assertReadyForRelease($purchase);
             $this->purchaseService->releasePurchase($purchase, (int) $user->id);
         } catch (\InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $purchase, $e->getMessage());
         }
 
         return redirect()->route('purchases.show', $purchase)->with('success', __('Pembelian berhasil di-release.'));

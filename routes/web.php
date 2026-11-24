@@ -528,6 +528,9 @@ Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::post('rentals/{rental}/finalize-release', [RentalController::class, 'finalizeRelease'])
         ->middleware('role:admin_gudang,admin_cabang,kasir')
         ->name('rentals.finalize-release');
+    Route::post('rentals/{rental}/list-release', [RentalController::class, 'listRelease'])
+        ->middleware('role:admin_gudang,admin_cabang,kasir')
+        ->name('rentals.list-release');
     Route::post('rentals/{rental}/proofs', [\App\Http\Controllers\TransactionProofController::class, 'store'])
         ->name('rentals.proofs.store');
     Route::get('rentals/{rental}/proofs/{proof}', [\App\Http\Controllers\TransactionProofController::class, 'show'])
@@ -574,6 +577,9 @@ Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::post('services/{service}/complete', [ServiceController::class, 'complete'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.complete');
+    Route::post('services/{service}/release', [ServiceController::class, 'release'])
+        ->middleware('role:admin_cabang,kasir,admin_gudang')
+        ->name('services.release');
     Route::post('services/{service}/mark-picked-up', [ServiceController::class, 'markPickedUp'])
         ->middleware('role:admin_cabang,kasir')
         ->name('services.mark-picked-up');

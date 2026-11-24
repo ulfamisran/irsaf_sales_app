@@ -1,46 +1,28 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Detail Penjualan') }}</x-slot>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight min-w-0">
                 {{ __('Sale') }}: {{ $sale->invoice_number }}
             </h2>
-            <div class="flex gap-2" style="flex-wrap:wrap;justify-content:flex-end;">
+            <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 @if (! $sale->requires_authorization || $sale->status === 'released')
-                <a href="{{ route('sales.invoice', $sale) }}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-                    {{ __('Print Invoice') }}
-                </a>
+                    <x-action-btn variant="invoice" :href="route('sales.invoice', $sale)" target="_blank" />
                 @endif
-                <a href="{{ route('sales.report', $sale) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
-                    {{ __('Cetak Laporan') }}
-                </a>
+                <x-action-btn variant="report" :href="route('sales.report', $sale)" target="_blank" />
                 @if ($sale->status === 'released')
-                    <a href="{{ route('sales.unit-exchanges.create', ['sale' => $sale->id]) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
-                        {{ __('Tukar Unit') }}
-                    </a>
+                    <x-action-btn variant="exchange" :href="route('sales.unit-exchanges.create', ['sale' => $sale->id])" />
                 @endif
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status === 'open' && ! app(\App\Services\AuthorizationService::class)->blocksMutation($sale))
-                        <a href="{{ route('sales.edit', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                            {{ __('Edit') }}
-                        </a>
+                    <x-action-btn variant="edit" :href="route('sales.edit', $sale)" />
                 @endif
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status === 'released')
-                        <a href="{{ route('sales.edit-hpp', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                            {{ __('Edit HPP') }}
-                        </a>
+                    <x-action-btn variant="edit-hpp" :href="route('sales.edit-hpp', $sale)" />
                 @endif
                 @if (auth()->user()?->isSuperAdminOrAdminPusat() && $sale->status !== \App\Models\Sale::STATUS_CANCEL)
-                    <a href="{{ route('admin-tx.edit-sale', $sale) }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
-                        {{ __('Update Transaksi') }}
-                    </a>
+                    <x-action-btn variant="update-tx" :href="route('admin-tx.edit-sale', $sale)" />
                 @endif
-                <x-icon-btn-back :href="route('sales.index')" :label="__('Kembali ke Penjualan')" />
+                <x-icon-btn-back :href="route('sales.index')" :label="__('Kembali')" />
             </div>
         </div>
     </x-slot>
@@ -76,8 +58,8 @@
                 <script>
                     document.addEventListener('DOMContentLoaded', function() {
                         var el = document.getElementById('sale-success-alert');
-                        if (el && el.dataset.successMessage) {
-                            alert(el.dataset.successMessage);
+                        if (el && el.dataset.successMessage && typeof window.appAlert === 'function') {
+                            window.appAlert(el.dataset.successMessage, { icon: 'success', title: @json(__('Berhasil')) });
                         }
                     });
                 </script>
@@ -85,9 +67,7 @@
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
                     <div class="mb-4">
-                        <a href="{{ route('sales.report', $sale) }}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:#0f172a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
-                            {{ __('Cetak Laporan') }}
-                        </a>
+                        <x-action-btn variant="report" :href="route('sales.report', $sale)" target="_blank" />
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
@@ -132,9 +112,7 @@
                         <div>
                             <p class="text-sm text-gray-500">{{ __('Status') }}</p>
                             <p class="font-medium">
-                                <span class="px-2 py-1 rounded-lg text-xs font-medium {{ $sale->status === 'released' ? 'bg-emerald-100 text-emerald-800' : ($sale->status === 'cancel' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800') }}">
-                                    {{ $sale->status === 'cancel' ? __('Dibatalkan') : $sale->status }}
-                                </span>
+                                <x-document-status-badge :status="$sale->status" />
                                 @if (in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, 'released', 'cancel'], true))
                                     @php
                                         $isLunas = $sale->status !== \App\Models\Sale::STATUS_OPEN && $sale->isPaidOff();
@@ -455,9 +433,9 @@
                     @endif
 
                     @if ($sale->status === 'open' && app(\App\Services\AuthorizationService::class)->allowsCommit($sale))
-                        <div class="mt-8 border rounded-lg p-4 bg-slate-50">
+                        <div id="release" class="mt-8 border rounded-lg p-4 bg-slate-50 {{ session('release_incomplete') ? 'ring-2 ring-amber-400' : '' }}">
                             <p class="font-semibold text-slate-800">{{ __('Release Penjualan') }}</p>
-                            <p class="text-xs text-slate-500 mt-1">{{ __('Saat release, stok akan dikurangi dan penjualan tidak bisa diubah lagi. Pembayaran boleh lunas atau belum lunas (partial). Minimal 1 bukti transaksi wajib sudah tersimpan.') }}</p>
+                            <p class="text-xs text-slate-500 mt-1">{{ __('Saat release, stok akan dikurangi dan penjualan tidak bisa diubah lagi. Transaksi harus sudah lunas. Minimal 1 bukti transaksi wajib sudah tersimpan.') }}</p>
                             @if ($sale->tradeIns && $sale->tradeIns->isNotEmpty())
                                 @php $ttTotal = $sale->tradeIns->sum('trade_in_value'); @endphp
                                 <p class="text-xs text-amber-700 mt-1">{{ __('Tukar Tambah') }}: {{ number_format($ttTotal, 0, ',', '.') }} — {{ __('Yang dibayar tunai') }}: {{ number_format((float)$sale->total - $ttTotal, 0, ',', '.') }}</p>
@@ -561,7 +539,7 @@
                     @if (auth()->user()?->canModule('sales', 'cancel') && in_array($sale->status, [\App\Models\Sale::STATUS_OPEN, \App\Models\Sale::STATUS_RELEASED], true))
                         <div class="mt-20 border border-red-200 rounded-lg p-4 bg-red-50/40">
                             <p class="font-semibold text-red-700 mb-2">{{ __('Batalkan Transaksi') }}</p>
-                            <form method="POST" action="{{ route('sales.cancel', $sale) }}" onsubmit="return confirm('{{ $sale->status === \App\Models\Sale::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penjualan ini?') : __('Batalkan penjualan ini? Unit akan kembali IN STOCK. Data tetap tersimpan dengan status Dibatalkan.') }}')">
+                            <form method="POST" action="{{ route('sales.cancel', $sale) }}" data-swal-confirm="{{ $sale->status === \App\Models\Sale::STATUS_RELEASED ? __('Transaksi sudah RELEASED. Batalkan penjualan ini?') : __('Batalkan penjualan ini? Unit akan kembali IN STOCK. Data tetap tersimpan dengan status Dibatalkan.') }}" data-swal-confirm-color="#dc2626">
                                 @csrf
                                 <div class="flex flex-col gap-2 mb-3">
                                     <textarea name="cancel_reason" class="w-full rounded-md border-gray-300" rows="2" placeholder="{{ __('Alasan pembatalan') }}" required></textarea>

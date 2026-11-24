@@ -19,6 +19,8 @@ use InvalidArgumentException;
 
 class UnitExchangeController extends Controller
 {
+    use Concerns\RedirectsFailedRelease;
+
     public function __construct(
         private UnitExchangeService $exchanges
     ) {}
@@ -47,12 +49,27 @@ class UnitExchangeController extends Controller
         $today = $this->exchanges->today();
         $number = $this->exchanges->peekNumber();
         $initial = null;
-        if ($request->filled('sale')) {
-            $sale = Sale::query()->with(['saleDetails.product', 'customer'])->find($request->integer('sale'));
+        $saleId = (int) ($request->old('sale_id') ?: $request->integer('sale'));
+        if ($saleId > 0) {
+            $sale = Sale::query()->with(['saleDetails.product', 'customer', 'user:id,name'])->find($saleId);
             if ($sale && $sale->status === Sale::STATUS_RELEASED) {
                 $this->authorizeSale($sale);
                 $initial = $this->exchanges->invoicePayload($sale);
             }
+        }
+
+        $presetItems = [];
+        $oldItems = old('items');
+        if (is_array($oldItems) && count($oldItems) > 0) {
+            $presetItems = collect($oldItems)->map(function ($item) {
+                return [
+                    'old_serial' => (string) ($item['old_serial'] ?? ''),
+                    'new_serial' => (string) ($item['new_serial'] ?? ''),
+                    'price_difference' => (float) ($item['price_difference'] ?? 0),
+                    'payment_method_id' => $item['payment_method_id'] ?? null,
+                    'label' => trim((string) (($item['new_serial'] ?? '').'')),
+                ];
+            })->filter(fn ($item) => $item['old_serial'] !== '' && $item['new_serial'] !== '')->values()->all();
         }
 
         return view('unit-exchanges.create', [
@@ -62,7 +79,7 @@ class UnitExchangeController extends Controller
             'userName' => (string) $request->user()?->name,
             'initial' => $initial,
             'exchange' => null,
-            'presetItems' => [],
+            'presetItems' => $presetItems,
             'lockInvoice' => false,
         ]);
     }
@@ -72,7 +89,7 @@ class UnitExchangeController extends Controller
         if ($exchange->status !== UnitExchange::STATUS_OPEN) {
             abort(403, __('Tukar unit yang sudah Release tidak dapat diubah.'));
         }
-        $exchange->load(['sale.saleDetails.product', 'sale.customer', 'items.product', 'user', 'proofs']);
+        $exchange->load(['sale.saleDetails.product', 'sale.customer', 'sale.user:id,name', 'items.product', 'user', 'proofs']);
         $this->authorizeSale($exchange->sale);
 
         return view('unit-exchanges.create', [
@@ -224,6 +241,7 @@ class UnitExchangeController extends Controller
                     'category_id' => $unit->product?->category_id,
                     'product' => $name !== '' ? $name : (string) ($unit->product?->sku ?? ''),
                     'price' => round((float) $unit->harga_jual, 2),
+                    'hpp' => round((float) $unit->harga_hpp, 2),
                 ];
             })->values(),
         ]);
@@ -245,7 +263,7 @@ class UnitExchangeController extends Controller
 
     public function show(Request $request, UnitExchange $exchange): View
     {
-        $exchange->load(['sale.customer', 'user', 'branch', 'warehouse', 'items.product', 'items.paymentMethod', 'proofs']);
+        $exchange->load(['sale.customer', 'sale.user:id,name', 'user', 'branch', 'warehouse', 'items.product', 'items.paymentMethod', 'proofs']);
         $this->authorizeSale($exchange->sale);
 
         return view('unit-exchanges.show', compact('exchange'));
@@ -354,7 +372,7 @@ class UnitExchangeController extends Controller
         $exchange->loadMissing(['sale', 'items']);
         $this->authorizeSale($exchange->sale);
         if ($exchange->sale->status !== Sale::STATUS_RELEASED) {
-            return back()->with('error', __('Penjualan terkait harus sudah release.'));
+            return $this->redirectReleaseFailure($request, $exchange, __('Penjualan terkait harus sudah release.'));
         }
 
         try {
@@ -375,7 +393,7 @@ class UnitExchangeController extends Controller
                 $exchange
             );
         } catch (InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectReleaseFailure($request, $exchange, $e->getMessage());
         }
 
         return redirect()->route('sales.unit-exchanges.show', $exchange)->with('success', __('Tukar unit berhasil di-release.'));

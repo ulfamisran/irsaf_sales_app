@@ -239,12 +239,19 @@
                                     </div>
                                 </div>
                                 <div id="purchase-items" class="space-y-4">
+                                    @php
+                                        $oldPurchaseItems = (! $isEdit && is_array(old('items'))) ? array_values(old('items')) : [];
+                                    @endphp
                                     @if ($isEdit && $editPurchase?->details?->isNotEmpty())
                                         @foreach ($editPurchase->details as $idx => $detail)
-                                            @include('purchases._item_row', ['idx' => $idx, 'detail' => $detail, 'hideRemove' => $editPurchase->details->count() <= 1])
+                                            @include('purchases._item_row', ['idx' => $idx, 'detail' => $detail, 'hideRemove' => $editPurchase->details->count() <= 1, 'products' => $products])
+                                        @endforeach
+                                    @elseif (count($oldPurchaseItems) > 0)
+                                        @foreach ($oldPurchaseItems as $idx => $itemOld)
+                                            @include('purchases._item_row', ['idx' => $idx, 'detail' => null, 'itemOld' => $itemOld, 'hideRemove' => count($oldPurchaseItems) <= 1, 'products' => $products])
                                         @endforeach
                                     @else
-                                        @include('purchases._item_row', ['idx' => 0, 'detail' => null, 'hideRemove' => true])
+                                        @include('purchases._item_row', ['idx' => 0, 'detail' => null, 'hideRemove' => true, 'products' => $products])
                                     @endif
                                 </div>
                                 <x-input-error :messages="$errors->get('items')" class="mt-2" />
@@ -332,7 +339,8 @@
         const JENIS_SPAREPART_SERVICE = @json(\App\Models\Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE);
         const serviceInvoicePlaceholder = @json($serviceInvoicePlaceholder);
         const isEdit = @json($isEdit);
-        let itemIdx = {{ ($isEdit && $editPurchase) ? $editPurchase->details->count() : 1 }};
+        let itemIdx = {{ ($isEdit && $editPurchase) ? $editPurchase->details->count() : max(1, count($oldPurchaseItems ?? [])) }};
+        const keepDistributorId = @json(old('distributor_id', $isEdit ? ($editPurchase->distributor_id ?? null) : null));
 
         function productOptionHtml(p) {
             const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -822,7 +830,11 @@
                 const data = await r.json();
                 const sel = document.getElementById('distributor_id');
                 sel.disabled = false;
+                const prevDistributor = sel.value || keepDistributorId || '';
                 sel.innerHTML = '<option value="">Pilih Distributor</option>' + (data.distributors || []).map(d => '<option value="' + d.id + '">' + (d.name || '') + '</option>').join('');
+                if (prevDistributor && (data.distributors || []).some(d => String(d.id) === String(prevDistributor))) {
+                    sel.value = String(prevDistributor);
+                }
                 if (Array.isArray(data.payment_methods)) {
                     paymentMethods = data.payment_methods;
                     refreshPaymentMethodSelects();

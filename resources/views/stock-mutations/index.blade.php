@@ -95,17 +95,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
-                        <select name="status" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">{{ __('Semua') }}</option>
-                            <option value="open" {{ request('status') === 'open' ? 'selected' : '' }}>{{ __('Open') }}</option>
-                            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>{{ __('Release') }}</option>
-                            <option value="cancelled" {{ request('status') === 'cancelled' ? 'selected' : '' }}>{{ __('Dibatalkan') }}</option>
-                            <option value="paid_off" {{ request('status') === 'paid_off' ? 'selected' : '' }}>{{ __('Lunas') }}</option>
-                            <option value="unpaid" {{ request('status') === 'unpaid' ? 'selected' : '' }}>{{ __('Belum Lunas') }}</option>
-                        </select>
-                    </div>
+                    <x-document-status-filter module="stock-mutations" :include-payment-filters="true" class="min-w-[160px]" />
                     <div class="md:col-span-2 flex gap-2 md:justify-end">
                         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,7 +161,16 @@
                                     $toIsWh = $dist->to_location_type === \App\Models\Stock::LOCATION_WAREHOUSE;
                                     $toName = $toIsWh ? ($warehousesById[$dist->to_location_id] ?? '#'.$dist->to_location_id) : ($branchesById[$dist->to_location_id] ?? '#'.$dist->to_location_id);
                                     $toLabel = $toIsWh ? __('Gudang') : __('Cabang');
-                                    $authPhase = app(\App\Services\AuthorizationService::class)->phase($dist);
+                                    $authSvc = app(\App\Services\AuthorizationService::class);
+                                    $authPhase = $authSvc->phase($dist);
+                                    $canAddPayment = ! $invoiceCancelled
+                                        && ! $noBiaya
+                                        && ! $isLunas
+                                        && (
+                                            $dist->status === \App\Models\Distribution::STATUS_ACTIVE
+                                            || ($dist->status === \App\Models\Distribution::STATUS_OPEN && $authSvc->allowsCommit($dist))
+                                        )
+                                        && ! $authSvc->blocksMutation($dist);
                                 @endphp
                                 <tr @class([
                                     'hover:bg-slate-50/50' => ! $invoiceCancelled && $authPhase !== 'draft',
@@ -220,33 +219,34 @@
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 text-center">
-                                        @if ($invoiceCancelled)
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-300 text-slate-800">{{ __('Dibatalkan') }}</span>
-                                            @if ($dist->cancel_date)
-                                                <div class="text-xs text-slate-500 mt-1">{{ $dist->cancel_date->format('d/m/Y') }}</div>
+                                        <div class="flex flex-col items-center gap-1">
+                                            <x-document-status-badge :status="$dist->status" />
+                                            @if ($invoiceCancelled)
+                                                @if ($dist->cancel_date)
+                                                    <div class="text-xs text-slate-500">{{ $dist->cancel_date->format('d/m/Y') }}</div>
+                                                @endif
+                                                @if ($dist->cancelUser)
+                                                    <div class="text-xs text-slate-500">{{ __('Oleh') }}: {{ $dist->cancelUser->name }}</div>
+                                                @endif
+                                            @elseif ($noBiaya)
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600">{{ __('Gratis') }}</span>
+                                            @elseif ($isLunas)
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
+                                            @else
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-red-100 text-red-700">{{ __('Belum Lunas') }}</span>
+                                                <div class="text-xs text-slate-500">{{ __('Sisa') }}: Rp {{ number_format($sisa, 0, ',', '.') }}</div>
                                             @endif
-                                            @if ($dist->cancelUser)
-                                                <div class="text-xs text-slate-500">{{ __('Oleh') }}: {{ $dist->cancelUser->name }}</div>
-                                            @endif
-                                        @elseif ($noBiaya)
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">{{ __('Gratis') }}</span>
-                                        @elseif ($isLunas)
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">{{ __('Lunas') }}</span>
-                                        @else
-                                            <div>
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">{{ __('Belum Lunas') }}</span>
-                                                <div class="text-xs text-slate-500 mt-0.5">{{ __('Sisa') }}: Rp {{ number_format($sisa, 0, ',', '.') }}</div>
-                                            </div>
-                                        @endif
+                                        </div>
                                     </td>
                                     <td class="px-4 py-3 text-right">
                                         <x-row-actions>
                                             <x-authorization-submit-action :model="$dist" module="stock-mutations" />
+                                            <x-release-list-action :model="$dist" />
                                             <a href="{{ route('stock-mutations.show', $dist) }}" style="color:#047857;">
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                                 {{ __('Detail') }}
                                             </a>
-                                            @if (! $invoiceCancelled && $dist->status !== \App\Models\Distribution::STATUS_OPEN && ! $noBiaya && ! $isLunas)
+                                            @if ($canAddPayment)
                                                 <a href="{{ route('stock-mutations.add-payment', $dist) }}" style="color:#b45309;">
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                                     {{ __('Bayar') }}
@@ -323,7 +323,17 @@
                                     $toIsWh = ($dist->to_location_type ?? '') === \App\Models\Stock::LOCATION_WAREHOUSE;
                                     $toName = $toIsWh ? ($warehousesById[$dist->to_location_id ?? 0] ?? '#'.($dist->to_location_id ?? 0)) : ($branchesById[$dist->to_location_id ?? 0] ?? '#'.($dist->to_location_id ?? 0));
                                     $toLabel = $toIsWh ? __('Gudang') : __('Cabang');
-                                    $authPhase = $dist ? app(\App\Services\AuthorizationService::class)->phase($dist) : 'off';
+                                    $authSvc = app(\App\Services\AuthorizationService::class);
+                                    $authPhase = $dist ? $authSvc->phase($dist) : 'off';
+                                    $canAddPayment = $dist
+                                        && ! $rowCancelled
+                                        && $totalBiaya > 0
+                                        && ($totalPaid + 0.02 < $totalBiaya)
+                                        && (
+                                            $dist->status === \App\Models\Distribution::STATUS_ACTIVE
+                                            || ($dist->status === \App\Models\Distribution::STATUS_OPEN && $authSvc->allowsCommit($dist))
+                                        )
+                                        && ! $authSvc->blocksMutation($dist);
                                 @endphp
                                 <tr @class([
                                     'hover:bg-slate-50/50' => ! $rowCancelled && $authPhase !== 'draft',
@@ -375,11 +385,12 @@
                                         @if ($dist)
                                             <x-row-actions>
                                                 <x-authorization-submit-action :model="$dist" module="stock-mutations" />
+                                                <x-release-list-action :model="$dist" />
                                                 <a href="{{ route('stock-mutations.show', $dist) }}" style="color:#047857;">
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                                     {{ __('Detail') }}
                                                 </a>
-                                                @if (! $rowCancelled && $dist->status !== \App\Models\Distribution::STATUS_OPEN && $totalBiaya > 0 && $totalPaid + 0.02 < $totalBiaya)
+                                                @if ($canAddPayment)
                                                     <a href="{{ route('stock-mutations.add-payment', $dist) }}" style="color:#b45309;">
                                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                                                         {{ __('Bayar') }}
