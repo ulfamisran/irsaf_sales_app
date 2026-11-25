@@ -82,27 +82,77 @@
                             @endif
                             {{-- Lokasi --}}
                             @unless ($isEdit)
-                            <div x-data="{ locationType: '{{ $locationRadio }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
+                            @php
+                                $lockedBranchName = $isBranchUser
+                                    ? ($branches->firstWhere('id', $defaultLocationId)?->name ?? __('Cabang').' #'.$defaultLocationId)
+                                    : null;
+                                $lockedWarehouseName = $isWarehouseUser && ! $isBranchUser
+                                    ? ($warehouses->firstWhere('id', $defaultLocationId)?->name ?? __('Gudang').' #'.$defaultLocationId)
+                                    : null;
+                            @endphp
+                            @if ($isBranchUser)
+                                <div>
+                                    <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
+                                    <input type="hidden" name="location_type" value="branch">
+                                    <input type="hidden" name="branch_id" id="branch_id" value="{{ $defaultLocationId }}">
+                                    <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <x-locked-location :label="__('Tipe Lokasi')" :value="__('Cabang')" />
+                                        <x-locked-location :label="__('Cabang')" :value="$lockedBranchName" />
+                                    </div>
+                                    <x-input-error :messages="$errors->get('location_type')" class="mt-2" />
+                                    <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                                </div>
+                            @elseif ($isWarehouseUser)
+                                <div>
+                                    <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
+                                    <input type="hidden" name="location_type" value="warehouse">
+                                    <input type="hidden" name="warehouse_id" id="warehouse_id" value="{{ $defaultLocationId }}">
+                                    <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <x-locked-location :label="__('Tipe Lokasi')" :value="__('Gudang')" />
+                                        <x-locked-location :label="__('Gudang')" :value="$lockedWarehouseName" />
+                                    </div>
+                                    <x-input-error :messages="$errors->get('location_type')" class="mt-2" />
+                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                </div>
+                            @else
+                            @php
+                                $canPickBranch = $canPickBranch ?? $branches->isNotEmpty();
+                                $canPickWarehouse = $canPickWarehouse ?? $warehouses->isNotEmpty();
+                                $chooserLocationType = old('location_type', $defaultLocationType);
+                                if ($chooserLocationType === 'warehouse' && ! $canPickWarehouse && $canPickBranch) {
+                                    $chooserLocationType = 'branch';
+                                } elseif ($chooserLocationType === 'branch' && ! $canPickBranch && $canPickWarehouse) {
+                                    $chooserLocationType = 'warehouse';
+                                }
+                            @endphp
+                            <div x-data="{ locationType: '{{ $chooserLocationType }}' }" x-init="$nextTick(() => window.loadPurchaseDistributors?.())">
                                 <x-input-label :value="__('Lokasi Pembelian (Gudang/Cabang)')" class="font-semibold" />
+                                @if (auth()->user()?->isAdminPusat())
+                                    <p class="mt-1 text-xs text-slate-500">{{ __('Hanya menampilkan cabang/gudang yang didaftarkan untuk akun Anda.') }}</p>
+                                @endif
                                 <div class="mt-2 flex gap-6">
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="location_type" value="warehouse" x-model="locationType" required
-                                            @checked($locationRadio === 'warehouse')
-                                            {{ $isBranchUser ? 'disabled' : '' }}
-                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">Gudang</span>
-                                    </label>
-                                    <label class="inline-flex items-center cursor-pointer">
-                                        <input type="radio" name="location_type" value="branch" x-model="locationType"
-                                            @checked($locationRadio === 'branch')
-                                            {{ $isWarehouseUser && !$isBranchUser ? 'disabled' : '' }}
-                                            class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                        <span class="ml-2 text-sm font-medium text-gray-700">Cabang</span>
-                                    </label>
+                                    @if ($canPickWarehouse)
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="warehouse" x-model="locationType" required
+                                                @checked($chooserLocationType === 'warehouse')
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">Gudang</span>
+                                        </label>
+                                    @endif
+                                    @if ($canPickBranch)
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="radio" name="location_type" value="branch" x-model="locationType"
+                                                @checked($chooserLocationType === 'branch')
+                                                {{ $canPickWarehouse ? '' : 'required' }}
+                                                class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="ml-2 text-sm font-medium text-gray-700">Cabang</span>
+                                        </label>
+                                    @endif
                                 </div>
                                 <x-input-error :messages="$errors->get('location_type')" class="mt-2" />
                                 <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
                                 <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                                @if ($canPickWarehouse)
                                 <div x-show="locationType === 'warehouse'" x-cloak x-transition class="mt-3">
                                     <x-input-label for="warehouse_id" :value="__('Gudang')" />
                                     <select id="warehouse_id" name="warehouse_id"
@@ -111,10 +161,12 @@
                                         @change="window.loadPurchaseDistributors?.()">
                                         <option value="">Pilih Gudang</option>
                                         @foreach ($warehouses as $w)
-                                            <option value="{{ $w->id }}" {{ old('warehouse_id', $isWarehouseUser ? $defaultLocationId : null) == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
+                                            <option value="{{ $w->id }}" {{ old('warehouse_id', $defaultLocationType === 'warehouse' ? $defaultLocationId : null) == $w->id ? 'selected' : '' }}>{{ $w->name }}</option>
                                         @endforeach
                                     </select>
                                 </div>
+                                @endif
+                                @if ($canPickBranch)
                                 <div x-show="locationType === 'branch'" x-cloak x-transition class="mt-3">
                                     <x-input-label for="branch_id" :value="__('Cabang')" />
                                     <select id="branch_id" name="branch_id"
@@ -123,11 +175,13 @@
                                         @change="window.loadPurchaseDistributors?.()">
                                         <option value="">Pilih Cabang</option>
                                         @foreach ($branches as $b)
-                                            <option value="{{ $b->id }}" {{ old('branch_id', $isBranchUser ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
+                                            <option value="{{ $b->id }}" {{ old('branch_id', $defaultLocationType === 'branch' ? $defaultLocationId : null) == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
                                         @endforeach
                                     </select>
                                 </div>
+                                @endif
                             </div>
+                            @endif
                             @endunless
 
                             {{-- Jenis pembelian & referensi service --}}

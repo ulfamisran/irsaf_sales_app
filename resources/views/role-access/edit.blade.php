@@ -24,8 +24,9 @@
             </div>
         @endif
 
-        <div class="mb-4 text-sm text-slate-600">
-            {{ __('Lihat membuka daftar dan detail. Tambah menyimpan data baru. Ubah menyimpan perubahan. Hapus menghapus data. Unduh untuk export, PDF, dan invoice. Laporan membuka Arus Kas, Monitoring Kas, Laba Rugi, dan menu Laporan. Batal transaksi membatalkan pembelian, penjualan, service, sewa, distribusi, atau mutasi dana.') }}
+        <div class="mb-4 text-sm text-slate-600 space-y-1">
+            <p>{{ __('Lihat membuka daftar dan detail (juga mengontrol tampilan menu sidebar). Tambah menyimpan data baru. Ubah menyimpan perubahan. Hapus menghapus data. Unduh untuk export, PDF, dan invoice. Laporan membuka Arus Kas, Monitoring Kas, Laba Rugi, dan menu Laporan. Batal transaksi membatalkan pembelian, penjualan, service, sewa, distribusi, atau mutasi dana.') }}</p>
+            <p>{{ __('Otorisasi: role boleh memutuskan pengajuan di antrian otorisasi untuk modul tersebut. User juga harus dipilih sebagai otorisator di Konfigurasi Otorisasi.') }}</p>
         </div>
 
         <form method="POST" action="{{ route('role-access.update', $role) }}">
@@ -48,22 +49,30 @@
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 @foreach ($items as $module)
+                                    @php
+                                        $supportsAuthorize = \App\Support\ModuleAccessCatalog::supportsAuthorization($module->slug);
+                                    @endphp
                                     <tr>
                                         <td class="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">{{ $module->name }}</td>
                                         @foreach ($actions as $key => $label)
                                             @php
                                                 $checked = $locked || isset($granted[$module->id.'|'.$key]);
+                                                $authorizeUnavailable = $key === 'authorize' && ! $supportsAuthorize;
                                             @endphp
                                             <td class="px-3 py-3 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    name="permissions[{{ $module->slug }}][{{ $key }}]"
-                                                    value="1"
-                                                    title="{{ $module->name }} — {{ $label }}"
-                                                    class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                    @checked($checked)
-                                                    @disabled($locked)
-                                                >
+                                                @if ($authorizeUnavailable)
+                                                    <span class="text-slate-300" title="{{ __('Modul ini tidak memakai alur otorisasi.') }}">—</span>
+                                                @else
+                                                    <input
+                                                        type="checkbox"
+                                                        name="permissions[{{ $module->slug }}][{{ $key }}]"
+                                                        value="1"
+                                                        title="{{ $module->name }} — {{ $label }}"
+                                                        class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        @checked($checked)
+                                                        @disabled($locked)
+                                                    >
+                                                @endif
                                             </td>
                                         @endforeach
                                         <td class="px-3 py-3 text-right whitespace-nowrap">

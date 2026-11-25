@@ -695,15 +695,12 @@ class AuthorizationService
 
     public function canOpenQueue(User $user): bool
     {
-        if (! Schema::hasTable('authorization_assignees')) {
-            return false;
-        }
-
-        return AuthorizationAssignee::query()->where('user_id', $user->id)->exists();
+        return $this->assignedModules($user) !== [];
     }
 
     /**
-     * Modul yang user ini dipilih sebagai otorisator.
+     * Modul yang user ini dipilih sebagai otorisator di konfigurasi
+     * dan role-nya punya akses Otorisasi untuk modul tersebut.
      *
      * @return list<string>
      */
@@ -716,7 +713,7 @@ class AuthorizationService
         return AuthorizationAssignee::query()
             ->where('user_id', $user->id)
             ->pluck('module')
-            ->filter(fn ($module) => isset(self::MODULES[$module]))
+            ->filter(fn ($module) => isset(self::MODULES[$module]) && $user->canModule((string) $module, 'authorize'))
             ->unique()
             ->values()
             ->all();
@@ -859,19 +856,21 @@ class AuthorizationService
 
         $query->whereIn('module', $modules);
 
-        // Otorisator pusat (SA/AP) yang dipilih: lihat semua lokasi untuk modulnya.
-        if ($user->isSuperAdminOrAdminPusat()) {
+        // Super Admin: semua lokasi. Admin Pusat & role lain: hanya lokasi yang bisa diakses.
+        if ($user->hasUnrestrictedLocationAccess()) {
             return $query;
         }
 
-        $query->where(function (Builder $inner) use ($user) {
+        $branchIds = $user->accessibleBranchIds();
+        $warehouseIds = $user->accessibleWarehouseIds();
+        $query->where(function (Builder $inner) use ($branchIds, $warehouseIds) {
             $matched = false;
-            if ($user->placement_type === User::PLACEMENT_GUDANG && $user->warehouse_id) {
-                $inner->orWhere('warehouse_id', $user->warehouse_id);
+            if ($warehouseIds !== []) {
+                $inner->orWhereIn('warehouse_id', $warehouseIds);
                 $matched = true;
             }
-            if ($user->branch_id && $user->placement_type !== User::PLACEMENT_GUDANG) {
-                $inner->orWhere('branch_id', $user->branch_id);
+            if ($branchIds !== []) {
+                $inner->orWhereIn('branch_id', $branchIds);
                 $matched = true;
             }
             if (! $matched) {
@@ -888,16 +887,12 @@ class AuthorizationService
             throw new InvalidArgumentException(__('Pembuat dokumen tidak dapat menyetujui atau menolak pengajuannya sendiri.'));
         }
 
-        $assigned = AuthorizationAssignee::query()
-            ->where('module', $request->module)
-            ->where('user_id', $user->id)
-            ->exists();
-        if (! $assigned) {
-            throw new InvalidArgumentException(__('Anda tidak berwenang memutuskan pengajuan ini.'));
+        if (! $this->canAuthorizeModule($user, (string) $request->module)) {
+            throw new InvalidArgumentException(__('Anda tidak berwenang memutuskan pengajuan ini. Pastikan user dipilih di konfigurasi otorisasi dan role punya akses Otorisasi untuk modul ini.'));
         }
 
-        // SA/AP yang dipilih boleh putuskan semua lokasi; otorisator cabang/gudang hanya lokasinya.
-        if ($user->isSuperAdminOrAdminPusat()) {
+        // Super Admin boleh semua lokasi; selain itu harus cocok dengan lokasi yang bisa diakses.
+        if ($user->hasUnrestrictedLocationAccess()) {
             return;
         }
         if (! $this->locationMatches($user, $request)) {
@@ -907,11 +902,11 @@ class AuthorizationService
 
     private function locationMatches(User $user, AuthorizationRequest $request): bool
     {
-        if ($user->placement_type === User::PLACEMENT_GUDANG && $user->warehouse_id) {
-            return (int) $request->warehouse_id === (int) $user->warehouse_id;
+        if ($request->warehouse_id) {
+            return $user->canAccessWarehouse((int) $request->warehouse_id);
         }
-        if ($user->branch_id) {
-            return (int) $request->branch_id === (int) $user->branch_id;
+        if ($request->branch_id) {
+            return $user->canAccessBranch((int) $request->branch_id);
         }
 
         return false;

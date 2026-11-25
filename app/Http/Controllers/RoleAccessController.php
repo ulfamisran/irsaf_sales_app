@@ -134,6 +134,9 @@ class RoleAccessController extends Controller
                     if (! isset($allowed[$action]) || ! $on) {
                         continue;
                     }
+                    if ($action === 'authorize' && ! ModuleAccessCatalog::supportsAuthorization((string) $slug)) {
+                        continue;
+                    }
                     $rows[] = [
                         'role_id' => $role->id,
                         'module_id' => $module->id,

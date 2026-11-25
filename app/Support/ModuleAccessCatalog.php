@@ -16,6 +16,7 @@ class ModuleAccessCatalog
         'download' => 'Unduh',
         'report' => 'Laporan',
         'cancel' => 'Batal transaksi',
+        'authorize' => 'Otorisasi',
     ];
 
     /**
@@ -30,6 +31,20 @@ class ModuleAccessCatalog
         'cash-monitoring',
         'profit-loss',
         'profit-loss-comparison',
+    ];
+
+    /**
+     * Modul yang mendukung alur otorisasi (centang Otorisasi di akses role).
+     *
+     * @var list<string>
+     */
+    public const AUTHORIZATION_MODULES = [
+        'purchases',
+        'stock-mutations',
+        'sales',
+        'unit-exchanges',
+        'rentals',
+        'services',
     ];
 
     /**
@@ -55,6 +70,7 @@ class ModuleAccessCatalog
         ['slug' => 'stock-inout', 'name' => 'Mutasi Stok', 'group' => 'Stok', 'sort' => 170],
         ['slug' => 'damaged-goods', 'name' => 'Barang Rusak Cadangan', 'group' => 'Stok', 'sort' => 180],
         ['slug' => 'sales', 'name' => 'Penjualan', 'group' => 'Transaksi', 'sort' => 190],
+        ['slug' => 'unit-exchanges', 'name' => 'Tukar Unit', 'group' => 'Transaksi', 'sort' => 195],
         ['slug' => 'services', 'name' => 'Service Laptop', 'group' => 'Transaksi', 'sort' => 200],
         ['slug' => 'rentals', 'name' => 'Penyewaan', 'group' => 'Transaksi', 'sort' => 210],
         ['slug' => 'debts', 'name' => 'Data Utang', 'group' => 'Kas', 'sort' => 220],
@@ -73,6 +89,11 @@ class ModuleAccessCatalog
         ['slug' => 'users', 'name' => 'Kelola User', 'group' => 'Pengaturan', 'sort' => 350],
         ['slug' => 'verification', 'name' => 'Verifikasi Transaksi', 'group' => 'Transaksi', 'sort' => 215],
     ];
+
+    public static function supportsAuthorization(string $slug): bool
+    {
+        return in_array($slug, self::AUTHORIZATION_MODULES, true);
+    }
 
     /**
      * Prefix nama route ke slug modul. Prefix yang lebih panjang dicek lebih dulu.
@@ -100,6 +121,7 @@ class ModuleAccessCatalog
             'stock-monitoring.' => 'stock-monitoring',
             'stock-inout.' => 'stock-inout',
             'damaged-goods.' => 'damaged-goods',
+            'sales.unit-exchanges.' => 'unit-exchanges',
             'sales.' => 'sales',
             'services.' => 'services',
             'rentals.' => 'rentals',
@@ -171,6 +193,87 @@ class ModuleAccessCatalog
                     'updated_at' => $now,
                 ]
             );
+        }
+
+        self::backfillUnitExchangeAndAuthorizeGrants();
+    }
+
+    /**
+     * Salin akses penjualan → tukar unit (jika belum ada) dan berikan
+     * aksi otorisasi ke role kepala/admin pusat untuk modul otorisasi.
+     */
+    public static function backfillUnitExchangeAndAuthorizeGrants(): void
+    {
+        if (! Schema::hasTable('app_modules') || ! Schema::hasTable('role_module_permissions') || ! Schema::hasTable('roles')) {
+            return;
+        }
+
+        $now = now();
+        $moduleIds = DB::table('app_modules')->pluck('id', 'slug');
+        $salesId = $moduleIds['sales'] ?? null;
+        $exchangeId = $moduleIds['unit-exchanges'] ?? null;
+        if ($salesId && $exchangeId) {
+            // Hanya salin sekali per role: jika role belum punya akses tukar unit sama sekali.
+            $rolesWithExchange = DB::table('role_module_permissions')
+                ->where('module_id', $exchangeId)
+                ->distinct()
+                ->pluck('role_id')
+                ->all();
+            $salesRows = DB::table('role_module_permissions')
+                ->where('module_id', $salesId)
+                ->when($rolesWithExchange !== [], fn ($q) => $q->whereNotIn('role_id', $rolesWithExchange))
+                ->get(['role_id', 'action']);
+            $insert = [];
+            foreach ($salesRows as $row) {
+                if ($row->action === 'authorize') {
+                    continue;
+                }
+                $insert[] = [
+                    'role_id' => $row->role_id,
+                    'module_id' => $exchangeId,
+                    'action' => $row->action,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+            foreach (array_chunk($insert, 400) as $chunk) {
+                DB::table('role_module_permissions')->insert($chunk);
+            }
+        }
+
+        $approverRoles = [
+            Role::SUPER_ADMIN,
+            Role::ADMIN_PUSAT,
+            Role::KEPALA_CABANG,
+            Role::KEPALA_GUDANG,
+        ];
+        $roleIds = DB::table('roles')->whereIn('name', $approverRoles)->pluck('id', 'name');
+        $authInsert = [];
+        foreach (self::AUTHORIZATION_MODULES as $slug) {
+            $moduleId = $moduleIds[$slug] ?? null;
+            if (! $moduleId) {
+                continue;
+            }
+            foreach ($roleIds as $roleId) {
+                $exists = DB::table('role_module_permissions')
+                    ->where('role_id', $roleId)
+                    ->where('module_id', $moduleId)
+                    ->where('action', 'authorize')
+                    ->exists();
+                if ($exists) {
+                    continue;
+                }
+                $authInsert[] = [
+                    'role_id' => $roleId,
+                    'module_id' => $moduleId,
+                    'action' => 'authorize',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+        foreach (array_chunk($authInsert, 400) as $chunk) {
+            DB::table('role_module_permissions')->insert($chunk);
         }
     }
 
@@ -279,6 +382,7 @@ class ModuleAccessCatalog
             'stock-inout' => $export,
             'damaged-goods' => $entry,
             'sales' => $transact,
+            'unit-exchanges' => $transact,
             'services' => $service,
             'rentals' => $transact,
             'debts' => $export,
@@ -306,6 +410,7 @@ class ModuleAccessCatalog
             'stock-monitoring' => $see,
             'stock-inout' => $export,
             'sales' => $transact,
+            'unit-exchanges' => $transact,
             'services' => $serviceGudang,
             'rentals' => $transact,
             'debts' => $export,
@@ -320,6 +425,7 @@ class ModuleAccessCatalog
             'dashboard' => $see,
             'customers' => $crud,
             'sales' => $transact,
+            'unit-exchanges' => $transact,
             'services' => $service,
         ]);
 
@@ -340,6 +446,12 @@ class ModuleAccessCatalog
             $map[Role::KEPALA_GUDANG]['verification'][$action] = $action;
             $map[Role::SUPER_ADMIN]['verification'][$action] = $action;
             $map[Role::ADMIN_PUSAT]['verification'][$action] = $action;
+        }
+        foreach (self::AUTHORIZATION_MODULES as $slug) {
+            $map[Role::KEPALA_CABANG][$slug]['authorize'] = 'authorize';
+            $map[Role::KEPALA_GUDANG][$slug]['authorize'] = 'authorize';
+            $map[Role::ADMIN_PUSAT][$slug]['authorize'] = 'authorize';
+            $map[Role::SUPER_ADMIN][$slug]['authorize'] = 'authorize';
         }
 
         return $map;

@@ -15,14 +15,8 @@ class PaymentMethodRepository
     public function all(?\App\Models\User $user = null): Collection
     {
         $query = $this->model->orderBy('jenis_pembayaran')->orderBy('nama_bank');
-        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
-            } elseif ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-            } else {
-                $query->whereRaw('1 = 0');
-            }
+        if ($user && ! $user->hasUnrestrictedLocationAccess()) {
+            \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
         }
 
         return $query->get();
@@ -37,13 +31,14 @@ class PaymentMethodRepository
         $locationType = $filters['location_type'] ?? null;
         $locationId = $filters['location_id'] ?? null;
 
-        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
-            } elseif ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-            } else {
-                $query->whereRaw('1 = 0');
+        if ($user && ! $user->hasUnrestrictedLocationAccess()) {
+            \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
+            if ($locationType && $locationId) {
+                if ($locationType === 'cabang' && $user->canAccessBranch((int) $locationId)) {
+                    $query->where('branch_id', $locationId);
+                } elseif ($locationType !== 'cabang' && $user->canAccessWarehouse((int) $locationId)) {
+                    $query->where('warehouse_id', $locationId);
+                }
             }
         } elseif ($locationType && $locationId) {
             if ($locationType === 'cabang') {

@@ -166,11 +166,19 @@ class PurchaseRequest extends FormRequest
         $validator->after(function (Validator $validator): void {
             $this->addDuplicateSerialMessages($validator);
 
+            $user = $this->user();
+            $locationType = (string) $this->input('location_type');
+            $branchId = $locationType === 'branch' ? (int) ($this->input('branch_id') ?? 0) : null;
+            $warehouseId = $locationType === 'warehouse' ? (int) ($this->input('warehouse_id') ?? 0) : null;
+            if ($user && ($branchId || $warehouseId) && ! $user->canAccessLocation($branchId ?: null, $warehouseId ?: null)) {
+                $field = $locationType === 'warehouse' ? 'warehouse_id' : 'branch_id';
+                $validator->errors()->add($field, __('Lokasi di luar cabang/gudang yang diizinkan untuk akun Anda.'));
+            }
+
             $jenis = (string) $this->input('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT);
             if ($jenis !== Purchase::JENIS_PEMBELIAN_SPAREPART_SERVICE) {
                 return;
             }
-            $locationType = (string) $this->input('location_type');
             $locationId = $locationType === 'warehouse'
                 ? (int) ($this->input('warehouse_id') ?? 0)
                 : (int) ($this->input('branch_id') ?? 0);

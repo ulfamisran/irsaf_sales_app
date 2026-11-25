@@ -14,13 +14,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class UserManagementController extends Controller
 {
     public function index(Request $request): View
     {
-        $query = User::query()->with(['roles', 'branch', 'warehouse', 'publicIps']);
+        $query = User::query()->with(['roles', 'branch', 'warehouse', 'assignedBranches', 'assignedWarehouses', 'publicIps']);
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
@@ -41,19 +42,12 @@ class UserManagementController extends Controller
 
     public function create(): View
     {
-        $roles = Role::query()->orderBy('display_name')->get();
-        $branches = Branch::query()->orderBy('name')->get();
-        $warehouses = Warehouse::query()->orderBy('name')->get();
-
-        return view('users.create', compact('roles', 'branches', 'warehouses'));
+        return view('users.create', $this->formData());
     }
 
     public function edit(User $user): View
     {
-        $user->load(['roles', 'branch', 'warehouse', 'publicIps']);
-        $roles = Role::query()->orderBy('display_name')->get();
-        $branches = Branch::query()->orderBy('name')->get();
-        $warehouses = Warehouse::query()->orderBy('name')->get();
+        $user->load(['roles', 'branch', 'warehouse', 'assignedBranches', 'assignedWarehouses', 'publicIps']);
         $loginIps = LoginLog::query()
             ->where('user_id', $user->id)
             ->whereNotNull('ip_publik')
@@ -64,51 +58,41 @@ class UserManagementController extends Controller
             ->limit(8)
             ->get();
 
-        return view('users.edit', compact('user', 'roles', 'branches', 'warehouses', 'loginIps'));
+        return view('users.edit', array_merge($this->formData(), compact('user', 'loginIps')));
     }
 
     public function update(Request $request, User $user): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email,'.$user->id],
-            'role_id' => ['required', 'exists:roles,id'],
-            'placement_type' => ['required', 'in:'.User::PLACEMENT_CABANG.','.User::PLACEMENT_GUDANG],
-            'branch_id' => ['nullable', 'exists:branches,id'],
-            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
-            'is_active' => ['nullable', 'boolean'],
-        ]);
-
-        $placementType = $validated['placement_type'];
-        if ($placementType === User::PLACEMENT_CABANG) {
-            if (empty($validated['branch_id'])) {
-                return back()
-                    ->withErrors(['branch_id' => __('Pilih cabang penempatan.')])
-                    ->withInput();
-            }
-            $validated['warehouse_id'] = null;
-        } else {
-            if (empty($validated['warehouse_id'])) {
-                return back()
-                    ->withErrors(['warehouse_id' => __('Pilih gudang penempatan.')])
-                    ->withInput();
-            }
-            $validated['branch_id'] = null;
-        }
+        [$validated, $isAdminPusat] = $this->validatedUserPayload($request, $user->id);
 
         $roleChanged = (int) $user->roles()->value('roles.id') !== (int) $validated['role_id'];
         $request->attributes->set('user_role_changed', $roleChanged);
 
-        $user->update([
-            'name' => $validated['name'],
-            'email' => Str::lower($validated['email']),
-            'placement_type' => $placementType,
-            'branch_id' => $validated['branch_id'],
-            'warehouse_id' => $validated['warehouse_id'],
-            'is_active' => (bool) $request->input('is_active', false),
-        ]);
-
-        $user->roles()->sync([$validated['role_id']]);
+        if ($isAdminPusat) {
+            $branchIds = $validated['branch_ids'];
+            $warehouseIds = $validated['warehouse_ids'];
+            $user->update([
+                'name' => $validated['name'],
+                'email' => Str::lower($validated['email']),
+                'placement_type' => User::PLACEMENT_MULTI,
+                'branch_id' => $branchIds[0] ?? null,
+                'warehouse_id' => $warehouseIds[0] ?? null,
+                'is_active' => (bool) $request->input('is_active', false),
+            ]);
+            $user->roles()->sync([$validated['role_id']]);
+            $user->syncLocationAssignments($branchIds, $warehouseIds);
+        } else {
+            $user->update([
+                'name' => $validated['name'],
+                'email' => Str::lower($validated['email']),
+                'placement_type' => $validated['placement_type'],
+                'branch_id' => $validated['branch_id'],
+                'warehouse_id' => $validated['warehouse_id'],
+                'is_active' => (bool) $request->input('is_active', false),
+            ]);
+            $user->roles()->sync([$validated['role_id']]);
+            $user->syncLocationAssignments([], []);
+        }
 
         return redirect()
             ->route('users.index')
@@ -117,45 +101,36 @@ class UserManagementController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
-            'role_id' => ['required', 'exists:roles,id'],
-            'placement_type' => ['required', 'in:'.User::PLACEMENT_CABANG.','.User::PLACEMENT_GUDANG],
-            'branch_id' => ['nullable', 'exists:branches,id'],
-            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
-            'is_active' => ['nullable', 'boolean'],
-        ]);
-
-        $placementType = $validated['placement_type'];
-        if ($placementType === User::PLACEMENT_CABANG) {
-            if (empty($validated['branch_id'])) {
-                return back()
-                    ->withErrors(['branch_id' => __('Pilih cabang penempatan.')])
-                    ->withInput();
-            }
-            $validated['warehouse_id'] = null;
-        } else {
-            if (empty($validated['warehouse_id'])) {
-                return back()
-                    ->withErrors(['warehouse_id' => __('Pilih gudang penempatan.')])
-                    ->withInput();
-            }
-            $validated['branch_id'] = null;
-        }
+        [$validated, $isAdminPusat] = $this->validatedUserPayload($request);
 
         $email = Str::lower($validated['email']);
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $email,
-            'placement_type' => $placementType,
-            'branch_id' => $validated['branch_id'],
-            'warehouse_id' => $validated['warehouse_id'],
-            'password' => Hash::make($email),
-            'is_active' => (bool) $request->input('is_active', false),
-        ]);
-
-        $user->roles()->sync([$validated['role_id']]);
+        if ($isAdminPusat) {
+            $branchIds = $validated['branch_ids'];
+            $warehouseIds = $validated['warehouse_ids'];
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $email,
+                'placement_type' => User::PLACEMENT_MULTI,
+                'branch_id' => $branchIds[0] ?? null,
+                'warehouse_id' => $warehouseIds[0] ?? null,
+                'password' => Hash::make($email),
+                'is_active' => (bool) $request->input('is_active', false),
+            ]);
+            $user->roles()->sync([$validated['role_id']]);
+            $user->syncLocationAssignments($branchIds, $warehouseIds);
+        } else {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $email,
+                'placement_type' => $validated['placement_type'],
+                'branch_id' => $validated['branch_id'],
+                'warehouse_id' => $validated['warehouse_id'],
+                'password' => Hash::make($email),
+                'is_active' => (bool) $request->input('is_active', false),
+            ]);
+            $user->roles()->sync([$validated['role_id']]);
+            $user->syncLocationAssignments([], []);
+        }
 
         return redirect()
             ->route('users.index')
@@ -218,5 +193,88 @@ class UserManagementController extends Controller
             ? __('User berhasil diaktifkan.')
             : __('User berhasil dinonaktifkan.')
         );
+    }
+
+    /**
+     * @return array{0: array<string, mixed>, 1: bool}
+     */
+    private function validatedUserPayload(Request $request, ?int $userId = null): array
+    {
+        $emailRule = Rule::unique(User::class, 'email');
+        if ($userId) {
+            $emailRule = Rule::unique(User::class, 'email')->ignore($userId);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', $emailRule],
+            'role_id' => ['required', 'exists:roles,id'],
+            'placement_type' => ['nullable', 'in:'.User::PLACEMENT_CABANG.','.User::PLACEMENT_GUDANG],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'warehouse_id' => ['nullable', 'exists:warehouses,id'],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
+            'warehouse_ids' => ['nullable', 'array'],
+            'warehouse_ids.*' => ['integer', 'exists:warehouses,id'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $role = Role::query()->findOrFail((int) $validated['role_id']);
+        $isAdminPusat = $role->name === Role::ADMIN_PUSAT;
+
+        if ($isAdminPusat) {
+            $branchIds = collect($validated['branch_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values()->all();
+            $warehouseIds = collect($validated['warehouse_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values()->all();
+            if ($branchIds === [] && $warehouseIds === []) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'branch_ids' => __('Pilih minimal satu cabang atau gudang untuk Admin Pusat.'),
+                ]);
+            }
+            $validated['branch_ids'] = $branchIds;
+            $validated['warehouse_ids'] = $warehouseIds;
+            $validated['placement_type'] = User::PLACEMENT_MULTI;
+            $validated['branch_id'] = $branchIds[0] ?? null;
+            $validated['warehouse_id'] = $warehouseIds[0] ?? null;
+
+            return [$validated, true];
+        }
+
+        $placementType = $validated['placement_type'] ?? null;
+        if ($placementType === User::PLACEMENT_CABANG) {
+            if (empty($validated['branch_id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'branch_id' => __('Pilih cabang penempatan.'),
+                ]);
+            }
+            $validated['warehouse_id'] = null;
+        } elseif ($placementType === User::PLACEMENT_GUDANG) {
+            if (empty($validated['warehouse_id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'warehouse_id' => __('Pilih gudang penempatan.'),
+                ]);
+            }
+            $validated['branch_id'] = null;
+        } else {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'placement_type' => __('Pilih posisi penempatan.'),
+            ]);
+        }
+        $validated['branch_ids'] = [];
+        $validated['warehouse_ids'] = [];
+
+        return [$validated, false];
+    }
+
+    /**
+     * @return array{roles: \Illuminate\Support\Collection, branches: \Illuminate\Support\Collection, warehouses: \Illuminate\Support\Collection, adminPusatRoleId: int|null}
+     */
+    private function formData(): array
+    {
+        return [
+            'roles' => Role::query()->orderBy('display_name')->get(),
+            'branches' => Branch::query()->orderBy('name')->get(),
+            'warehouses' => Warehouse::query()->orderBy('name')->get(),
+            'adminPusatRoleId' => Role::query()->where('name', Role::ADMIN_PUSAT)->value('id'),
+        ];
     }
 }

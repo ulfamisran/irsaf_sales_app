@@ -15,24 +15,23 @@ class DistributorRepository
     public function all(?\App\Models\User $user = null): Collection
     {
         $query = $this->model->orderBy('name');
-        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->warehouse_id) {
-                $query->where(function ($q) use ($user) {
-                    $q->where('warehouse_id', $user->warehouse_id)
-                        ->orWhere(function ($q2) {
-                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
-                        });
+        if ($user && ! $user->hasUnrestrictedLocationAccess()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            $query->where(function ($q) use ($branchIds, $warehouseIds) {
+                if ($warehouseIds !== []) {
+                    $q->orWhereIn('warehouse_id', $warehouseIds);
+                }
+                if ($branchIds !== []) {
+                    $q->orWhereIn('branch_id', $branchIds);
+                }
+                $q->orWhere(function ($q2) {
+                    $q2->whereNull('branch_id')->whereNull('warehouse_id');
                 });
-            } elseif ($user->branch_id) {
-                $query->where(function ($q) use ($user) {
-                    $q->where('branch_id', $user->branch_id)
-                        ->orWhere(function ($q2) {
-                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
-                        });
-                });
-            } else {
-                $query->whereRaw('1 = 0');
-            }
+                if ($branchIds === [] && $warehouseIds === []) {
+                    $q->whereRaw('1 = 0');
+                }
+            });
         }
 
         return $query->get();
@@ -46,23 +45,39 @@ class DistributorRepository
         $locationType = $filters['location_type'] ?? null;
         $locationId = $filters['location_id'] ?? null;
 
-        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->warehouse_id) {
-                $query->where(function ($q) use ($user) {
-                    $q->where('warehouse_id', $user->warehouse_id)
-                        ->orWhere(function ($q2) {
-                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
-                        });
+        if ($user && ! $user->hasUnrestrictedLocationAccess()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            $query->where(function ($q) use ($branchIds, $warehouseIds) {
+                if ($warehouseIds !== []) {
+                    $q->orWhereIn('warehouse_id', $warehouseIds);
+                }
+                if ($branchIds !== []) {
+                    $q->orWhereIn('branch_id', $branchIds);
+                }
+                $q->orWhere(function ($q2) {
+                    $q2->whereNull('branch_id')->whereNull('warehouse_id');
                 });
-            } elseif ($user->branch_id) {
-                $query->where(function ($q) use ($user) {
-                    $q->where('branch_id', $user->branch_id)
-                        ->orWhere(function ($q2) {
-                            $q2->whereNull('branch_id')->whereNull('warehouse_id');
-                        });
-                });
-            } else {
-                $query->whereRaw('1 = 0');
+                if ($branchIds === [] && $warehouseIds === []) {
+                    $q->whereRaw('1 = 0');
+                }
+            });
+            if ($locationType && $locationId) {
+                if (in_array($locationType, ['cabang', 'branch'], true) && $user->canAccessBranch((int) $locationId)) {
+                    $query->where(function ($q) use ($locationId) {
+                        $q->where('branch_id', $locationId)
+                            ->orWhere(function ($q2) {
+                                $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                            });
+                    });
+                } elseif (in_array($locationType, ['gudang', 'warehouse'], true) && $user->canAccessWarehouse((int) $locationId)) {
+                    $query->where(function ($q) use ($locationId) {
+                        $q->where('warehouse_id', $locationId)
+                            ->orWhere(function ($q2) {
+                                $q2->whereNull('branch_id')->whereNull('warehouse_id');
+                            });
+                    });
+                }
             }
         } elseif ($locationType && $locationId) {
             if (in_array($locationType, ['cabang', 'branch'], true)) {

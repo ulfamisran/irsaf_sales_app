@@ -423,24 +423,70 @@ class PurchaseController extends Controller
             abort(403, __('Unauthorized.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        $isWarehouseUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]);
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
+        $canPickBranch = $branches->isNotEmpty();
+        $canPickWarehouse = $warehouses->isNotEmpty();
 
-        $warehouses = Warehouse::orderBy('name')->get();
-        $branches = Branch::orderBy('name')->get();
+        // User cabang/gudang biasa: selalu terkunci ke 1 lokasi.
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG, Role::KASIR])
+            && (int) $user->branch_id > 0;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])
+            && (int) $user->warehouse_id > 0;
 
-        $defaultLocationType = $isBranchUser ? 'branch' : ($isWarehouseUser ? 'warehouse' : 'warehouse');
-        $defaultLocationId = $isBranchUser ? (int) $user->branch_id : ($isWarehouseUser ? (int) $user->warehouse_id : null);
-        if (! $defaultLocationId && $user->isSuperAdminOrAdminPusat()) {
-            $firstWarehouse = $warehouses->first();
-            $firstBranch = $branches->first();
-            if ($firstWarehouse) {
-                $defaultLocationId = (int) $firstWarehouse->id;
-                $defaultLocationType = 'warehouse';
-            } elseif ($firstBranch) {
-                $defaultLocationId = (int) $firstBranch->id;
-                $defaultLocationType = 'branch';
+        // Admin Pusat: boleh pilih di antara lokasi terdaftar.
+        // Jika hanya 1 lokasi total → dikunci seperti user cabang/gudang.
+        if ($user->isAdminPusat() && ! $user->hasUnrestrictedLocationAccess()) {
+            if ($canPickBranch && ! $canPickWarehouse && $branches->count() === 1) {
+                $isBranchUser = true;
+            } elseif ($canPickWarehouse && ! $canPickBranch && $warehouses->count() === 1) {
+                $isWarehouseUser = true;
             }
+        }
+
+        $defaultLocationType = $isBranchUser ? 'branch' : ($isWarehouseUser ? 'warehouse' : ($locationOptions['defaultPlacementType'] === 'cabang' ? 'branch' : 'warehouse'));
+        $defaultLocationId = $isBranchUser
+            ? (int) ($user->isAdminPusat() ? $branches->first()->id : $user->branch_id)
+            : ($isWarehouseUser ? (int) ($user->isAdminPusat() ? $warehouses->first()->id : $user->warehouse_id) : null);
+        if (! $defaultLocationId) {
+            if ($defaultLocationType === 'branch' && $locationOptions['defaultBranchId']) {
+                $defaultLocationId = (int) $locationOptions['defaultBranchId'];
+            } elseif ($canPickWarehouse && $locationOptions['defaultWarehouseId']) {
+                $defaultLocationType = 'warehouse';
+                $defaultLocationId = (int) $locationOptions['defaultWarehouseId'];
+            } elseif ($canPickBranch && $locationOptions['defaultBranchId']) {
+                $defaultLocationType = 'branch';
+                $defaultLocationId = (int) $locationOptions['defaultBranchId'];
+            } else {
+                $firstWarehouse = $warehouses->first();
+                $firstBranch = $branches->first();
+                if ($firstWarehouse && ($defaultLocationType === 'warehouse' || ! $firstBranch)) {
+                    $defaultLocationId = (int) $firstWarehouse->id;
+                    $defaultLocationType = 'warehouse';
+                } elseif ($firstBranch) {
+                    $defaultLocationId = (int) $firstBranch->id;
+                    $defaultLocationType = 'branch';
+                } elseif ($firstWarehouse) {
+                    $defaultLocationId = (int) $firstWarehouse->id;
+                    $defaultLocationType = 'warehouse';
+                }
+            }
+        }
+        if (! $canPickWarehouse && $canPickBranch) {
+            $defaultLocationType = 'branch';
+            $defaultLocationId = $defaultLocationId && $branches->contains('id', $defaultLocationId)
+                ? $defaultLocationId
+                : (int) ($branches->first()?->id ?? 0);
+        } elseif (! $canPickBranch && $canPickWarehouse) {
+            $defaultLocationType = 'warehouse';
+            $defaultLocationId = $defaultLocationId && $warehouses->contains('id', $defaultLocationId)
+                ? $defaultLocationId
+                : (int) ($warehouses->first()?->id ?? 0);
         }
 
         $products = $defaultLocationId
@@ -493,6 +539,8 @@ class PurchaseController extends Controller
             'saldoByPaymentMethod',
             'isBranchUser',
             'isWarehouseUser',
+            'canPickBranch',
+            'canPickWarehouse',
             'defaultLocationType',
             'defaultLocationId',
             'openServicesInitial'

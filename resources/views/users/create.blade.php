@@ -39,47 +39,95 @@
                                 <x-input-error :messages="$errors->get('role_id')" class="mt-2" />
                             </div>
 
-                            <div>
-                                <x-input-label :value="__('Posisi Penempatan')" />
-                                <div class="mt-2 flex gap-6">
-                                    <label class="inline-flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" name="placement_type" value="cabang" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                            {{ old('placement_type', 'cabang') === 'cabang' ? 'checked' : '' }}>
-                                        <span class="text-sm text-slate-700">{{ __('Cabang') }}</span>
-                                    </label>
-                                    <label class="inline-flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" name="placement_type" value="gudang" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                            {{ old('placement_type') === 'gudang' ? 'checked' : '' }}>
-                                        <span class="text-sm text-slate-700">{{ __('Gudang') }}</span>
-                                    </label>
+                            <div id="single_placement_fields">
+                                <div>
+                                    <x-input-label :value="__('Posisi Penempatan')" />
+                                    <div class="mt-2 flex gap-6">
+                                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="placement_type" value="cabang" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                {{ old('placement_type', 'cabang') === 'cabang' ? 'checked' : '' }}>
+                                            <span class="text-sm text-slate-700">{{ __('Cabang') }}</span>
+                                        </label>
+                                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="placement_type" value="gudang" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                {{ old('placement_type') === 'gudang' ? 'checked' : '' }}>
+                                            <span class="text-sm text-slate-700">{{ __('Gudang') }}</span>
+                                        </label>
+                                    </div>
+                                    <x-input-error :messages="$errors->get('placement_type')" class="mt-2" />
                                 </div>
-                                <x-input-error :messages="$errors->get('placement_type')" class="mt-2" />
+
+                                <div id="branch_field" class="placement-field mt-4" style="{{ old('placement_type', 'cabang') === 'gudang' ? 'display: none;' : '' }}">
+                                    <x-input-label for="branch_id" :value="__('Cabang Penempatan')" />
+                                    <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="">{{ __('Pilih Cabang') }}</option>
+                                        @foreach ($branches as $branch)
+                                            <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>
+                                                {{ $branch->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
+                                </div>
+
+                                <div id="warehouse_field" class="placement-field mt-4" style="{{ old('placement_type') === 'gudang' ? '' : 'display: none;' }}">
+                                    <x-input-label for="warehouse_id" :value="__('Gudang Penempatan')" />
+                                    <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <option value="">{{ __('Pilih Gudang') }}</option>
+                                        @foreach ($warehouses as $warehouse)
+                                            <option value="{{ $warehouse->id }}" {{ old('warehouse_id') == $warehouse->id ? 'selected' : '' }}>
+                                                {{ $warehouse->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                                </div>
                             </div>
 
-                            <div id="branch_field" class="placement-field" style="{{ old('placement_type', 'cabang') === 'gudang' ? 'display: none;' : '' }}">
-                                <x-input-label for="branch_id" :value="__('Cabang Penempatan')" />
-                                <select id="branch_id" name="branch_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" {{ old('placement_type', 'cabang') === 'cabang' ? 'required' : '' }}>
-                                    <option value="">{{ __('Pilih Cabang') }}</option>
-                                    @foreach ($branches as $branch)
-                                        <option value="{{ $branch->id }}" {{ old('branch_id') == $branch->id ? 'selected' : '' }}>
-                                            {{ $branch->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('branch_id')" class="mt-2" />
-                            </div>
-
-                            <div id="warehouse_field" class="placement-field" style="{{ old('placement_type') === 'gudang' ? '' : 'display: none;' }}">
-                                <x-input-label for="warehouse_id" :value="__('Gudang Penempatan')" />
-                                <select id="warehouse_id" name="warehouse_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" {{ old('placement_type') === 'gudang' ? 'required' : '' }}>
-                                    <option value="">{{ __('Pilih Gudang') }}</option>
-                                    @foreach ($warehouses as $warehouse)
-                                        <option value="{{ $warehouse->id }}" {{ old('warehouse_id') == $warehouse->id ? 'selected' : '' }}>
-                                            {{ $warehouse->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('warehouse_id')" class="mt-2" />
+                            <div id="multi_location_fields" class="space-y-4" style="display: none;">
+                                <p class="text-sm text-slate-600">{{ __('Admin Pusat hanya dapat melihat dan mengolah data di cabang/gudang yang dipilih di bawah.') }}</p>
+                                @php $oldBranchIds = collect(old('branch_ids', [])); @endphp
+                                <div>
+                                    <x-input-label :value="__('Cabang yang Bisa Diakses')" />
+                                    <div class="mt-2 rounded-lg border border-slate-200 p-3 max-h-56 overflow-y-auto space-y-2">
+                                        @forelse ($branches as $branch)
+                                            <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded px-2 py-1.5">
+                                                <input
+                                                    type="checkbox"
+                                                    name="branch_ids[]"
+                                                    value="{{ $branch->id }}"
+                                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                    @checked($oldBranchIds->contains($branch->id))
+                                                >
+                                                <span class="text-sm text-slate-700">{{ $branch->name }}</span>
+                                            </label>
+                                        @empty
+                                            <p class="text-sm text-slate-500">{{ __('Belum ada data cabang.') }}</p>
+                                        @endforelse
+                                    </div>
+                                    <x-input-error :messages="$errors->get('branch_ids')" class="mt-2" />
+                                </div>
+                                @php $oldWarehouseIds = collect(old('warehouse_ids', [])); @endphp
+                                <div>
+                                    <x-input-label :value="__('Gudang yang Bisa Diakses')" />
+                                    <div class="mt-2 rounded-lg border border-slate-200 p-3 max-h-56 overflow-y-auto space-y-2">
+                                        @forelse ($warehouses as $warehouse)
+                                            <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded px-2 py-1.5">
+                                                <input
+                                                    type="checkbox"
+                                                    name="warehouse_ids[]"
+                                                    value="{{ $warehouse->id }}"
+                                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                    @checked($oldWarehouseIds->contains($warehouse->id))
+                                                >
+                                                <span class="text-sm text-slate-700">{{ $warehouse->name }}</span>
+                                            </label>
+                                        @empty
+                                            <p class="text-sm text-slate-500">{{ __('Belum ada data gudang.') }}</p>
+                                        @endforelse
+                                    </div>
+                                    <x-input-error :messages="$errors->get('warehouse_ids')" class="mt-2" />
+                                </div>
                             </div>
 
                             <div class="flex items-center gap-2">
@@ -102,6 +150,10 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const adminPusatRoleId = @json($adminPusatRoleId ? (string) $adminPusatRoleId : '');
+            const roleSelect = document.getElementById('role_id');
+            const singleFields = document.getElementById('single_placement_fields');
+            const multiFields = document.getElementById('multi_location_fields');
             const placementRadios = document.querySelectorAll('input[name="placement_type"]');
             const branchField = document.getElementById('branch_field');
             const warehouseField = document.getElementById('warehouse_field');
@@ -113,20 +165,25 @@
                 if (val === 'gudang') {
                     branchField.style.display = 'none';
                     warehouseField.style.display = 'block';
-                    branchSelect.removeAttribute('required');
                     branchSelect.value = '';
-                    warehouseSelect.setAttribute('required', 'required');
                 } else {
                     branchField.style.display = 'block';
                     warehouseField.style.display = 'none';
-                    warehouseSelect.removeAttribute('required');
                     warehouseSelect.value = '';
-                    branchSelect.setAttribute('required', 'required');
                 }
             }
 
+            function toggleRoleMode() {
+                const isAdminPusat = adminPusatRoleId !== '' && String(roleSelect.value) === adminPusatRoleId;
+                singleFields.style.display = isAdminPusat ? 'none' : 'block';
+                multiFields.style.display = isAdminPusat ? 'block' : 'none';
+                placementRadios.forEach((el) => { el.disabled = isAdminPusat; });
+                if (! isAdminPusat) togglePlacementFields();
+            }
+
+            roleSelect.addEventListener('change', toggleRoleMode);
             placementRadios.forEach(r => r.addEventListener('change', togglePlacementFields));
-            togglePlacementFields(); // initial
+            toggleRoleMode();
         });
     </script>
 </x-app-layout>

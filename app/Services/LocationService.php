@@ -10,12 +10,12 @@ class LocationService
 {
     /**
      * Get branches and warehouses available for the user to select.
-     * - Super admin & Admin pusat: all branches and warehouses
-     * - Admin cabang, Admin gudang, Kasir, staff_gudang: only their assigned location
+     * - Super admin: all branches and warehouses
+     * - Admin pusat: only assigned branches/warehouses
+     * - Other roles: only their single placement
      */
     public static function getLocationOptionsForUser(?User $user): array
     {
-        $canChoose = $user && $user->isSuperAdminOrAdminPusat();
         $branches = collect();
         $warehouses = collect();
         $defaultPlacementType = null;
@@ -33,26 +33,68 @@ class LocationService
             ];
         }
 
-        if ($canChoose) {
+        if ($user->hasUnrestrictedLocationAccess()) {
             $branches = Branch::query()->orderBy('name')->get(['id', 'name']);
             $warehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
             $defaultPlacementType = old('placement_type');
             $defaultBranchId = old('branch_id');
             $defaultWarehouseId = old('warehouse_id');
-        } else {
-            if ($user->warehouse_id) {
-                $defaultPlacementType = User::PLACEMENT_GUDANG;
-                $defaultWarehouseId = $user->warehouse_id;
-                $warehouses = Warehouse::where('id', $user->warehouse_id)->get(['id', 'name']);
-            } elseif ($user->branch_id) {
-                $defaultPlacementType = User::PLACEMENT_CABANG;
-                $defaultBranchId = $user->branch_id;
-                $branches = Branch::where('id', $user->branch_id)->get(['id', 'name']);
+
+            return [
+                'canChoose' => true,
+                'branches' => $branches,
+                'warehouses' => $warehouses,
+                'defaultPlacementType' => $defaultPlacementType,
+                'defaultBranchId' => $defaultBranchId,
+                'defaultWarehouseId' => $defaultWarehouseId,
+            ];
+        }
+
+        if ($user->isAdminPusat()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            $branches = $branchIds === []
+                ? collect()
+                : Branch::query()->whereIn('id', $branchIds)->orderBy('name')->get(['id', 'name']);
+            $warehouses = $warehouseIds === []
+                ? collect()
+                : Warehouse::query()->whereIn('id', $warehouseIds)->orderBy('name')->get(['id', 'name']);
+            $canChoose = $branches->count() + $warehouses->count() > 0;
+            $defaultPlacementType = old('placement_type');
+            $defaultBranchId = old('branch_id');
+            $defaultWarehouseId = old('warehouse_id');
+            if (! $defaultPlacementType) {
+                if ($branches->isNotEmpty()) {
+                    $defaultPlacementType = User::PLACEMENT_CABANG;
+                    $defaultBranchId = $defaultBranchId ?: $branches->first()?->id;
+                } elseif ($warehouses->isNotEmpty()) {
+                    $defaultPlacementType = User::PLACEMENT_GUDANG;
+                    $defaultWarehouseId = $defaultWarehouseId ?: $warehouses->first()?->id;
+                }
             }
+
+            return [
+                'canChoose' => $canChoose,
+                'branches' => $branches,
+                'warehouses' => $warehouses,
+                'defaultPlacementType' => $defaultPlacementType,
+                'defaultBranchId' => $defaultBranchId,
+                'defaultWarehouseId' => $defaultWarehouseId,
+            ];
+        }
+
+        if ($user->warehouse_id) {
+            $defaultPlacementType = User::PLACEMENT_GUDANG;
+            $defaultWarehouseId = $user->warehouse_id;
+            $warehouses = Warehouse::where('id', $user->warehouse_id)->get(['id', 'name']);
+        } elseif ($user->branch_id) {
+            $defaultPlacementType = User::PLACEMENT_CABANG;
+            $defaultBranchId = $user->branch_id;
+            $branches = Branch::where('id', $user->branch_id)->get(['id', 'name']);
         }
 
         return [
-            'canChoose' => $canChoose,
+            'canChoose' => false,
             'branches' => $branches,
             'warehouses' => $warehouses,
             'defaultPlacementType' => $defaultPlacementType,
@@ -66,11 +108,21 @@ class LocationService
      */
     public static function userHasLocation(?User $user): bool
     {
-        return $user && ($user->branch_id || $user->warehouse_id);
+        if (! $user) {
+            return false;
+        }
+        if ($user->hasUnrestrictedLocationAccess()) {
+            return true;
+        }
+        if ($user->isAdminPusat()) {
+            return $user->accessibleBranchIds() !== [] || $user->accessibleWarehouseIds() !== [];
+        }
+
+        return (bool) ($user->branch_id || $user->warehouse_id);
     }
 
     /**
-     * Resolve placement_type, branch_id, warehouse_id from request for non-super-admin users.
+     * Resolve placement_type, branch_id, warehouse_id from request for the acting user.
      */
     public static function resolveLocationFromUser(?User $user, array $input): array
     {
@@ -82,29 +134,40 @@ class LocationService
             ];
         }
 
-        if ($user->isSuperAdminOrAdminPusat()) {
+        if ($user->hasUnrestrictedLocationAccess() || $user->isAdminPusat()) {
             $placementType = $input['placement_type'] ?? null;
             if ($placementType === User::PLACEMENT_CABANG) {
+                $branchId = isset($input['branch_id']) ? (int) $input['branch_id'] : null;
+                if ($user->isAdminPusat() && $branchId && ! $user->canAccessBranch($branchId)) {
+                    $branchId = null;
+                }
+
                 return [
                     'placement_type' => User::PLACEMENT_CABANG,
-                    'branch_id' => $input['branch_id'] ?? null,
+                    'branch_id' => $branchId,
                     'warehouse_id' => null,
                 ];
             }
             if ($placementType === User::PLACEMENT_GUDANG) {
+                $warehouseId = isset($input['warehouse_id']) ? (int) $input['warehouse_id'] : null;
+                if ($user->isAdminPusat() && $warehouseId && ! $user->canAccessWarehouse($warehouseId)) {
+                    $warehouseId = null;
+                }
+
                 return [
                     'placement_type' => User::PLACEMENT_GUDANG,
                     'branch_id' => null,
-                    'warehouse_id' => $input['warehouse_id'] ?? null,
+                    'warehouse_id' => $warehouseId,
                 ];
             }
-            if ($placementType === 'semua') {
+            if ($placementType === 'semua' && $user->hasUnrestrictedLocationAccess()) {
                 return [
                     'placement_type' => 'semua',
                     'branch_id' => null,
                     'warehouse_id' => null,
                 ];
             }
+
             return [
                 'placement_type' => null,
                 'branch_id' => null,
@@ -136,35 +199,30 @@ class LocationService
 
     /**
      * Get location filter options for index tables.
-     * - Super admin & Admin pusat: can choose branch/warehouse filter (filter not locked)
-     * - Admin cabang, Kasir (cabang), Admin gudang, Staff gudang: filter locked to their location
      */
     public static function getLocationFilterForUser(?User $user, ?string $requestLocationType = null, ?int $requestLocationId = null): array
     {
-        $branches = Branch::query()->orderBy('name')->get(['id', 'name']);
-        $warehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
-
         if (! $user) {
             return [
                 'filterLocked' => true,
                 'locationType' => null,
                 'locationId' => null,
                 'locationLabel' => null,
-                'branches' => $branches,
-                'warehouses' => $warehouses,
+                'branches' => collect(),
+                'warehouses' => collect(),
             ];
         }
 
-        if ($user->isSuperAdminOrAdminPusat()) {
+        if ($user->hasUnrestrictedLocationAccess()) {
+            $branches = Branch::query()->orderBy('name')->get(['id', 'name']);
+            $warehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
             $locationType = in_array($requestLocationType, ['cabang', 'branch', 'gudang', 'warehouse'], true) ? $requestLocationType : null;
             $locationId = ($requestLocationId && (int) $requestLocationId > 0) ? (int) $requestLocationId : null;
             $locationLabel = null;
             if ($locationType === User::PLACEMENT_CABANG && $locationId) {
-                $branch = $branches->firstWhere('id', $locationId);
-                $locationLabel = $branch?->name ?? null;
+                $locationLabel = $branches->firstWhere('id', $locationId)?->name;
             } elseif ($locationType === User::PLACEMENT_GUDANG && $locationId) {
-                $wh = $warehouses->firstWhere('id', $locationId);
-                $locationLabel = $wh?->name ?? null;
+                $locationLabel = $warehouses->firstWhere('id', $locationId)?->name;
             }
 
             return [
@@ -176,6 +234,45 @@ class LocationService
                 'warehouses' => $warehouses,
             ];
         }
+
+        if ($user->isAdminPusat()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            $branches = $branchIds === []
+                ? collect()
+                : Branch::query()->whereIn('id', $branchIds)->orderBy('name')->get(['id', 'name']);
+            $warehouses = $warehouseIds === []
+                ? collect()
+                : Warehouse::query()->whereIn('id', $warehouseIds)->orderBy('name')->get(['id', 'name']);
+            $locationType = in_array($requestLocationType, ['cabang', 'branch', 'gudang', 'warehouse'], true) ? $requestLocationType : null;
+            $locationId = ($requestLocationId && (int) $requestLocationId > 0) ? (int) $requestLocationId : null;
+            if ($locationType === User::PLACEMENT_CABANG && $locationId && ! $user->canAccessBranch($locationId)) {
+                $locationType = null;
+                $locationId = null;
+            }
+            if ($locationType === User::PLACEMENT_GUDANG && $locationId && ! $user->canAccessWarehouse($locationId)) {
+                $locationType = null;
+                $locationId = null;
+            }
+            $locationLabel = null;
+            if ($locationType === User::PLACEMENT_CABANG && $locationId) {
+                $locationLabel = $branches->firstWhere('id', $locationId)?->name;
+            } elseif ($locationType === User::PLACEMENT_GUDANG && $locationId) {
+                $locationLabel = $warehouses->firstWhere('id', $locationId)?->name;
+            }
+
+            return [
+                'filterLocked' => ($branches->count() + $warehouses->count()) <= 1,
+                'locationType' => $locationType,
+                'locationId' => $locationId,
+                'locationLabel' => $locationLabel,
+                'branches' => $branches,
+                'warehouses' => $warehouses,
+            ];
+        }
+
+        $branches = Branch::query()->orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
 
         if ($user->warehouse_id) {
             $wh = $warehouses->firstWhere('id', $user->warehouse_id);

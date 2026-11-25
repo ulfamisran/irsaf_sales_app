@@ -173,7 +173,7 @@
                 @endif
 
                 <!-- Penjualan -->
-                @if ($see('sales') || $see('services') || $see('rentals') || $see('stock-mutations'))
+                @if ($see('sales') || $see('unit-exchanges') || $see('services') || $see('rentals') || $see('stock-mutations'))
                 <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*', 'print-reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -193,6 +193,8 @@
                     <ul x-show="open" x-transition class="mt-1 space-y-0.5 ml-4 pl-4 border-l-2 border-white/5">
                         @if ($see('sales'))
                             <li><x-sidebar-nav-link :href="route('sales.index')" :active="request()->routeIs('sales.*') && ! request()->routeIs('sales.unit-exchanges.*')">Penjualan</x-sidebar-nav-link></li>
+                        @endif
+                        @if ($see('unit-exchanges'))
                             <li><x-sidebar-nav-link :href="route('sales.unit-exchanges.index')" :active="request()->routeIs('sales.unit-exchanges.*')">Tukar Unit</x-sidebar-nav-link></li>
                         @endif
                         @if ($see('services'))
@@ -201,7 +203,7 @@
                         @if ($see('rentals'))
                             <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                         @endif
-                        @if ($see('sales') || $see('purchases') || $see('services') || $see('rentals') || $see('stock-mutations'))
+                        @if ($see('sales') || $see('purchases') || $see('services') || $see('rentals') || $see('stock-mutations') || $see('unit-exchanges'))
                             <li><x-sidebar-nav-link :href="route('print-reports.index')" :active="request()->routeIs('print-reports.*')">Cetak Laporan</x-sidebar-nav-link></li>
                         @endif
                     </ul>

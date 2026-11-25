@@ -405,7 +405,16 @@ class UnitExchangeController extends Controller
         if (! $user) {
             abort(403, __('Unauthorized.'));
         }
-        if ($user->isSuperAdminOrAdminPusat()) {
+        if ($user->hasUnrestrictedLocationAccess()) {
+            return;
+        }
+        if ($user->isAdminPusat()) {
+            \App\Support\UserLocationScope::assertCanAccessLocation(
+                $user,
+                $sale->branch_id ? (int) $sale->branch_id : null,
+                $sale->warehouse_id ? (int) $sale->warehouse_id : null
+            );
+
             return;
         }
         if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
@@ -420,32 +429,18 @@ class UnitExchangeController extends Controller
     private function scopeLocation($query, Request $request): void
     {
         $user = $request->user();
-        if (! $user || $user->isSuperAdminOrAdminPusat()) {
+        if (! $user || $user->hasUnrestrictedLocationAccess()) {
             return;
         }
-        if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-            $query->where('warehouse_id', $user->warehouse_id);
-
-            return;
-        }
-        if ($user->branch_id) {
-            $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
-        }
+        \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
     }
 
     private function scopeSale($query, Request $request): void
     {
         $user = $request->user();
-        if (! $user || $user->isSuperAdminOrAdminPusat()) {
+        if (! $user || $user->hasUnrestrictedLocationAccess()) {
             return;
         }
-        if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-            $query->where('warehouse_id', $user->warehouse_id);
-
-            return;
-        }
-        if ($user->branch_id) {
-            $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
-        }
+        \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
     }
 }

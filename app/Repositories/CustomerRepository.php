@@ -19,13 +19,14 @@ class CustomerRepository
         $locationType = $filters['location_type'] ?? null;
         $locationId = $filters['location_id'] ?? null;
 
-        if ($user && ! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
-            } elseif ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-            } else {
-                $query->whereRaw('1 = 0');
+        if ($user && ! $user->hasUnrestrictedLocationAccess()) {
+            \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
+            if ($locationType && $locationId) {
+                if ($locationType === 'cabang' && $user->canAccessBranch((int) $locationId)) {
+                    $query->where('branch_id', $locationId);
+                } elseif ($locationType !== 'cabang' && $user->canAccessWarehouse((int) $locationId)) {
+                    $query->where('warehouse_id', $locationId);
+                }
             }
         } elseif ($locationType && $locationId) {
             if ($locationType === 'cabang') {

@@ -54,14 +54,9 @@ class SaleController extends Controller
         $sales = $query->paginate(20)->withQueryString();
         $branches = collect();
         $warehouses = collect();
-        if ($user->isSuperAdminOrAdminPusat()) {
-            $branches = Branch::orderBy('name')->get(['id', 'name']);
-            $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
-            $branches = Branch::whereKey($user->branch_id)->get(['id', 'name']);
-        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-            $warehouses = Warehouse::whereKey($user->warehouse_id)->get(['id', 'name']);
-        }
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $branches = $locationOptions['branches'];
+        $warehouses = $locationOptions['warehouses'];
 
         return view('sales.index', [
             'sales' => $sales,
@@ -113,21 +108,22 @@ class SaleController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        $isPusat = $user->isSuperAdminOrAdminPusat();
-        $isWarehouseUser = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $isPusat;
-        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $isPusat;
+        $isUnrestricted = $user->hasUnrestrictedLocationAccess();
+        $isAdminPusat = $user->isAdminPusat();
+        $isWarehouseUser = $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $isUnrestricted && ! $isAdminPusat;
+        $isBranchStaff = $user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $isUnrestricted && ! $isAdminPusat;
 
-        if (! $isPusat && ! $isWarehouseUser && ! ($isBranchStaff && $user->branch_id)) {
+        if (! $isUnrestricted && ! $isAdminPusat && ! $isWarehouseUser && ! ($isBranchStaff && $user->branch_id)) {
             abort(403, __('User branch or warehouse not set.'));
         }
+        if ($isAdminPusat && ! \App\Services\LocationService::userHasLocation($user)) {
+            abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
+        }
 
-        $branches = $isPusat
-            ? Branch::orderBy('name')->get()
-            : ($isBranchStaff ? Branch::whereKey($user->branch_id)->get() : collect());
-
-        $warehouses = $isPusat
-            ? Warehouse::orderBy('name')->get()
-            : ($isWarehouseUser ? Warehouse::whereKey($user->warehouse_id)->get() : collect());
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $branches = $locationOptions['branches'];
+        $warehouses = $locationOptions['warehouses'];
+        $isPusat = $isUnrestricted || $isAdminPusat;
 
         if ($isPusat) {
             $products = collect();
@@ -231,7 +227,7 @@ class SaleController extends Controller
             $user = $request->user();
             $branchId = null;
             $warehouseId = null;
-            if ($user->isSuperAdminOrAdminPusat()) {
+            if ($user->hasUnrestrictedLocationAccess() || $user->isAdminPusat()) {
                 if ($request->input('sale_location_type') === 'warehouse') {
                     $warehouseId = (int) $request->input('warehouse_id');
                 } else {
@@ -246,12 +242,7 @@ class SaleController extends Controller
             if ($branchId === null && $warehouseId === null) {
                 abort(403, __('Location is required.'));
             }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && ! $user->isSuperAdminOrAdminPusat() && $warehouseId !== (int) $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && ! $user->isSuperAdminOrAdminPusat() && $branchId !== (int) $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
+            \App\Support\UserLocationScope::assertCanAccessLocation($user, $branchId, $warehouseId);
 
             $customerId = $this->resolveCustomerId($request, $branchId, $warehouseId);
             $discount = (float) ($request->input('discount_amount') ?? 0);
@@ -941,27 +932,44 @@ class SaleController extends Controller
         $filterLocked = false;
         $locationLabel = null;
 
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
-                $filterLocked = true;
-                $branch = Branch::find($user->branch_id);
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
-                $filterLocked = true;
-                $warehouse = Warehouse::find($user->warehouse_id);
-                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
-                abort(403, __('User branch or warehouse not set.'));
-            }
-        } else {
+        if ($user->hasUnrestrictedLocationAccess()) {
             $canFilterLocation = true;
             if ($request->filled('warehouse_id')) {
                 $query->where('warehouse_id', $request->warehouse_id);
             } elseif ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id)->whereNull('warehouse_id');
             }
+        } elseif ($user->isAdminPusat()) {
+            if (! \App\Services\LocationService::userHasLocation($user)) {
+                abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
+            }
+            $meta = \App\Support\UserLocationScope::applyOptionalRequestFilter(
+                $query,
+                $user,
+                $request->filled('branch_id') ? (int) $request->branch_id : null,
+                $request->filled('warehouse_id') ? (int) $request->warehouse_id : null
+            );
+            $canFilterLocation = $meta['canFilter'];
+            $filterLocked = $meta['filterLocked'];
+            if ($request->filled('warehouse_id') && $user->canAccessWarehouse((int) $request->warehouse_id)) {
+                $warehouse = Warehouse::find($request->warehouse_id);
+                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $request->warehouse_id);
+            } elseif ($request->filled('branch_id') && $user->canAccessBranch((int) $request->branch_id)) {
+                $branch = Branch::find($request->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $request->branch_id);
+            }
+        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
+            $query->where('branch_id', $user->branch_id)->whereNull('warehouse_id');
+            $filterLocked = true;
+            $branch = Branch::find($user->branch_id);
+            $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            $query->where('warehouse_id', $user->warehouse_id);
+            $filterLocked = true;
+            $warehouse = Warehouse::find($user->warehouse_id);
+            $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
+        } elseif (! $user->branch_id && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
         if ($request->filled('date_from')) {
             $query->whereDate('sale_date', '>=', $request->date_from);
@@ -1260,7 +1268,16 @@ class SaleController extends Controller
         if (! $user) {
             abort(403, __('Unauthorized.'));
         }
-        if ($user->isSuperAdminOrAdminPusat()) {
+        if ($user->hasUnrestrictedLocationAccess()) {
+            return;
+        }
+        if ($user->isAdminPusat()) {
+            \App\Support\UserLocationScope::assertCanAccessLocation(
+                $user,
+                $sale->branch_id ? (int) $sale->branch_id : null,
+                $sale->warehouse_id ? (int) $sale->warehouse_id : null
+            );
+
             return;
         }
         if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {

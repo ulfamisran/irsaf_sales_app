@@ -8,7 +8,11 @@
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 <x-action-btn variant="report" :href="route('sales.unit-exchanges.report', $exchange)" target="_blank" />
-                @if ($exchange->status === \App\Models\UnitExchange::STATUS_OPEN && ! app(\App\Services\AuthorizationService::class)->blocksMutation($exchange))
+                @if (
+                    auth()->user()?->canModule('unit-exchanges', 'update')
+                    && $exchange->status === \App\Models\UnitExchange::STATUS_OPEN
+                    && ! app(\App\Services\AuthorizationService::class)->blocksMutation($exchange)
+                )
                     <x-action-btn variant="edit" :href="route('sales.unit-exchanges.edit', $exchange)" />
                 @endif
                 <x-icon-btn-back :href="route('sales.unit-exchanges.index')" :label="__('Kembali')" />

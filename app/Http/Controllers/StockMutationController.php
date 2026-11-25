@@ -48,42 +48,71 @@ class StockMutationController extends Controller
         $locationLabel = null;
 
         $accessConstraint = null;
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $branchId = (int) $user->branch_id;
-                $accessConstraint = function ($q) use ($branchId) {
-                    $q->where(function ($q2) use ($branchId) {
-                        $q2->where(function ($q3) use ($branchId) {
-                            $q3->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId);
-                        })->orWhere(function ($q3) use ($branchId) {
-                            $q3->where('to_location_type', Stock::LOCATION_BRANCH)->where('to_location_id', $branchId);
-                        });
-                    });
-                };
-                $filterLocked = true;
-                $branch = Branch::find($branchId);
-                $locationType = 'branch';
-                $locationId = $branchId;
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-                $warehouseId = (int) $user->warehouse_id;
-                $accessConstraint = function ($q) use ($warehouseId) {
-                    $q->where(function ($q2) use ($warehouseId) {
-                        $q2->where(function ($q3) use ($warehouseId) {
-                            $q3->where('from_location_type', Stock::LOCATION_WAREHOUSE)->where('from_location_id', $warehouseId);
-                        })->orWhere(function ($q3) use ($warehouseId) {
-                            $q3->where('to_location_type', Stock::LOCATION_WAREHOUSE)->where('to_location_id', $warehouseId);
-                        });
-                    });
-                };
-                $filterLocked = true;
-                $warehouse = Warehouse::find($warehouseId);
-                $locationType = 'warehouse';
-                $locationId = $warehouseId;
-                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
-                abort(403, __('User branch or warehouse not set.'));
+        if ($user->hasUnrestrictedLocationAccess()) {
+            // no default constraint
+        } elseif ($user->isAdminPusat()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            if ($branchIds === [] && $warehouseIds === []) {
+                abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
             }
+            $accessConstraint = function ($q) use ($branchIds, $warehouseIds) {
+                $q->where(function ($q2) use ($branchIds, $warehouseIds) {
+                    if ($branchIds !== []) {
+                        $q2->orWhere(function ($q3) use ($branchIds) {
+                            $q3->where(function ($q4) use ($branchIds) {
+                                $q4->where('from_location_type', Stock::LOCATION_BRANCH)->whereIn('from_location_id', $branchIds);
+                            })->orWhere(function ($q4) use ($branchIds) {
+                                $q4->where('to_location_type', Stock::LOCATION_BRANCH)->whereIn('to_location_id', $branchIds);
+                            });
+                        });
+                    }
+                    if ($warehouseIds !== []) {
+                        $q2->orWhere(function ($q3) use ($warehouseIds) {
+                            $q3->where(function ($q4) use ($warehouseIds) {
+                                $q4->where('from_location_type', Stock::LOCATION_WAREHOUSE)->whereIn('from_location_id', $warehouseIds);
+                            })->orWhere(function ($q4) use ($warehouseIds) {
+                                $q4->where('to_location_type', Stock::LOCATION_WAREHOUSE)->whereIn('to_location_id', $warehouseIds);
+                            });
+                        });
+                    }
+                });
+            };
+            $filterLocked = (count($branchIds) + count($warehouseIds)) <= 1;
+        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
+            $branchId = (int) $user->branch_id;
+            $accessConstraint = function ($q) use ($branchId) {
+                $q->where(function ($q2) use ($branchId) {
+                    $q2->where(function ($q3) use ($branchId) {
+                        $q3->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId);
+                    })->orWhere(function ($q3) use ($branchId) {
+                        $q3->where('to_location_type', Stock::LOCATION_BRANCH)->where('to_location_id', $branchId);
+                    });
+                });
+            };
+            $filterLocked = true;
+            $branch = Branch::find($branchId);
+            $locationType = 'branch';
+            $locationId = $branchId;
+            $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            $warehouseId = (int) $user->warehouse_id;
+            $accessConstraint = function ($q) use ($warehouseId) {
+                $q->where(function ($q2) use ($warehouseId) {
+                    $q2->where(function ($q3) use ($warehouseId) {
+                        $q3->where('from_location_type', Stock::LOCATION_WAREHOUSE)->where('from_location_id', $warehouseId);
+                    })->orWhere(function ($q3) use ($warehouseId) {
+                        $q3->where('to_location_type', Stock::LOCATION_WAREHOUSE)->where('to_location_id', $warehouseId);
+                    });
+                });
+            };
+            $filterLocked = true;
+            $warehouse = Warehouse::find($warehouseId);
+            $locationType = 'warehouse';
+            $locationId = $warehouseId;
+            $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
+        } elseif (! $user->branch_id && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
         $applyFilters = function ($query, bool $isDistribution = true) use ($user, $request, $accessConstraint) {
@@ -614,7 +643,18 @@ class StockMutationController extends Controller
 
     private function authorizeDistributionAccess(Distribution $distribution, $user): void
     {
-        if ($user->isSuperAdminOrAdminPusat()) {
+        if ($user->hasUnrestrictedLocationAccess()) {
+            return;
+        }
+        if ($user->isAdminPusat()) {
+            $fromOk = ($distribution->from_location_type === Stock::LOCATION_BRANCH && $user->canAccessBranch((int) $distribution->from_location_id))
+                || ($distribution->from_location_type === Stock::LOCATION_WAREHOUSE && $user->canAccessWarehouse((int) $distribution->from_location_id));
+            $toOk = ($distribution->to_location_type === Stock::LOCATION_BRANCH && $user->canAccessBranch((int) $distribution->to_location_id))
+                || ($distribution->to_location_type === Stock::LOCATION_WAREHOUSE && $user->canAccessWarehouse((int) $distribution->to_location_id));
+            if (! $fromOk && ! $toOk) {
+                abort(403, __('Unauthorized.'));
+            }
+
             return;
         }
         if ($user->branch_id) {
