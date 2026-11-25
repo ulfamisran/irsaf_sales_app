@@ -92,18 +92,19 @@ class ProductController extends Controller
         }
         $categories = $this->categoryRepository->all();
         $distributors = $this->distributorRepository->all($request->user());
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
 
         $defaultLocationType = null;
         $defaultLocationId = null;
         if ($user) {
-            if ($user->warehouse_id) {
+            if ($locationOptions['defaultPlacementType'] === \App\Models\User::PLACEMENT_GUDANG || $user->warehouse_id) {
                 $defaultLocationType = Product::LOCATION_WAREHOUSE;
-                $defaultLocationId = $user->warehouse_id;
-            } elseif ($user->branch_id) {
+                $defaultLocationId = $locationOptions['defaultWarehouseId'] ?? $user->warehouse_id;
+            } elseif ($locationOptions['defaultPlacementType'] === \App\Models\User::PLACEMENT_CABANG || $user->branch_id) {
                 $defaultLocationType = Product::LOCATION_BRANCH;
-                $defaultLocationId = $user->branch_id;
+                $defaultLocationId = $locationOptions['defaultBranchId'] ?? $user->branch_id;
             }
         }
 
@@ -306,9 +307,13 @@ class ProductController extends Controller
 
         $user = $request->user();
         if (! $user->isSuperAdmin() && ! $user->isAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
-                if ($unit->location_type !== Stock::LOCATION_BRANCH || (int) $unit->location_id !== (int) $user->branch_id) {
+            if ($unit->location_type === Stock::LOCATION_BRANCH) {
+                if (! $user->canAccessBranch((int) $unit->location_id)) {
                     abort(403, __('Anda tidak dapat menghapus unit di cabang lain.'));
+                }
+            } elseif ($unit->location_type === Stock::LOCATION_WAREHOUSE) {
+                if (! $user->canAccessWarehouse((int) $unit->location_id)) {
+                    abort(403, __('Anda tidak dapat menghapus unit di gudang lain.'));
                 }
             } else {
                 abort(403, __('Unauthorized.'));

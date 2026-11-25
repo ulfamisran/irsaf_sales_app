@@ -49,17 +49,17 @@ class RentalController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-                $filterLocked = true;
-                $branch = Branch::find($user->branch_id);
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            if ($user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
                 $filterLocked = true;
                 $warehouse = Warehouse::find($user->warehouse_id);
                 $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $user->warehouse_id);
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+            } elseif ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+                $filterLocked = true;
+                $branch = Branch::find($user->branch_id);
+                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $user->branch_id);
+            } else {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
@@ -94,10 +94,10 @@ class RentalController extends Controller
         $totalRental = (float) (clone $query)
             ->whereIn('status', [Rental::STATUS_OPEN, Rental::STATUS_RELEASED])
             ->sum('total');
-        $pmBranchId = $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id
+        $pmBranchId = $user->branch_id && ! $user->warehouse_id
             ? (int) $user->branch_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id') ? (int) $request->branch_id : null);
-        $pmWarehouseId = $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id
+        $pmWarehouseId = $user->warehouse_id
             ? (int) $user->warehouse_id
             : ($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id') ? (int) $request->warehouse_id : null);
         $paymentMethods = PaymentMethod::query()
@@ -109,8 +109,8 @@ class RentalController extends Controller
             ->get(['id', 'jenis_pembayaran', 'nama_bank', 'atas_nama_bank', 'no_rekening']);
         $paymentMethodTotals = DB::table('rental_payments')
             ->join('rentals', 'rental_payments.rental_id', '=', 'rentals.id')
-            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
-            ->when($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id, fn ($q) => $q->where('rentals.warehouse_id', $user->warehouse_id))
+            ->when($user->branch_id && ! $user->warehouse_id, fn ($q) => $q->where('rentals.branch_id', $user->branch_id))
+            ->when($user->warehouse_id, fn ($q) => $q->where('rentals.warehouse_id', $user->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('warehouse_id'), fn ($q) => $q->where('rentals.warehouse_id', $request->warehouse_id))
             ->when($user->isSuperAdminOrAdminPusat() && $request->filled('branch_id'), fn ($q) => $q->where('rentals.branch_id', $request->branch_id))
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('rentals.pickup_date', '>=', $request->date_from))
@@ -145,9 +145,9 @@ class RentalController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
+            if ($user->branch_id && ! $user->warehouse_id) {
                 $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
@@ -180,10 +180,10 @@ class RentalController extends Controller
                 $b = Branch::find($request->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             }
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
+        } elseif ($user->branch_id && ! $user->warehouse_id) {
             $b = Branch::find($user->branch_id);
             $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+        } elseif ($user->warehouse_id) {
             $w = Warehouse::find($user->warehouse_id);
             $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
         }
@@ -211,9 +211,9 @@ class RentalController extends Controller
         $branchLine = __('Semua');
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
+            if ($user->branch_id && ! $user->warehouse_id) {
                 $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            } elseif ($user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
             } elseif (! $user->branch_id && ! $user->warehouse_id) {
                 abort(403, __('User branch or warehouse not set.'));
@@ -246,10 +246,10 @@ class RentalController extends Controller
                 $b = Branch::find($request->branch_id);
                 $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
             }
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
+        } elseif ($user->branch_id && ! $user->warehouse_id) {
             $b = Branch::find($user->branch_id);
             $branchLine = $b ? __('Cabang') . ' ' . $b->name : __('Cabang');
-        } elseif ($user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+        } elseif ($user->warehouse_id) {
             $w = Warehouse::find($user->warehouse_id);
             $branchLine = $w ? __('Gudang') . ' ' . $w->name : __('Gudang');
         }
@@ -274,14 +274,9 @@ class RentalController extends Controller
             abort(403, __('User branch or warehouse not set.'));
         }
 
-        $warehouses = Warehouse::orderBy('name')->get();
-        $branches = Branch::orderBy('name')->get();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-            $warehouses = $warehouses->where('id', $user->warehouse_id)->values();
-        }
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KASIR, \App\Models\Role::KEPALA_CABANG]) && $user->branch_id) {
-            $branches = $branches->where('id', $user->branch_id)->values();
-        }
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
 
         $defaultLocationType = null;
         $defaultLocationId = null;
@@ -356,9 +351,11 @@ class RentalController extends Controller
     public function show(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs', 'returnUser', 'cancelUser']);
         $paymentMethods = $this->paymentMethodsForRental($rental);
@@ -455,9 +452,11 @@ class RentalController extends Controller
     public function addPayment(Request $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         $validated = $request->validate([
             'payments' => ['required', 'array', 'min:1'],
@@ -501,9 +500,11 @@ class RentalController extends Controller
     public function markReturned(Rental $rental): RedirectResponse
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         $this->proofs->assertHasProof($rental);
 
@@ -554,9 +555,11 @@ class RentalController extends Controller
     public function finalizeRelease(Request $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         try {
             $this->rentalService->finalizeRelease($rental);
@@ -573,9 +576,11 @@ class RentalController extends Controller
     public function listRelease(Request $request, Rental $rental): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         $auth = app(\App\Services\AuthorizationService::class);
 
@@ -645,9 +650,11 @@ class RentalController extends Controller
     public function invoice(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
         try {
             app(\App\Services\AuthorizationService::class)->assertInvoice($rental);
         } catch (\InvalidArgumentException $e) {
@@ -662,9 +669,11 @@ class RentalController extends Controller
     public function report(Rental $rental): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && $user->branch_id && $rental->branch_id !== $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $rental->branch_id ? (int) $rental->branch_id : null,
+            $rental->warehouse_id ? (int) $rental->warehouse_id : null
+        );
 
         $rental->load(['branch', 'warehouse', 'user', 'customer', 'items.product', 'payments.paymentMethod', 'proofs']);
 

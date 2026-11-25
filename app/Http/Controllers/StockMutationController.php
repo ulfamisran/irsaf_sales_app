@@ -14,8 +14,9 @@ use App\Models\IncomeCategory;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\ProductUnit;
-use App\Models\Role;
 use App\Models\Stock;
+use App\Models\User;
+use App\Support\UserLocationScope;
 use App\Models\StockMutation;
 use App\Models\Warehouse;
 use App\Services\PurchaseService;
@@ -79,23 +80,7 @@ class StockMutationController extends Controller
                 });
             };
             $filterLocked = (count($branchIds) + count($warehouseIds)) <= 1;
-        } elseif ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id) {
-            $branchId = (int) $user->branch_id;
-            $accessConstraint = function ($q) use ($branchId) {
-                $q->where(function ($q2) use ($branchId) {
-                    $q2->where(function ($q3) use ($branchId) {
-                        $q3->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId);
-                    })->orWhere(function ($q3) use ($branchId) {
-                        $q3->where('to_location_type', Stock::LOCATION_BRANCH)->where('to_location_id', $branchId);
-                    });
-                });
-            };
-            $filterLocked = true;
-            $branch = Branch::find($branchId);
-            $locationType = 'branch';
-            $locationId = $branchId;
-            $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
-        } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+        } elseif ($user->warehouse_id) {
             $warehouseId = (int) $user->warehouse_id;
             $accessConstraint = function ($q) use ($warehouseId) {
                 $q->where(function ($q2) use ($warehouseId) {
@@ -111,7 +96,23 @@ class StockMutationController extends Controller
             $locationType = 'warehouse';
             $locationId = $warehouseId;
             $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? '#' . $warehouseId);
-        } elseif (! $user->branch_id && ! $user->warehouse_id) {
+        } elseif ($user->branch_id) {
+            $branchId = (int) $user->branch_id;
+            $accessConstraint = function ($q) use ($branchId) {
+                $q->where(function ($q2) use ($branchId) {
+                    $q2->where(function ($q3) use ($branchId) {
+                        $q3->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId);
+                    })->orWhere(function ($q3) use ($branchId) {
+                        $q3->where('to_location_type', Stock::LOCATION_BRANCH)->where('to_location_id', $branchId);
+                    });
+                });
+            };
+            $filterLocked = true;
+            $branch = Branch::find($branchId);
+            $locationType = 'branch';
+            $locationId = $branchId;
+            $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? '#' . $branchId);
+        } else {
             abort(403, __('User branch or warehouse not set.'));
         }
 
@@ -786,20 +787,24 @@ class StockMutationController extends Controller
     public function create(): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
         $categories = Category::orderBy('name')->get(['id', 'name']);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
 
         $lockFromLocation = false;
         $defaultFromLocationType = old('from_location_type');
         $defaultFromLocationId = old('from_location_id');
         $fromLocationLabel = null;
 
-        if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
+        if (! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat()) {
             $lockFromLocation = true;
             if ($user->warehouse_id) {
                 $defaultFromLocationType = Stock::LOCATION_WAREHOUSE;
@@ -811,6 +816,17 @@ class StockMutationController extends Controller
                 $defaultFromLocationId = (int) $user->branch_id;
                 $br = Branch::find($defaultFromLocationId);
                 $fromLocationLabel = __('Cabang') . ': ' . ($br?->name ?? '#' . $defaultFromLocationId);
+            }
+        } elseif ($user->isAdminPusat() && ($branches->count() + $warehouses->count()) === 1) {
+            $lockFromLocation = true;
+            if ($warehouses->count() === 1) {
+                $defaultFromLocationType = Stock::LOCATION_WAREHOUSE;
+                $defaultFromLocationId = (int) $warehouses->first()->id;
+                $fromLocationLabel = __('Gudang') . ': ' . $warehouses->first()->name;
+            } else {
+                $defaultFromLocationType = Stock::LOCATION_BRANCH;
+                $defaultFromLocationId = (int) $branches->first()->id;
+                $fromLocationLabel = __('Cabang') . ': ' . $branches->first()->name;
             }
         }
 
@@ -828,10 +844,6 @@ class StockMutationController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-
         $validated = $request->validate([
             'from_location_type' => ['required', 'in:' . Stock::LOCATION_WAREHOUSE . ',' . Stock::LOCATION_BRANCH],
             'from_location_id' => ['required', 'integer', 'min:1'],
@@ -840,6 +852,7 @@ class StockMutationController extends Controller
 
         $fromType = (string) $validated['from_location_type'];
         $fromId = (int) $validated['from_location_id'];
+        $this->assertCanAccessStockLocation($user, $fromType, $fromId);
         $categoryId = $validated['category_id'] ?? null;
 
         $productIds = ProductUnit::query()
@@ -885,21 +898,21 @@ class StockMutationController extends Controller
     public function availableSerials(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-
         $validated = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
             'from_location_type' => ['required', 'in:' . Stock::LOCATION_WAREHOUSE . ',' . Stock::LOCATION_BRANCH],
             'from_location_id' => ['required', 'integer', 'min:1'],
         ]);
 
+        $fromType = (string) $validated['from_location_type'];
+        $fromId = (int) $validated['from_location_id'];
+        $this->assertCanAccessStockLocation($user, $fromType, $fromId);
+
         $limit = 500;
         $query = ProductUnit::query()
             ->where('product_id', (int) $validated['product_id'])
-            ->where('location_type', (string) $validated['from_location_type'])
-            ->where('location_id', (int) $validated['from_location_id'])
+            ->where('location_type', $fromType)
+            ->where('location_id', $fromId)
             ->where('status', ProductUnit::STATUS_IN_STOCK);
 
         $total = (clone $query)->count();
@@ -919,9 +932,6 @@ class StockMutationController extends Controller
     public function store(StockMutationRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
 
         app(TransactionProofService::class)->validateUploads($request, null, false);
 
@@ -929,7 +939,7 @@ class StockMutationController extends Controller
             $fromLocationType = $request->from_location_type;
             $fromLocationId = (int) $request->from_location_id;
 
-            if (! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
+            if (! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat()) {
                 if ($user->warehouse_id) {
                     $fromLocationType = Stock::LOCATION_WAREHOUSE;
                     $fromLocationId = (int) $user->warehouse_id;
@@ -938,6 +948,8 @@ class StockMutationController extends Controller
                     $fromLocationId = (int) $user->branch_id;
                 }
             }
+
+            $this->assertCanAccessStockLocation($user, (string) $fromLocationType, (int) $fromLocationId);
 
             $items = collect($request->input('items', []))->values()->all();
             if (empty($items)) {
@@ -1192,5 +1204,16 @@ class StockMutationController extends Controller
         }
 
         return $serials;
+    }
+
+    private function assertCanAccessStockLocation(User $user, string $locationType, int $locationId): void
+    {
+        if ($locationType === Stock::LOCATION_WAREHOUSE) {
+            UserLocationScope::assertCanAccessLocation($user, null, $locationId);
+
+            return;
+        }
+
+        UserLocationScope::assertCanAccessLocation($user, $locationId, null);
     }
 }

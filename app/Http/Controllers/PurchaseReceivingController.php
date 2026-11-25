@@ -6,7 +6,6 @@ use App\Models\Branch;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseReceivingLog;
-use App\Models\Role;
 use App\Models\Warehouse;
 use App\Services\PurchaseReceivingService;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,8 +23,11 @@ class PurchaseReceivingController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
         $tab = $request->get('tab', 'pengecekan');
@@ -34,8 +36,12 @@ class PurchaseReceivingController extends Controller
         }
 
         $loc = $this->locationContext($request);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        if ($user->isAdminPusat() && ! \App\Services\LocationService::userHasLocation($user)) {
+            abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
+        }
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
 
         if ($tab === 'riwayat') {
             return $this->indexHistory($request, $warehouses, $branches, $loc);
@@ -255,13 +261,13 @@ class PurchaseReceivingController extends Controller
         $locationLabel = null;
 
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $filterLocked = true;
-                $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            if ($user->warehouse_id) {
                 $filterLocked = true;
                 $locationLabel = __('Gudang').': '.(Warehouse::find($user->warehouse_id)?->name ?? '');
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
+            } elseif ($user->branch_id) {
+                $filterLocked = true;
+                $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
+            } else {
                 abort(403, __('User branch or warehouse not set.'));
             }
         } else {
@@ -278,11 +284,13 @@ class PurchaseReceivingController extends Controller
     private function applyLocationFilter(Request $request, Builder $query): void
     {
         $user = $request->user();
+        \App\Support\UserLocationScope::constrainBranchWarehouse($query, $user);
+
         if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
+            if ($user->warehouse_id) {
                 $query->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
             } else {
                 abort(403, __('User branch or warehouse not set.'));
             }
@@ -318,16 +326,10 @@ class PurchaseReceivingController extends Controller
             abort(404);
         }
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && (int) $purchase->branch_id !== (int) $user->branch_id) {
-                abort(403);
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && (int) $purchase->warehouse_id !== (int) $user->warehouse_id) {
-                abort(403);
-            }
-        }
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $purchase->branch_id ? (int) $purchase->branch_id : null,
+            $purchase->warehouse_id ? (int) $purchase->warehouse_id : null
+        );
     }
 }

@@ -36,8 +36,37 @@
         <!-- Navigation menu -->
         @php
             $user = auth()->user();
-            $see = function (string $slug) use ($user): bool {
-                return (bool) ($user?->canModule($slug, \App\Support\ModuleAccessCatalog::menuAction($slug)));
+            $hasLocation = (bool) $user && (
+                $user->hasUnrestrictedLocationAccess()
+                || ($user->isAdminPusat() && \App\Services\LocationService::userHasLocation($user))
+                || (int) $user->branch_id > 0
+                || (int) $user->warehouse_id > 0
+            );
+            // Menu sidebar hanya tampil jika role punya akses Lihat (select).
+            // Modul laporan: centang Laporan ATAU Lihat.
+            // Modul operasional lokasi: sembunyikan jika user belum punya cabang/gudang.
+            $locationModules = [
+                'purchases', 'purchase-receiving', 'incoming-goods', 'stock-mutations',
+                'stock-units', 'stock-monitoring', 'stock-inout', 'damaged-goods',
+                'sales', 'unit-exchanges', 'services', 'rentals',
+                'debts', 'cash-out', 'cash-out-external', 'cash-in', 'mutasi-dana',
+                'cash-flows', 'cash-monitoring', 'profit-loss', 'profit-loss-comparison',
+            ];
+            $see = function (string $slug) use ($user, $hasLocation, $locationModules): bool {
+                if (! $user) {
+                    return false;
+                }
+                $menuAction = \App\Support\ModuleAccessCatalog::menuAction($slug);
+                $allowed = $user->canModule($slug, $menuAction)
+                    || ($menuAction !== 'select' && $user->canModule($slug, 'select'));
+                if (! $allowed) {
+                    return false;
+                }
+                if (in_array($slug, $locationModules, true) && ! $hasLocation) {
+                    return false;
+                }
+
+                return true;
             };
             $canManageAccess = $user && ($user->isStrictSuperAdmin() || $user->isAdminPusat());
         @endphp
@@ -172,8 +201,12 @@
                 </li>
                 @endif
 
-                <!-- Penjualan -->
-                @if ($see('sales') || $see('unit-exchanges') || $see('services') || $see('rentals') || $see('stock-mutations'))
+                <!-- Penjualan / Transaksi -->
+                @php
+                    $seePrintReports = $see('sales') || $see('purchases') || $see('services') || $see('rentals') || $see('stock-mutations') || $see('unit-exchanges');
+                    $seeTransaksi = $see('sales') || $see('unit-exchanges') || $see('services') || $see('rentals') || $seePrintReports;
+                @endphp
+                @if ($seeTransaksi)
                 <li x-data="{ open: {{ request()->routeIs('sales.*', 'services.*', 'rentals.*', 'print-reports.*') ? 'true' : 'false' }} }" class="pt-2">
                     <p class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transaksi</p>
                     <button @click="open = !open" type="button" class="flex items-center justify-between w-full px-3 py-2.5 text-sm font-medium rounded-xl text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group">
@@ -203,7 +236,7 @@
                         @if ($see('rentals'))
                             <li><x-sidebar-nav-link :href="route('rentals.index')" :active="request()->routeIs('rentals.*')">Penyewaan</x-sidebar-nav-link></li>
                         @endif
-                        @if ($see('sales') || $see('purchases') || $see('services') || $see('rentals') || $see('stock-mutations') || $see('unit-exchanges'))
+                        @if ($seePrintReports)
                             <li><x-sidebar-nav-link :href="route('print-reports.index')" :active="request()->routeIs('print-reports.*')">Cetak Laporan</x-sidebar-nav-link></li>
                         @endif
                     </ul>

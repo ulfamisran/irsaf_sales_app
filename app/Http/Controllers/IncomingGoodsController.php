@@ -6,12 +6,13 @@ use App\Models\Category;
 use App\Models\IncomingGood;
 use App\Models\Product;
 use App\Models\ProductUnit;
-use App\Models\Role;
 use App\Models\Stock;
 use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Models\AuditLog;
+use App\Services\LocationService;
 use App\Services\StockMutationService;
+use App\Support\UserLocationScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,21 +28,29 @@ class IncomingGoodsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
+        }
+        if ($user->isAdminPusat() && ! LocationService::userHasLocation($user)) {
+            abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        if ($isBranchUser && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
-        }
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->branch_id > 0 && ! (int) $user->warehouse_id;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->warehouse_id > 0;
 
         $query = IncomingGood::with(['product', 'warehouse', 'branch', 'user'])
             ->orderByDesc('received_date')
             ->orderByDesc('id');
 
+        UserLocationScope::constrainBranchWarehouse($query, $user);
+
         if ($isBranchUser) {
             $query->where('branch_id', (int) $user->branch_id);
+        } elseif ($isWarehouseUser) {
+            $query->where('warehouse_id', (int) $user->warehouse_id);
         }
 
         if ($request->filled('category_id')) {
@@ -94,8 +103,9 @@ class IncomingGoodsController extends Controller
         }
         $products = $productsQuery->get(['id', 'sku', 'brand', 'category_id']);
         $categories = Category::orderBy('name')->get(['id', 'name']);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
+        $locationOptions = LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
         $branch = $isBranchUser ? Branch::find($user->branch_id) : null;
 
         return view('incoming-goods.index', compact('records', 'products', 'categories', 'warehouses', 'branches', 'isBranchUser', 'branch'));
@@ -104,14 +114,15 @@ class IncomingGoodsController extends Controller
     public function create(Request $request): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        if ($isBranchUser && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
-        }
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->branch_id > 0 && ! (int) $user->warehouse_id;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->warehouse_id > 0;
 
         $selectedProduct = null;
         if ($request->filled('product_id')) {
@@ -123,8 +134,12 @@ class IncomingGoodsController extends Controller
                 abort(403, __('Produk nonaktif tidak bisa ditambah unit.'));
             }
         }
-        $warehouses = Warehouse::orderBy('name')->get();
-        $branches = $isBranchUser ? collect() : Branch::orderBy('name')->get();
+        $locationOptions = LocationService::getLocationOptionsForUser($user);
+        $warehouses = $isBranchUser ? collect() : $locationOptions['warehouses'];
+        $branches = ($isBranchUser || $isWarehouseUser) ? collect() : $locationOptions['branches'];
+        if ($isWarehouseUser) {
+            $warehouses = $locationOptions['warehouses'];
+        }
         $selectedWarehouse = null;
         $selectedBranch = null;
         if ($request->filled('warehouse_id')) {
@@ -132,6 +147,8 @@ class IncomingGoodsController extends Controller
             if (! $selectedWarehouse) {
                 abort(404, __('Warehouse not found.'));
             }
+        } elseif ($isWarehouseUser && $warehouses->isNotEmpty()) {
+            $selectedWarehouse = $warehouses->first();
         } elseif ($warehouses->count() === 1 && ! $isBranchUser) {
             $selectedWarehouse = $warehouses->first();
         }
@@ -150,17 +167,34 @@ class IncomingGoodsController extends Controller
     public function availableProducts(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->branch_id > 0 && ! (int) $user->warehouse_id;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->warehouse_id > 0;
 
-        $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : $request->input('location_type');
-        $locationId = $isBranchUser ? (int) $user->branch_id : (int) $request->input('location_id');
+        if ($isBranchUser) {
+            $locationType = Stock::LOCATION_BRANCH;
+            $locationId = (int) $user->branch_id;
+        } elseif ($isWarehouseUser) {
+            $locationType = Stock::LOCATION_WAREHOUSE;
+            $locationId = (int) $user->warehouse_id;
+        } else {
+            $locationType = $request->input('location_type');
+            $locationId = (int) $request->input('location_id');
+        }
         $categoryId = $request->filled('category_id') ? (int) $request->category_id : null;
 
         if (! $locationType || ! $locationId) {
             return response()->json(['products' => []]);
         }
 
-        $locType = $locationType === 'branch' ? Product::LOCATION_BRANCH : Product::LOCATION_WAREHOUSE;
+        UserLocationScope::assertCanAccessLocation(
+            $user,
+            $locationType === 'branch' || $locationType === Stock::LOCATION_BRANCH ? (int) $locationId : null,
+            $locationType === 'warehouse' || $locationType === Stock::LOCATION_WAREHOUSE ? (int) $locationId : null
+        );
+
+        $locType = in_array($locationType, ['branch', Stock::LOCATION_BRANCH, Product::LOCATION_BRANCH], true)
+            ? Product::LOCATION_BRANCH
+            : Product::LOCATION_WAREHOUSE;
 
         $query = Product::query()
             ->where('is_active', true)
@@ -191,14 +225,15 @@ class IncomingGoodsController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
         }
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        if ($isBranchUser && ! $user->branch_id) {
-            abort(403, __('User branch not set.'));
-        }
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->branch_id > 0 && ! (int) $user->warehouse_id;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess() && ! $user->isAdminPusat() && (int) $user->warehouse_id > 0;
 
         $request->merge([
             'purchase_price' => $this->parseRupiahToFloat($request->input('purchase_price')),
@@ -212,8 +247,8 @@ class IncomingGoodsController extends Controller
             'purchase_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => ['nullable', 'numeric', 'min:0'],
         ];
-        if ($isBranchUser) {
-            // Cabang: fixed ke branch user
+        if ($isBranchUser || $isWarehouseUser) {
+            // Lokasi dikunci ke penempatan user
         } else {
             $rules['location_type'] = ['required', 'in:warehouse,branch'];
             $rules['warehouse_id'] = ['required_if:location_type,warehouse', 'nullable', 'exists:warehouses,id'];
@@ -233,10 +268,22 @@ class IncomingGoodsController extends Controller
                 ? round((float) $validated['selling_price'], 2)
                 : null;
 
-            $locationType = $isBranchUser ? Stock::LOCATION_BRANCH : ($validated['location_type'] ?? 'warehouse');
-            $locationId = $isBranchUser
-                ? (int) $user->branch_id
-                : (int) (($validated['location_type'] ?? '') === 'branch' ? ($validated['branch_id'] ?? 0) : ($validated['warehouse_id'] ?? 0));
+            if ($isBranchUser) {
+                $locationType = Stock::LOCATION_BRANCH;
+                $locationId = (int) $user->branch_id;
+            } elseif ($isWarehouseUser) {
+                $locationType = Stock::LOCATION_WAREHOUSE;
+                $locationId = (int) $user->warehouse_id;
+            } else {
+                $locationType = $validated['location_type'] ?? 'warehouse';
+                $locationId = (int) (($validated['location_type'] ?? '') === 'branch' ? ($validated['branch_id'] ?? 0) : ($validated['warehouse_id'] ?? 0));
+            }
+
+            UserLocationScope::assertCanAccessLocation(
+                $user,
+                $locationType === Stock::LOCATION_BRANCH ? $locationId : null,
+                $locationType === Stock::LOCATION_WAREHOUSE ? $locationId : null
+            );
 
             $this->stockMutationService->addStock(
                 $product,
@@ -283,13 +330,11 @@ class IncomingGoodsController extends Controller
     public function show(Request $request, IncomingGood $incomingGood): View
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        UserLocationScope::assertCanAccessLocation(
+            $user,
+            $incomingGood->branch_id ? (int) $incomingGood->branch_id : null,
+            $incomingGood->warehouse_id ? (int) $incomingGood->warehouse_id : null
+        );
 
         $incomingGood->load(['product.category', 'warehouse', 'branch', 'user']);
         $serials = $this->parseSerialNumbersForDetail($incomingGood->notes);
@@ -308,13 +353,11 @@ class IncomingGoodsController extends Controller
     public function detail(Request $request, IncomingGood $incomingGood): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        if ($isBranchUser && $incomingGood->branch_id && (int) $incomingGood->branch_id !== (int) $user->branch_id) {
-            abort(403, __('Unauthorized.'));
-        }
+        UserLocationScope::assertCanAccessLocation(
+            $user,
+            $incomingGood->branch_id ? (int) $incomingGood->branch_id : null,
+            $incomingGood->warehouse_id ? (int) $incomingGood->warehouse_id : null
+        );
 
         $incomingGood->load(['product', 'warehouse', 'branch', 'user']);
         $serials = $this->parseSerialNumbersForDetail($incomingGood->notes);

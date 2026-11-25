@@ -3,9 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
-use App\Models\Role;
 use App\Models\Stock;
 use App\Models\Warehouse;
+use App\Services\LocationService;
+use App\Support\UserLocationScope;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -15,8 +16,20 @@ class StockMonitoringController extends Controller
     {
         $user = $request->user();
 
-        $canFilterLocation = $user->isSuperAdminOrAdminPusat();
-        $filterLocked = false;
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
+        }
+        if ($user->isAdminPusat() && ! LocationService::userHasLocation($user)) {
+            abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
+        }
+
+        $canFilterLocation = $user->hasUnrestrictedLocationAccess()
+            || $user->isAdminPusat()
+            || (count($user->accessibleBranchIds()) + count($user->accessibleWarehouseIds()) > 1);
+        $filterLocked = ! $canFilterLocation;
         $locationType = null;
         $locationId = null;
         $locationLabel = null;
@@ -25,21 +38,19 @@ class StockMonitoringController extends Controller
             ->with(['product.category'])
             ->where('quantity', '>', 0);
 
-        if (! $canFilterLocation) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $filterLocked = true;
-                $locationType = Stock::LOCATION_BRANCH;
-                $locationId = (int) $user->branch_id;
-                $branch = Branch::find($locationId);
-                $locationLabel = __('Cabang') . ': ' . ($branch?->name ?? ('#' . $locationId));
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-                $filterLocked = true;
+        UserLocationScope::constrainStockLocation($query, $user);
+
+        if ($filterLocked) {
+            if ($user->warehouse_id) {
                 $locationType = Stock::LOCATION_WAREHOUSE;
                 $locationId = (int) $user->warehouse_id;
                 $warehouse = Warehouse::find($locationId);
-                $locationLabel = __('Gudang') . ': ' . ($warehouse?->name ?? ('#' . $locationId));
-            } else {
-                abort(403, __('Unauthorized.'));
+                $locationLabel = __('Gudang').': '.($warehouse?->name ?? ('#'.$locationId));
+            } elseif ($user->branch_id) {
+                $locationType = Stock::LOCATION_BRANCH;
+                $locationId = (int) $user->branch_id;
+                $branch = Branch::find($locationId);
+                $locationLabel = __('Cabang').': '.($branch?->name ?? ('#'.$locationId));
             }
         } else {
             $locationType = (string) $request->get('location_type', '');
@@ -48,8 +59,16 @@ class StockMonitoringController extends Controller
             }
             if ($locationType === Stock::LOCATION_BRANCH) {
                 $locationId = (int) $request->get('location_id', $request->get('branch_id', 0));
+                if ($locationId > 0 && ! $user->canAccessBranch($locationId)) {
+                    $locationId = 0;
+                    $locationType = '';
+                }
             } elseif ($locationType === Stock::LOCATION_WAREHOUSE) {
                 $locationId = (int) $request->get('location_id', $request->get('warehouse_id', 0));
+                if ($locationId > 0 && ! $user->canAccessWarehouse($locationId)) {
+                    $locationId = 0;
+                    $locationType = '';
+                }
             } else {
                 $locationId = 0;
             }
@@ -88,8 +107,9 @@ class StockMonitoringController extends Controller
         $rows = $query->get();
         $products = \App\Models\Product::orderBy('sku')->get(['id', 'sku', 'brand']);
         $categories = \App\Models\Category::orderBy('name')->get(['id', 'name']);
-        $branches = Branch::orderBy('name')->get(['id', 'name']);
-        $warehouses = Warehouse::orderBy('name')->get(['id', 'name']);
+        $locationOptions = LocationService::getLocationOptionsForUser($user);
+        $branches = $locationOptions['branches'];
+        $warehouses = $locationOptions['warehouses'];
 
         $locationNames = [
             Stock::LOCATION_BRANCH => $branches->pluck('name', 'id')->all(),
@@ -98,16 +118,16 @@ class StockMonitoringController extends Controller
 
         $locationLabelFor = function (string $type, int $id) use ($locationNames): string {
             $prefix = $type === Stock::LOCATION_WAREHOUSE ? __('Gudang') : __('Cabang');
-            $name = $locationNames[$type][$id] ?? ('#' . $id);
+            $name = $locationNames[$type][$id] ?? ('#'.$id);
 
-            return $prefix . ': ' . $name;
+            return $prefix.': '.$name;
         };
 
         $overallQty = (int) $rows->sum('quantity');
         $totalProducts = (int) $rows->pluck('product_id')->unique()->count();
 
         $locationSummaries = $rows
-            ->groupBy(fn ($row) => $row->location_type . ':' . $row->location_id)
+            ->groupBy(fn ($row) => $row->location_type.':'.$row->location_id)
             ->map(function ($items, $key) use ($locationLabelFor) {
                 [$type, $id] = explode(':', (string) $key);
 
@@ -123,14 +143,15 @@ class StockMonitoringController extends Controller
             ->values();
 
         $locationCategorySummaries = $rows
-            ->groupBy(fn ($row) => $row->location_type . ':' . $row->location_id)
+            ->groupBy(fn ($row) => $row->location_type.':'.$row->location_id)
             ->map(function ($items, $key) use ($locationLabelFor) {
                 [$type, $id] = explode(':', (string) $key);
 
                 $categories = $items
                     ->groupBy(function ($row) {
                         $cat = $row->product?->category;
-                        return $cat?->id ? 'cat:' . $cat->id : 'cat:none';
+
+                        return $cat?->id ? 'cat:'.$cat->id : 'cat:none';
                     })
                     ->map(function ($catItems) {
                         $first = $catItems->first();
@@ -174,7 +195,7 @@ class StockMonitoringController extends Controller
             ->groupBy(function ($row) {
                 $cat = $row->product?->category;
 
-                return $cat?->id ? 'cat:' . $cat->id : 'cat:none';
+                return $cat?->id ? 'cat:'.$cat->id : 'cat:none';
             })
             ->map(function ($items) use ($locationLabelFor) {
                 $first = $items->first();
@@ -192,7 +213,7 @@ class StockMonitoringController extends Controller
                         ])));
 
                         $perLocation = $productItems
-                            ->groupBy(fn ($row) => $row->location_type . ':' . $row->location_id)
+                            ->groupBy(fn ($row) => $row->location_type.':'.$row->location_id)
                             ->map(function ($locItems, $key) use ($locationLabelFor) {
                                 [$type, $id] = explode(':', (string) $key);
 
@@ -205,7 +226,7 @@ class StockMonitoringController extends Controller
                             ->values();
 
                         return [
-                            'product_name' => $productName !== '' ? $productName : __('Produk #') . ($firstProduct?->id ?? '-'),
+                            'product_name' => $productName !== '' ? $productName : __('Produk #').($firstProduct?->id ?? '-'),
                             'total_qty' => (int) $productItems->sum('quantity'),
                             'per_location' => $perLocation,
                         ];

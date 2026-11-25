@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ProductUnit;
-use App\Models\Role;
 use App\Models\Sale;
 use App\Models\UnitExchange;
 use App\Services\TransactionProofService;
@@ -405,25 +404,11 @@ class UnitExchangeController extends Controller
         if (! $user) {
             abort(403, __('Unauthorized.'));
         }
-        if ($user->hasUnrestrictedLocationAccess()) {
-            return;
-        }
-        if ($user->isAdminPusat()) {
-            \App\Support\UserLocationScope::assertCanAccessLocation(
-                $user,
-                $sale->branch_id ? (int) $sale->branch_id : null,
-                $sale->warehouse_id ? (int) $sale->warehouse_id : null
-            );
-
-            return;
-        }
-        if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KASIR, Role::KEPALA_CABANG]) && $user->branch_id && (int) $sale->branch_id === (int) $user->branch_id && ! $sale->isWarehouseSale()) {
-            return;
-        }
-        if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id && $sale->isWarehouseSale() && (int) $sale->warehouse_id === (int) $user->warehouse_id) {
-            return;
-        }
-        abort(403, __('Unauthorized.'));
+        \App\Support\UserLocationScope::assertCanAccessLocation(
+            $user,
+            $sale->branch_id ? (int) $sale->branch_id : null,
+            $sale->warehouse_id ? (int) $sale->warehouse_id : null
+        );
     }
 
     private function scopeLocation($query, Request $request): void
