@@ -20,6 +20,7 @@ use App\Services\TransactionProofService;
 use App\Services\KasBalanceService;
 use App\Services\StockMutationService;
 use App\Support\CatatRange;
+use App\Support\DefaultDateRange;
 use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -42,6 +43,7 @@ class ServiceController extends Controller
 
     public function index(Request $request): View
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
 
         $query = Service::with(['branch', 'warehouse', 'user', 'customer'])
@@ -140,6 +142,7 @@ class ServiceController extends Controller
 
     public function export(Request $request): StreamedResponse
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $query = Service::with(['branch', 'warehouse', 'user', 'customer', 'payments', 'serviceMaterials'])
             ->orderByDesc('entry_date')
@@ -206,6 +209,7 @@ class ServiceController extends Controller
 
     public function exportPdf(Request $request)
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $query = Service::with(['branch', 'warehouse', 'user', 'customer', 'payments', 'serviceMaterials'])
             ->orderByDesc('entry_date')

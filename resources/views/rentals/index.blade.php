@@ -102,7 +102,7 @@
             <div class="card-modern p-6">
                 <p class="text-sm text-slate-600">{{ __('Total Pendapatan Sewa') }}</p>
                 <p class="text-xl font-semibold text-emerald-600">{{ number_format($totalRental ?? 0, 0, ',', '.') }}</p>
-                <p class="text-xs text-slate-500 mt-1">{{ __('Mengikuti filter gudang & tanggal di atas') }}</p>
+                <p class="text-xs text-slate-500 mt-1">{{ __('Default: bulan berjalan. Ubah filter tanggal untuk periode lain.') }}</p>
             </div>
         </div>
 

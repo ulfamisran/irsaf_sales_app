@@ -15,6 +15,7 @@ use App\Models\AuditLog;
 use App\Services\RentalService;
 use App\Services\TransactionProofService;
 use App\Support\CatatRange;
+use App\Support\DefaultDateRange;
 use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -38,6 +39,7 @@ class RentalController extends Controller
 
     public function index(Request $request): View
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
 
         $query = Rental::with(['branch', 'customer', 'warehouse', 'user'])
@@ -138,6 +140,7 @@ class RentalController extends Controller
 
     public function export(Request $request): StreamedResponse
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $query = Rental::with(['branch', 'customer', 'warehouse', 'user', 'payments'])
             ->orderByDesc('pickup_date')
@@ -204,6 +207,7 @@ class RentalController extends Controller
 
     public function exportPdf(Request $request)
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $query = Rental::with(['branch', 'customer', 'warehouse', 'user', 'payments'])
             ->orderByDesc('pickup_date')

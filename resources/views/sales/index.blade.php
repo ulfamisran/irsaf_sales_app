@@ -94,17 +94,14 @@
             <div class="card-modern p-4">
                 <p class="text-xs text-slate-600">{{ __('Total Dana Masuk (Gabungan)') }}</p>
                 <p class="text-lg font-semibold text-emerald-600">{{ number_format($totalSalesCombined ?? 0, 0, ',', '.') }}</p>
-                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
             </div>
             <div class="card-modern p-4">
                 <p class="text-xs text-slate-600">{{ __('Total Dana Masuk (Uang)') }}</p>
                 <p class="text-lg font-semibold text-emerald-600">{{ number_format($totalSalesCash ?? 0, 0, ',', '.') }}</p>
-                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
             </div>
             <div class="card-modern p-4">
                 <p class="text-xs text-slate-600">{{ __('Dana Masuk (Barang / Tukar Tambah)') }}</p>
                 <p class="text-lg font-semibold text-indigo-600">{{ number_format($totalTradeIn ?? 0, 0, ',', '.') }}</p>
-                <!-- <p class="text-[7px] text-slate-500 mt-1">{{ __('Mengikuti filter cabang & tanggal di atas') }}</p> -->
             </div>
         </div>
 

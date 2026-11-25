@@ -9,26 +9,28 @@ class BranchPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isSuperAdminOrAdminPusat() || $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]);
+        return $user->canModule('branches', 'select');
     }
 
     public function view(User $user, Branch $branch): bool
     {
-        return $user->isSuperAdminOrAdminPusat() || $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]);
+        return $user->canModule('branches', 'select')
+            && $user->canAccessBranch((int) $branch->id);
     }
 
     public function create(User $user): bool
     {
-        return $user->isSuperAdminOrAdminPusat();
+        return $user->canModule('branches', 'create');
     }
 
     public function update(User $user, Branch $branch): bool
     {
-        return $user->isSuperAdminOrAdminPusat() || $user->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]);
+        return $user->canModule('branches', 'update')
+            && $user->canAccessBranch((int) $branch->id);
     }
 
     public function delete(User $user, Branch $branch): bool
     {
-        return $user->isSuperAdminOrAdminPusat();
+        return $user->canModule('branches', 'delete');
     }
 }

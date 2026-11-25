@@ -19,6 +19,7 @@ use App\Models\AuditLog;
 use App\Services\SaleService;
 use App\Services\TransactionProofService;
 use App\Support\CatatRange;
+use App\Support\DefaultDateRange;
 use App\Support\DocumentSearch;
 use App\Support\ExcelExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -45,6 +46,7 @@ class SaleController extends Controller
 
     public function index(Request $request): View
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $ctx = $this->buildSalesListQuery($request);
         $query = $ctx['query'];
@@ -73,6 +75,7 @@ class SaleController extends Controller
      */
     public function export(Request $request): StreamedResponse
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
@@ -91,6 +94,7 @@ class SaleController extends Controller
      */
     public function exportPdf(Request $request)
     {
+        DefaultDateRange::applyMonthToDate($request);
         $user = $request->user();
         $ctx = $this->buildSalesListQuery($request);
         $exportQuery = $this->salesExportBaseQuery($ctx['query']);
