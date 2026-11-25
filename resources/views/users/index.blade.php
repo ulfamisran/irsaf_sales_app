@@ -28,13 +28,51 @@
 
         <div class="card-modern overflow-hidden mb-6">
             <div class="p-4 border-b border-gray-100">
+                @php
+                    $selectedLocationType = request('location_type', '');
+                    $selectedLocationId = request('location_id');
+                @endphp
                 <form method="GET" action="{{ route('users.index') }}" class="flex flex-wrap gap-3 items-end">
-                    <div class="flex-1 min-w-[240px]">
+                    <div class="flex-1 min-w-[200px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
                         <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('Nama / email...') }}"
                             class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
                     <div class="min-w-[180px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Role') }}</label>
+                        <select name="role_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua Role') }}</option>
+                            @foreach ($roles as $role)
+                                <option value="{{ $role->id }}" @selected((string) request('role_id') === (string) $role->id)>
+                                    {{ $role->display_name ?: $role->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="min-w-[150px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Tipe Lokasi') }}</label>
+                        <select name="location_type" id="user_location_type" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">{{ __('Semua') }}</option>
+                            <option value="cabang" @selected($selectedLocationType === 'cabang')>{{ __('Cabang') }}</option>
+                            <option value="gudang" @selected($selectedLocationType === 'gudang')>{{ __('Gudang') }}</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[200px]">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Lokasi') }}</label>
+                        <select name="location_id" id="user_location_id" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" @disabled($selectedLocationType === '')>
+                            <option value="">{{ __('Semua Lokasi') }}</option>
+                            @if ($selectedLocationType === 'cabang')
+                                @foreach ($branches as $branch)
+                                    <option value="{{ $branch->id }}" @selected((string) $selectedLocationId === (string) $branch->id)>{{ $branch->name }}</option>
+                                @endforeach
+                            @elseif ($selectedLocationType === 'gudang')
+                                @foreach ($warehouses as $warehouse)
+                                    <option value="{{ $warehouse->id }}" @selected((string) $selectedLocationId === (string) $warehouse->id)>{{ $warehouse->name }}</option>
+                                @endforeach
+                            @endif
+                        </select>
+                    </div>
+                    <div class="min-w-[140px]">
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Status') }}</label>
                         <select name="is_active" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">{{ __('Semua') }}</option>
@@ -113,4 +151,39 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const typeEl = document.getElementById('user_location_type');
+            const idEl = document.getElementById('user_location_id');
+            if (!typeEl || !idEl) return;
+
+            const branches = @json($branches->map(fn ($b) => ['id' => $b->id, 'name' => $b->name])->values());
+            const warehouses = @json($warehouses->map(fn ($w) => ['id' => $w->id, 'name' => $w->name])->values());
+            const selectedId = @json((string) request('location_id', ''));
+
+            function fillLocations(keepSelected) {
+                const type = typeEl.value;
+                idEl.innerHTML = '<option value="">{{ __('Semua Lokasi') }}</option>';
+                if (!type) {
+                    idEl.disabled = true;
+                    idEl.value = '';
+                    return;
+                }
+                idEl.disabled = false;
+                const list = type === 'cabang' ? branches : warehouses;
+                list.forEach((item) => {
+                    const opt = document.createElement('option');
+                    opt.value = String(item.id);
+                    opt.textContent = item.name;
+                    if (keepSelected && selectedId && selectedId === String(item.id)) opt.selected = true;
+                    idEl.appendChild(opt);
+                });
+            }
+
+            typeEl.addEventListener('change', function () {
+                fillLocations(false);
+            });
+        });
+    </script>
 </x-app-layout>

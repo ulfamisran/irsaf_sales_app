@@ -35,9 +35,31 @@ class UserManagementController extends Controller
             $query->where('is_active', $request->boolean('is_active'));
         }
 
-        $users = $query->orderBy('name')->paginate(15)->withQueryString();
+        if ($request->filled('role_id')) {
+            $roleId = (int) $request->input('role_id');
+            $query->whereHas('roles', fn ($q) => $q->where('roles.id', $roleId));
+        }
 
-        return view('users.index', compact('users'));
+        $locationType = (string) $request->input('location_type', '');
+        $locationId = (int) $request->input('location_id', 0);
+        if ($locationId > 0 && in_array($locationType, [User::PLACEMENT_CABANG, 'branch'], true)) {
+            $query->where(function ($q) use ($locationId) {
+                $q->where('branch_id', $locationId)
+                    ->orWhereHas('assignedBranches', fn ($a) => $a->where('branches.id', $locationId));
+            });
+        } elseif ($locationId > 0 && in_array($locationType, [User::PLACEMENT_GUDANG, 'warehouse'], true)) {
+            $query->where(function ($q) use ($locationId) {
+                $q->where('warehouse_id', $locationId)
+                    ->orWhereHas('assignedWarehouses', fn ($a) => $a->where('warehouses.id', $locationId));
+            });
+        }
+
+        $users = $query->orderBy('name')->paginate(15)->withQueryString();
+        $roles = Role::query()->orderBy('display_name')->get(['id', 'name', 'display_name']);
+        $branches = Branch::query()->orderBy('name')->get(['id', 'name']);
+        $warehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
+
+        return view('users.index', compact('users', 'roles', 'branches', 'warehouses'));
     }
 
     public function create(): View
