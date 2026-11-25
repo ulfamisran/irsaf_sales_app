@@ -11,8 +11,8 @@ use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
-use App\Models\Role;
 use App\Models\Service;
+use App\Models\User;
 use App\Models\Stock;
 use App\Models\Warehouse;
 use App\Services\KasBalanceService;
@@ -21,6 +21,7 @@ use App\Services\PurchaseService;
 use App\Services\TransactionProofService;
 use App\Support\CatatRange;
 use App\Support\ExcelExporter;
+use App\Support\UserLocationScope;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -186,17 +187,7 @@ class PurchaseController extends Controller
     public function resolveDeferred(Request $request, Purchase $purchase): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && (int) $purchase->branch_id !== (int) $user->branch_id) {
-                abort(403);
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && (int) $purchase->warehouse_id !== (int) $user->warehouse_id) {
-                abort(403);
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         $validated = $request->validate([
             'action' => ['required', 'in:diterima,diretur'],
@@ -256,46 +247,51 @@ class PurchaseController extends Controller
     private function buildPurchasesListQuery(Request $request): array
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
+        if (! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && ! $user->branch_id
+            && ! $user->warehouse_id) {
+            abort(403, __('User branch or warehouse not set.'));
+        }
+        if ($user->isAdminPusat()
+            && $user->accessibleBranchIds() === []
+            && $user->accessibleWarehouseIds() === []) {
+            abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
         }
 
         $query = Purchase::with(['distributor', 'warehouse', 'branch', 'user', 'details', 'payments.paymentMethod'])
             ->orderByDesc('purchase_date')
             ->orderByDesc('id');
 
-        $canFilterLocation = false;
-        $filterLocked = false;
+        UserLocationScope::constrainBranchWarehouse($query, $user);
+
+        $canFilterLocation = $user->hasUnrestrictedLocationAccess()
+            || $user->isAdminPusat()
+            || (count($user->accessibleBranchIds()) + count($user->accessibleWarehouseIds()) > 1);
+        $filterLocked = ! $canFilterLocation;
         $locationLabel = null;
 
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-                $filterLocked = true;
-                $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
-            } elseif ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $user->warehouse_id) {
-                $query->where('warehouse_id', $user->warehouse_id);
-                $filterLocked = true;
+        if ($filterLocked) {
+            if ($user->warehouse_id) {
                 $locationLabel = __('Gudang').': '.(Warehouse::find($user->warehouse_id)?->name ?? '');
-            } elseif (! $user->branch_id && ! $user->warehouse_id) {
-                abort(403, __('User branch or warehouse not set.'));
+            } elseif ($user->branch_id) {
+                $locationLabel = __('Cabang').': '.(Branch::find($user->branch_id)?->name ?? '');
             }
-        } else {
-            $canFilterLocation = true;
-            if ($request->filled('location_type')) {
-                $locationId = (int) $request->input('location_id', 0);
-                if ($request->location_type === 'warehouse') {
-                    if ($locationId > 0) {
-                        $query->where('warehouse_id', $locationId);
-                    } elseif ($request->filled('warehouse_id')) {
-                        $query->where('warehouse_id', $request->warehouse_id);
-                    }
-                } elseif ($request->location_type === 'branch') {
-                    if ($locationId > 0) {
-                        $query->where('branch_id', $locationId);
-                    } elseif ($request->filled('branch_id')) {
-                        $query->where('branch_id', $request->branch_id);
-                    }
+        } elseif ($request->filled('location_type')) {
+            $locationId = (int) $request->input('location_id', 0);
+            if ($request->location_type === 'warehouse') {
+                if ($locationId > 0 && $user->canAccessWarehouse($locationId)) {
+                    $query->where('warehouse_id', $locationId);
+                    $locationLabel = __('Gudang').': '.(Warehouse::find($locationId)?->name ?? '');
+                } elseif ($request->filled('warehouse_id') && $user->canAccessWarehouse((int) $request->warehouse_id)) {
+                    $query->where('warehouse_id', $request->warehouse_id);
+                }
+            } elseif ($request->location_type === 'branch') {
+                if ($locationId > 0 && $user->canAccessBranch($locationId)) {
+                    $query->where('branch_id', $locationId);
+                    $locationLabel = __('Cabang').': '.(Branch::find($locationId)?->name ?? '');
+                } elseif ($request->filled('branch_id') && $user->canAccessBranch((int) $request->branch_id)) {
+                    $query->where('branch_id', $request->branch_id);
                 }
             }
         }
@@ -419,9 +415,6 @@ class PurchaseController extends Controller
     public function create(Request $request): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
 
         $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
         $warehouses = $locationOptions['warehouses'];
@@ -429,14 +422,13 @@ class PurchaseController extends Controller
         $canPickBranch = $branches->isNotEmpty();
         $canPickWarehouse = $warehouses->isNotEmpty();
 
-        // User cabang/gudang biasa: selalu terkunci ke 1 lokasi.
+        // User cabang/gudang biasa: selalu terkunci ke 1 lokasi (berdasarkan penempatan, bukan nama role).
         $isBranchUser = ! $user->hasUnrestrictedLocationAccess()
             && ! $user->isAdminPusat()
-            && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG, Role::KASIR])
-            && (int) $user->branch_id > 0;
+            && (int) $user->branch_id > 0
+            && ! (int) $user->warehouse_id;
         $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess()
             && ! $user->isAdminPusat()
-            && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG])
             && (int) $user->warehouse_id > 0;
 
         // Admin Pusat: boleh pilih di antara lokasi terdaftar.
@@ -550,17 +542,7 @@ class PurchaseController extends Controller
     public function edit(Request $request, Purchase $purchase): View|RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         if (! $purchase->canBeEdited()) {
             return redirect()->route('purchases.show', $purchase)
@@ -569,11 +551,27 @@ class PurchaseController extends Controller
 
         $purchase->load(['details.product', 'service.customer', 'warehouse', 'branch', 'proofs']);
 
-        $isBranchUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]);
-        $isWarehouseUser = ! $user->isSuperAdminOrAdminPusat() && $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]);
+        $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
+        $warehouses = $locationOptions['warehouses'];
+        $branches = $locationOptions['branches'];
+        $canPickBranch = $branches->isNotEmpty();
+        $canPickWarehouse = $warehouses->isNotEmpty();
 
-        $warehouses = Warehouse::orderBy('name')->get();
-        $branches = Branch::orderBy('name')->get();
+        $isBranchUser = ! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && (int) $user->branch_id > 0
+            && ! (int) $user->warehouse_id;
+        $isWarehouseUser = ! $user->hasUnrestrictedLocationAccess()
+            && ! $user->isAdminPusat()
+            && (int) $user->warehouse_id > 0;
+
+        if ($user->isAdminPusat() && ! $user->hasUnrestrictedLocationAccess()) {
+            if ($canPickBranch && ! $canPickWarehouse && $branches->count() === 1) {
+                $isBranchUser = true;
+            } elseif ($canPickWarehouse && ! $canPickBranch && $warehouses->count() === 1) {
+                $isWarehouseUser = true;
+            }
+        }
 
         $defaultLocationType = $purchase->warehouse_id ? 'warehouse' : 'branch';
         $defaultLocationId = (int) ($purchase->warehouse_id ?? $purchase->branch_id);
@@ -636,6 +634,8 @@ class PurchaseController extends Controller
             'saldoByPaymentMethod',
             'isBranchUser',
             'isWarehouseUser',
+            'canPickBranch',
+            'canPickWarehouse',
             'defaultLocationType',
             'defaultLocationId',
             'openServicesInitial',
@@ -647,9 +647,6 @@ class PurchaseController extends Controller
     public function store(PurchaseRequest $request): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
 
         $locationType = $request->location_type;
         $locationId = (int) (($locationType === 'warehouse') ? $request->warehouse_id : $request->branch_id);
@@ -657,6 +654,12 @@ class PurchaseController extends Controller
         if (! $locationId) {
             return back()->withInput()->with('error', __('Pilih gudang atau cabang terlebih dahulu.'));
         }
+
+        UserLocationScope::assertCanAccessLocation(
+            $user,
+            $locationType === 'branch' ? $locationId : null,
+            $locationType === 'warehouse' ? $locationId : null
+        );
 
         $payments = array_filter($request->input('payments', []), fn ($p) => (int) ($p['payment_method_id'] ?? 0) > 0 && (float) ($p['amount'] ?? 0) > 0);
 
@@ -706,17 +709,7 @@ class PurchaseController extends Controller
     public function update(PurchaseRequest $request, Purchase $purchase): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat() && ! $user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG, Role::ADMIN_CABANG, Role::KEPALA_CABANG])) {
-            abort(403, __('Unauthorized.'));
-        }
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         if (! $purchase->canBeEdited()) {
             return redirect()->route('purchases.show', $purchase)
@@ -758,14 +751,7 @@ class PurchaseController extends Controller
     public function report(Purchase $purchase): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         $purchase->load(['distributor', 'warehouse', 'branch', 'user', 'details.product.category', 'details.units', 'payments', 'proofs']);
 
@@ -775,14 +761,7 @@ class PurchaseController extends Controller
     public function show(Purchase $purchase): View
     {
         $user = auth()->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         $purchase->load([
             'distributor',
@@ -804,14 +783,7 @@ class PurchaseController extends Controller
     public function addPayment(Request $request, Purchase $purchase): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         if ($purchase->isCancelled()) {
             return back()->with('error', __('Pembelian ini sudah dibatalkan.'));
@@ -890,14 +862,7 @@ class PurchaseController extends Controller
     public function release(Request $request, Purchase $purchase): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         try {
             $auth = app(\App\Services\AuthorizationService::class);
@@ -914,14 +879,7 @@ class PurchaseController extends Controller
     public function cancel(Request $request, Purchase $purchase): RedirectResponse
     {
         $user = $request->user();
-        if (! $user->isSuperAdminOrAdminPusat()) {
-            if ($user->hasAnyRole([Role::ADMIN_CABANG, Role::KEPALA_CABANG]) && $purchase->branch_id !== $user->branch_id) {
-                abort(403, __('Unauthorized.'));
-            }
-            if ($user->hasAnyRole([Role::ADMIN_GUDANG, Role::KEPALA_GUDANG]) && $purchase->warehouse_id !== $user->warehouse_id) {
-                abort(403, __('Unauthorized.'));
-            }
-        }
+        $this->assertCanAccessPurchase($user, $purchase);
 
         try {
             $this->purchaseService->cancelPurchase($purchase, $user->id);
@@ -1226,5 +1184,14 @@ class PurchaseController extends Controller
         $str = str_replace(',', '.', $str);
 
         return (float) $str;
+    }
+
+    private function assertCanAccessPurchase(User $user, Purchase $purchase): void
+    {
+        UserLocationScope::assertCanAccessLocation(
+            $user,
+            $purchase->branch_id ? (int) $purchase->branch_id : null,
+            $purchase->warehouse_id ? (int) $purchase->warehouse_id : null
+        );
     }
 }
