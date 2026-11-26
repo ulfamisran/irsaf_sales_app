@@ -170,16 +170,25 @@ class ModuleAccessCatalog
             return;
         }
 
-        self::syncModules();
+        self::syncModuleRows();
 
-        if (DB::table('role_module_permissions')->exists()) {
-            return;
+        // Backfill (authorize / tukar-unit) must NOT run before this check — otherwise
+        // grantDefaults() is skipped forever and system roles keep empty CRUD access.
+        if (! DB::table('role_module_permissions')->exists()) {
+            self::grantDefaults();
         }
 
-        self::grantDefaults();
+        self::backfillUnitExchangeAndAuthorizeGrants();
+        self::ensureDefaultsForUnconfiguredRoles();
     }
 
     public static function syncModules(): void
+    {
+        self::syncModuleRows();
+        self::backfillUnitExchangeAndAuthorizeGrants();
+    }
+
+    private static function syncModuleRows(): void
     {
         $now = now();
         foreach (self::MODULES as $module) {
@@ -194,8 +203,88 @@ class ModuleAccessCatalog
                 ]
             );
         }
+    }
 
-        self::backfillUnitExchangeAndAuthorizeGrants();
+    /**
+     * Role yang belum pernah dikonfigurasi CRUD (kosong / hanya sisa backfill
+     * authorize+verification) mendapat grant default katalog agar tombol seperti
+     * "Tambah Produk" mengikuti canModule, bukan whitelist role di Blade.
+     */
+    public static function ensureDefaultsForUnconfiguredRoles(): void
+    {
+        if (! Schema::hasTable('app_modules') || ! Schema::hasTable('role_module_permissions') || ! Schema::hasTable('roles')) {
+            return;
+        }
+
+        $roleIds = DB::table('roles')->pluck('id', 'name');
+        $moduleIds = DB::table('app_modules')->pluck('id', 'slug');
+        $now = now();
+        $rows = [];
+
+        foreach (self::defaultGrantMap() as $roleName => $modules) {
+            $roleId = $roleIds[$roleName] ?? null;
+            if (! $roleId) {
+                continue;
+            }
+
+            if (! self::roleLooksUnconfigured((int) $roleId)) {
+                continue;
+            }
+
+            foreach ($modules as $slug => $actions) {
+                $moduleId = $moduleIds[$slug] ?? null;
+                if (! $moduleId) {
+                    continue;
+                }
+                foreach ($actions as $action) {
+                    $exists = DB::table('role_module_permissions')
+                        ->where('role_id', $roleId)
+                        ->where('module_id', $moduleId)
+                        ->where('action', $action)
+                        ->exists();
+                    if ($exists) {
+                        continue;
+                    }
+                    $rows[] = [
+                        'role_id' => $roleId,
+                        'module_id' => $moduleId,
+                        'action' => $action,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+            }
+        }
+
+        foreach (array_chunk($rows, 400) as $chunk) {
+            DB::table('role_module_permissions')->insert($chunk);
+        }
+    }
+
+    /**
+     * Belum dikonfigurasi jika tidak ada grant sama sekali, atau hanya grant
+     * authorize / modul verification (sisa backfill otomatis).
+     *
+     * @param  iterable<int, object>|null  $rows  Optional rows with slug+action to avoid extra query.
+     */
+    public static function roleLooksUnconfigured(int $roleId, ?iterable $rows = null): bool
+    {
+        if ($rows === null) {
+            $rows = DB::table('role_module_permissions as p')
+                ->join('app_modules as m', 'm.id', '=', 'p.module_id')
+                ->where('p.role_id', $roleId)
+                ->get(['m.slug', 'p.action']);
+        }
+
+        foreach ($rows as $row) {
+            $action = is_array($row) ? ($row['action'] ?? null) : ($row->action ?? null);
+            $slug = is_array($row) ? ($row['slug'] ?? null) : ($row->slug ?? null);
+            if ($action !== 'authorize' && $slug !== 'verification') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -3,15 +3,8 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-slate-800 leading-tight">{{ __('Produk') }}</h2>
-            @if (auth()->user()?->isSuperAdmin() || auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]))
+            @if (auth()->user()?->canModule('products', 'create'))
                 <x-icon-btn-add :href="route('products.create')" :label="__('Tambah Produk')" />
-            @else
-                <button type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-indigo-700 opacity-60 cursor-not-allowed" disabled>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    {{ __('Tambah Produk') }}
-                </button>
             @endif
         </div>
     </x-slot>
@@ -155,14 +148,17 @@
                                                 || in_array(strtoupper($product->category?->code ?? ''), ['AKS']);
                                         @endphp
                                         @php
-                                            $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
-                                            $canEdit = $isPusat
-                                                || (
-                                                    auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])
-                                                    && ($product->sold_units_count ?? 0) == 0
-                                                );
-                                            if ($canEdit && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()?->branch_id) {
-                                                $canEdit = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
+                                            $authUser = auth()->user();
+                                            $canEdit = (bool) $authUser?->canModule('products', 'update');
+                                            if ($canEdit && ! $authUser->isSuperAdminOrAdminPusat() && ($product->sold_units_count ?? 0) > 0) {
+                                                $canEdit = false;
+                                            }
+                                            if ($canEdit && ! $authUser->hasUnrestrictedLocationAccess()) {
+                                                if ($product->location_type === \App\Models\Product::LOCATION_BRANCH) {
+                                                    $canEdit = $authUser->canAccessBranch((int) $product->location_id);
+                                                } elseif ($product->location_type === \App\Models\Product::LOCATION_WAREHOUSE) {
+                                                    $canEdit = $authUser->canAccessWarehouse((int) $product->location_id);
+                                                }
                                             }
                                         @endphp
                                         @if ($canEdit)

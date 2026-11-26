@@ -59,7 +59,14 @@ class ModuleAccessService
     public function resolve(Request $request): ?array
     {
         $name = $request->route()?->getName();
-        if (! is_string($name) || $name === '' || str_starts_with($name, 'role-access.') || str_starts_with($name, 'verification-cutoff.')) {
+        if (
+            ! is_string($name)
+            || $name === ''
+            || str_starts_with($name, 'role-access.')
+            || str_starts_with($name, 'verification-cutoff.')
+            || str_starts_with($name, 'profile.')
+            || str_starts_with($name, 'password.')
+        ) {
             return null;
         }
 
@@ -103,12 +110,21 @@ class ModuleAccessService
         $loadedFromTable = false;
         if ($this->tablesReady()) {
             try {
-                $roleIds = $user->roles()->pluck('roles.id');
-                if ($roleIds->isNotEmpty()) {
+                $roles = $user->roles()->get(['roles.id', 'roles.name']);
+                foreach ($roles as $role) {
                     $rows = DB::table('role_module_permissions as p')
                         ->join('app_modules as m', 'm.id', '=', 'p.module_id')
-                        ->whereIn('p.role_id', $roleIds)
+                        ->where('p.role_id', $role->id)
                         ->get(['m.slug', 'p.action']);
+
+                    if (ModuleAccessCatalog::roleLooksUnconfigured((int) $role->id, $rows)) {
+                        foreach (ModuleAccessCatalog::grantsForRole((string) $role->name) as $slug => $actions) {
+                            foreach ($actions as $action) {
+                                $set[$slug.'|'.$action] = true;
+                            }
+                        }
+                    }
+
                     foreach ($rows as $row) {
                         $set[$row->slug.'|'.$row->action] = true;
                     }
@@ -180,7 +196,7 @@ class ModuleAccessService
             return 'update';
         }
 
-        if ($method === 'POST') {
+        if ($method === 'POST' || preg_match('/(^|\.)(create|store)($|\.)/', $name) === 1) {
             return 'create';
         }
 

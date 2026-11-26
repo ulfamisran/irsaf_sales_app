@@ -8,14 +8,17 @@
             </div>
             <div class="flex gap-2">
                 @php
-                    $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
-                    $canEditProduct = $isPusat
-                        || (
-                            ! $product->hasSoldUnits()
-                            && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG, \App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG])
-                        );
-                    if ($canEditProduct && auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_GUDANG, \App\Models\Role::KEPALA_GUDANG]) && auth()->user()?->branch_id) {
-                        $canEditProduct = $product->location_type === \App\Models\Product::LOCATION_BRANCH && (int) $product->location_id === (int) auth()->user()->branch_id;
+                    $authUser = auth()->user();
+                    $canEditProduct = (bool) $authUser?->canModule('products', 'update');
+                    if ($canEditProduct && ! $authUser->isSuperAdminOrAdminPusat() && $product->hasSoldUnits()) {
+                        $canEditProduct = false;
+                    }
+                    if ($canEditProduct && ! $authUser->hasUnrestrictedLocationAccess()) {
+                        if ($product->location_type === \App\Models\Product::LOCATION_BRANCH) {
+                            $canEditProduct = $authUser->canAccessBranch((int) $product->location_id);
+                        } elseif ($product->location_type === \App\Models\Product::LOCATION_WAREHOUSE) {
+                            $canEditProduct = $authUser->canAccessWarehouse((int) $product->location_id);
+                        }
                     }
                 @endphp
                 @if ($canEditProduct)
@@ -180,12 +183,14 @@
                                 <td class="px-4 py-3 text-sm text-slate-600"><x-wita-datetime :value="$u->updated_at" /></td>
                                 <td class="px-4 py-3">
                                     @php
-                                        $isPusat = auth()->user()?->isSuperAdmin() || auth()->user()?->isAdminPusat();
-                                        $canEditUnit = $isPusat;
+                                        $unitUser = auth()->user();
+                                        $canEditUnit = $unitUser?->isSuperAdmin() || $unitUser?->isAdminPusat();
                                         $canDeleteUnit = $u->status === \App\Models\ProductUnit::STATUS_IN_STOCK
-                                            && (auth()->user()?->isSuperAdmin()
-                                                || auth()->user()?->isAdminPusat()
-                                                || (auth()->user()?->hasAnyRole([\App\Models\Role::ADMIN_CABANG, \App\Models\Role::KEPALA_CABANG]) && auth()->user()?->branch_id && $u->location_type === \App\Models\Stock::LOCATION_BRANCH && (int) $u->location_id === (int) auth()->user()->branch_id));
+                                            && (bool) $unitUser?->canModule('products', 'delete')
+                                            && (
+                                                ($u->location_type === \App\Models\Stock::LOCATION_BRANCH && $unitUser->canAccessBranch((int) $u->location_id))
+                                                || ($u->location_type === \App\Models\Stock::LOCATION_WAREHOUSE && $unitUser->canAccessWarehouse((int) $u->location_id))
+                                            );
                                     @endphp
                                     <div class="flex items-center gap-2">
                                         @if ($canEditUnit)

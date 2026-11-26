@@ -519,34 +519,36 @@ class RentalService
                 }
             }
 
-            $refundDate = now()->toDateString();
-            $reversalCategory = ExpenseCategory::firstOrCreate(
-                ['code' => 'REVERSAL'],
-                [
-                    'name' => 'Reversal',
-                    'description' => 'Pengembalian dana pembatalan transaksi',
-                    'is_active' => true,
-                ]
-            );
+            // Cancel saat effects masih pending / kas belum tercatat: jangan buat kas keluar.
+            // Refund hanya dari payment yang sudah punya CashFlow (setelah effects/release).
             $payments = RentalPayment::with('paymentMethod')->where('rental_id', $rental->id)->get();
-            foreach ($payments as $rp) {
-                if (! $rp->cash_flow_id) {
-                    continue;
+            $postedPayments = $payments->filter(fn ($rp) => (int) ($rp->cash_flow_id ?? 0) > 0);
+            if ($postedPayments->isNotEmpty() && ! $rental->effects_pending) {
+                $refundDate = now()->toDateString();
+                $reversalCategory = ExpenseCategory::firstOrCreate(
+                    ['code' => 'REVERSAL'],
+                    [
+                        'name' => 'Reversal',
+                        'description' => 'Pengembalian dana pembatalan transaksi',
+                        'is_active' => true,
+                    ]
+                );
+                foreach ($postedPayments as $rp) {
+                    $pmLabel = $rp->paymentMethod?->display_label ?? __('Payment');
+                    CashFlow::create([
+                        'branch_id' => $cfBranchId,
+                        'warehouse_id' => $cfWarehouseId,
+                        'type' => CashFlow::TYPE_OUT,
+                        'amount' => $rp->amount,
+                        'description' => __('Pengembalian dana pembatalan penyewaan') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
+                        'reference_type' => CashFlow::REFERENCE_RENTAL,
+                        'reference_id' => $rental->id,
+                        'expense_category_id' => $reversalCategory->id,
+                        'payment_method_id' => $rp->payment_method_id,
+                        'transaction_date' => $refundDate,
+                        'user_id' => $userId ?? auth()->id(),
+                    ]);
                 }
-                $pmLabel = $rp->paymentMethod?->display_label ?? __('Payment');
-                CashFlow::create([
-                    'branch_id' => $cfBranchId,
-                    'warehouse_id' => $cfWarehouseId,
-                    'type' => CashFlow::TYPE_OUT,
-                    'amount' => $rp->amount,
-                    'description' => __('Pengembalian dana pembatalan penyewaan') . ' ' . $rental->invoice_number . ' - ' . $pmLabel,
-                    'reference_type' => CashFlow::REFERENCE_RENTAL,
-                    'reference_id' => $rental->id,
-                    'expense_category_id' => $reversalCategory->id,
-                    'payment_method_id' => $rp->payment_method_id,
-                    'transaction_date' => $refundDate,
-                    'user_id' => $userId ?? auth()->id(),
-                ]);
             }
             RentalPayment::where('rental_id', $rental->id)->delete();
 

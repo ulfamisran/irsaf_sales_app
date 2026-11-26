@@ -146,6 +146,14 @@ Route::get('/dashboard', function (Request $request) {
     ]);
 })->middleware(['auth', 'verified', 'module.access'])->name('dashboard');
 
+// Profil & ganti password sendiri: semua role yang login, tanpa cek akses modul.
+Route::middleware(['auth'])->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::put('/password', [\App\Http\Controllers\Auth\PasswordController::class, 'update'])->name('password.update');
+});
+
 Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::get('verification-cutoff', [VerificationCutoffController::class, 'edit'])->name('verification-cutoff.edit');
     Route::put('verification-cutoff', [VerificationCutoffController::class, 'update'])->name('verification-cutoff.update');
@@ -167,10 +175,6 @@ Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::post('role-access', [\App\Http\Controllers\RoleAccessController::class, 'store'])->name('role-access.store');
     Route::get('role-access/{role}/edit', [\App\Http\Controllers\RoleAccessController::class, 'edit'])->name('role-access.edit');
     Route::put('role-access/{role}', [\App\Http\Controllers\RoleAccessController::class, 'update'])->name('role-access.update');
-
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('branches/{branch}/units', [BranchController::class, 'units'])
         ->middleware('role:admin_cabang')

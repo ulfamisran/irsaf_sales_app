@@ -605,33 +605,37 @@ class PurchaseService
             }
             }
 
-            $incomeCategory = IncomeCategory::firstOrCreate(
-                ['code' => 'RTR'],
-                [
-                    'name' => 'Retur Pembelian',
-                    'description' => 'Pengembalian dana dari pembatalan/retur pembelian',
-                    'is_active' => true,
-                ]
-            );
+            // Cancel OPEN: kas keluar belum tercatat → jangan buat retur kas.
+            // Cancel setelah aktif/release: reverse hanya payment yang punya CashFlow.
+            if (! $wasOpen) {
+                $incomeCategory = IncomeCategory::firstOrCreate(
+                    ['code' => 'RTR'],
+                    [
+                        'name' => 'Retur Pembelian',
+                        'description' => 'Pengembalian dana dari pembatalan/retur pembelian',
+                        'is_active' => true,
+                    ]
+                );
 
-            foreach ($purchase->payments as $payment) {
-                if (! $payment->cash_flow_id) {
-                    continue;
+                foreach ($purchase->payments as $payment) {
+                    if (! $payment->cash_flow_id) {
+                        continue;
+                    }
+                    $pmLabel = $payment->paymentMethod?->display_label ?? __('Pembayaran');
+                    CashFlow::create([
+                        'branch_id' => $purchase->branch_id,
+                        'warehouse_id' => $purchase->warehouse_id,
+                        'type' => CashFlow::TYPE_IN,
+                        'amount' => $payment->amount,
+                        'description' => __('Retur Pembelian') . ' ' . $purchase->invoice_number . ' - ' . $pmLabel,
+                        'reference_type' => CashFlow::REFERENCE_PURCHASE_RETURN,
+                        'reference_id' => $purchase->id,
+                        'income_category_id' => $incomeCategory->id,
+                        'payment_method_id' => $payment->payment_method_id,
+                        'transaction_date' => $payment->payment_date,
+                        'user_id' => $userId,
+                    ]);
                 }
-                $pmLabel = $payment->paymentMethod?->display_label ?? __('Pembayaran');
-                CashFlow::create([
-                    'branch_id' => $purchase->branch_id,
-                    'warehouse_id' => $purchase->warehouse_id,
-                    'type' => CashFlow::TYPE_IN,
-                    'amount' => $payment->amount,
-                    'description' => __('Retur Pembelian') . ' ' . $purchase->invoice_number . ' - ' . $pmLabel,
-                    'reference_type' => CashFlow::REFERENCE_PURCHASE_RETURN,
-                    'reference_id' => $purchase->id,
-                    'income_category_id' => $incomeCategory->id,
-                    'payment_method_id' => $payment->payment_method_id,
-                    'transaction_date' => $payment->payment_date,
-                    'user_id' => $userId,
-                ]);
             }
 
             $purchase->update([
