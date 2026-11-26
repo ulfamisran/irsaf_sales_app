@@ -8,7 +8,26 @@
         $tabQuery = request()->except(['tab', 'page']);
     @endphp
 
-    <div class="max-w-7xl mx-auto">
+    <div
+        class="max-w-7xl mx-auto"
+        @if ($tab === 'siap')
+            x-data="authDecisionModal({
+                detailUrlTemplate: @js(url('/authorizations/__ID__')),
+                csrf: @js(csrf_token()),
+                labels: {
+                    loading: @js(__('Memuat detail transaksi...')),
+                    loadError: @js(__('Gagal memuat detail transaksi.')),
+                    notesRequired: @js(__('Keterangan wajib diisi saat menolak.')),
+                    approveTitle: @js(__('Setujui otorisasi')),
+                    rejectTitle: @js(__('Tolak otorisasi')),
+                    approveHelp: @js(__('Periksa detail transaksi sebelum menyetujui.')),
+                    rejectHelp: @js(__('Periksa detail transaksi. Keterangan wajib diisi untuk penolakan.')),
+                    notesOptional: @js(__('Opsional')),
+                    notesRequiredHint: @js(__('Wajib')),
+                }
+            })"
+        @endif
+    >
         @if (session('success'))
             <div class="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-800">{{ session('success') }}</div>
         @endif
@@ -150,11 +169,11 @@
                                 <th class="px-3 py-3"></th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Jenis Transaksi') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Dokumen') }}</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang/Gudang') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Transaksi') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Catat') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('IP Perangkat') }}</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Lokasi') }}</th>
                                 <th class="px-3 py-3 text-right text-xs font-medium text-slate-500 uppercase">{{ __('Otorisasi') }}</th>
                             </tr>
                         </thead>
@@ -177,22 +196,23 @@
                                             {{ $doc }}
                                         @endif
                                     </td>
+                                    <td class="px-3 py-3">{{ $row->locationLabel() }}</td>
                                     <td class="px-3 py-3">{{ $row->requester?->name ?? '-' }}</td>
                                     <td class="px-3 py-3">{{ $txDate ? \Illuminate\Support\Carbon::parse($txDate)->format('d/m/Y') : '-' }}</td>
                                     <td class="px-3 py-3"><x-wita-datetime :value="$row->requested_at" /></td>
                                     <td class="px-3 py-3">{{ $row->clientIp() }}</td>
-                                    <td class="px-3 py-3">{{ $row->locationLabel() }}</td>
                                     <td class="px-3 py-3">
                                         <div class="flex flex-col items-end gap-2">
-                                            <form method="POST" action="{{ route('authorizations.approve', $row) }}" data-auth-confirm="approve" data-document="{{ $doc }}">
-                                                @csrf
-                                                <button type="submit" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium">{{ __('Setujui') }}</button>
-                                            </form>
-                                            <form method="POST" action="{{ route('authorizations.reject', $row) }}" data-auth-confirm="reject" data-document="{{ $doc }}">
-                                                @csrf
-                                                <input type="hidden" name="notes" value="">
-                                                <button type="submit" class="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium">{{ __('Tolak') }}</button>
-                                            </form>
+                                            <button
+                                                type="button"
+                                                class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium"
+                                                @click="openDecision('approve', {{ (int) $row->id }})"
+                                            >{{ __('Setujui') }}</button>
+                                            <button
+                                                type="button"
+                                                class="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium"
+                                                @click="openDecision('reject', {{ (int) $row->id }})"
+                                            >{{ __('Tolak') }}</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -213,6 +233,7 @@
                         <thead>
                             <tr>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Transaksi') }}</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Cabang/Gudang') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('User Otorisasi') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Tanggal Otorisasi') }}</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase">{{ __('Hasil Otorisasi') }}</th>
@@ -232,6 +253,7 @@
                                             {{ $log->document_number }}
                                         @endif
                                     </td>
+                                    <td class="px-3 py-3">{{ $log->locationLabel() }}</td>
                                     <td class="px-3 py-3">{{ $log->decider?->name ?? '-' }}</td>
                                     <td class="px-3 py-3"><x-wita-datetime :value="$log->decided_at" /></td>
                                     <td class="px-3 py-3">{{ $log->status === 'approved' ? __('Setuju') : __('Tolak') }}</td>
@@ -239,7 +261,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="px-3 py-8 text-center text-slate-500">{{ __('Belum ada riwayat.') }}</td>
+                                    <td colspan="6" class="px-3 py-8 text-center text-slate-500">{{ __('Belum ada riwayat.') }}</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -248,11 +270,217 @@
                 </div>
             </div>
         @endif
+
+        @if ($tab === 'siap')
+        {{-- Modal detail + keputusan otorisasi --}}
+        <div
+            x-show="open"
+            x-cloak
+            class="fixed inset-0 z-50 overflow-y-auto"
+            aria-modal="true"
+            role="dialog"
+        >
+            <div class="fixed inset-0 bg-slate-900/50" @click="close()"></div>
+            <div class="relative min-h-full flex items-start sm:items-center justify-center p-4">
+                <div class="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden" @click.stop>
+                    <div class="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900" x-text="mode === 'reject' ? labels.rejectTitle : labels.approveTitle"></h3>
+                            <p class="text-sm text-slate-500 mt-0.5" x-text="mode === 'reject' ? labels.rejectHelp : labels.approveHelp"></p>
+                        </div>
+                        <button type="button" class="text-slate-400 hover:text-slate-600" @click="close()" aria-label="{{ __('Tutup') }}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+
+                    <div class="px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4">
+                        <template x-if="loading">
+                            <p class="text-sm text-slate-500 py-8 text-center" x-text="labels.loading"></p>
+                        </template>
+                        <template x-if="!loading && error">
+                            <p class="text-sm text-red-600 py-8 text-center" x-text="error"></p>
+                        </template>
+                        <template x-if="!loading && !error && detail">
+                            <div class="space-y-4">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-wide text-slate-500" x-text="detail.module_label"></p>
+                                            <p class="text-lg font-semibold text-slate-900" x-text="detail.document_number"></p>
+                                        </div>
+                                        <a
+                                            x-show="detail.detail_url"
+                                            :href="detail.detail_url"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="text-sm text-indigo-600 hover:underline"
+                                        >{{ __('Buka halaman detail') }}</a>
+                                    </div>
+                                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                        <div><span class="text-slate-500">{{ __('Cabang/Gudang') }}:</span> <span class="font-medium text-slate-800" x-text="detail.location || '-'"></span></div>
+                                        <div><span class="text-slate-500">{{ __('User') }}:</span> <span class="font-medium text-slate-800" x-text="detail.requester || '-'"></span></div>
+                                        <div><span class="text-slate-500">{{ __('Tanggal Transaksi') }}:</span> <span class="font-medium text-slate-800" x-text="detail.transaction_date || '-'"></span></div>
+                                        <div><span class="text-slate-500">{{ __('Tanggal Catat') }}:</span> <span class="font-medium text-slate-800" x-text="detail.requested_at || '-'"></span></div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" x-show="detail.fields?.length">
+                                    <template x-for="(field, idx) in detail.fields" :key="'f'+idx">
+                                        <div class="rounded-lg border border-slate-100 px-3 py-2 text-sm">
+                                            <p class="text-xs text-slate-500" x-text="field.label"></p>
+                                            <p class="font-medium text-slate-800" x-text="field.value"></p>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div x-show="detail.lines?.length">
+                                    <h4 class="text-sm font-semibold text-slate-800 mb-2">{{ __('Item transaksi') }}</h4>
+                                    <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+                                        <template x-for="(line, idx) in detail.lines" :key="'l'+idx">
+                                            <div class="px-3 py-2 flex items-start justify-between gap-3 text-sm">
+                                                <div class="min-w-0">
+                                                    <p class="font-medium text-slate-800" x-text="line.title"></p>
+                                                    <p class="text-xs text-slate-500 whitespace-pre-line" x-text="line.meta"></p>
+                                                </div>
+                                                <p class="font-semibold text-slate-800 whitespace-nowrap" x-text="line.amount"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div x-show="detail.payments?.length">
+                                    <h4 class="text-sm font-semibold text-slate-800 mb-2">{{ __('Pembayaran') }}</h4>
+                                    <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+                                        <template x-for="(pay, idx) in detail.payments" :key="'p'+idx">
+                                            <div class="px-3 py-2 flex items-center justify-between gap-3 text-sm">
+                                                <p class="text-slate-700" x-text="pay.method"></p>
+                                                <p class="font-semibold text-slate-800" x-text="pay.amount"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">
+                                        {{ __('Keterangan') }}
+                                        <span class="font-normal text-slate-500" x-text="mode === 'reject' ? '(' + labels.notesRequiredHint + ')' : '(' + labels.notesOptional + ')'"></span>
+                                    </label>
+                                    <textarea
+                                        x-model="notes"
+                                        rows="3"
+                                        maxlength="500"
+                                        class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                        :placeholder="mode === 'reject' ? @js(__('Tulis alasan penolakan...')) : @js(__('Catatan opsional...'))"
+                                    ></textarea>
+                                    <p class="mt-1 text-xs text-red-600" x-show="notesError" x-text="notesError"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50">
+                        <button type="button" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-white" @click="close()" :disabled="submitting">
+                            {{ __('Batal') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
+                            :class="mode === 'reject' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'"
+                            @click="submitDecision()"
+                            :disabled="loading || !!error || submitting || !detail"
+                            x-text="submitting ? @js(__('Memproses...')) : (mode === 'reject' ? @js(__('Tolak')) : @js(__('Setujui')))"
+                        ></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
     </div>
 
     @if ($tab === 'siap')
         @push('scripts')
             <script>
+                function authDecisionModal(config) {
+                    return {
+                        open: false,
+                        loading: false,
+                        submitting: false,
+                        error: null,
+                        notesError: null,
+                        mode: 'approve',
+                        notes: '',
+                        detail: null,
+                        labels: config.labels,
+                        csrf: config.csrf,
+                        detailUrlTemplate: config.detailUrlTemplate,
+
+                        async openDecision(mode, id) {
+                            this.mode = mode;
+                            this.notes = '';
+                            this.notesError = null;
+                            this.error = null;
+                            this.detail = null;
+                            this.open = true;
+                            this.loading = true;
+                            try {
+                                const url = this.detailUrlTemplate.replace('__ID__', String(id));
+                                const res = await fetch(url, {
+                                    headers: {
+                                        'Accept': 'application/json',
+                                        'X-Requested-With': 'XMLHttpRequest',
+                                    },
+                                    credentials: 'same-origin',
+                                });
+                                if (!res.ok) {
+                                    throw new Error(this.labels.loadError);
+                                }
+                                this.detail = await res.json();
+                            } catch (e) {
+                                this.error = this.labels.loadError;
+                            } finally {
+                                this.loading = false;
+                            }
+                        },
+
+                        close() {
+                            if (this.submitting) return;
+                            this.open = false;
+                        },
+
+                        submitDecision() {
+                            if (!this.detail || this.submitting) return;
+                            this.notesError = null;
+                            const trimmed = String(this.notes || '').trim();
+                            if (this.mode === 'reject' && !trimmed) {
+                                this.notesError = this.labels.notesRequired;
+                                return;
+                            }
+
+                            const action = this.mode === 'reject' ? this.detail.reject_url : this.detail.approve_url;
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = action;
+                            form.style.display = 'none';
+
+                            const csrf = document.createElement('input');
+                            csrf.type = 'hidden';
+                            csrf.name = '_token';
+                            csrf.value = this.csrf;
+                            form.appendChild(csrf);
+
+                            const notes = document.createElement('input');
+                            notes.type = 'hidden';
+                            notes.name = 'notes';
+                            notes.value = trimmed;
+                            form.appendChild(notes);
+
+                            document.body.appendChild(form);
+                            this.submitting = true;
+                            form.submit();
+                        },
+                    };
+                }
+
                 document.addEventListener('submit', async function (event) {
                     const form = event.target;
                     const mode = form?.dataset?.authConfirm;
@@ -260,13 +488,6 @@
                         return;
                     }
                     event.preventDefault();
-
-                    let title = @json(__('Setujui dokumen ini?'));
-                    let text = form.dataset.document
-                        ? @json(__('Dokumen')) + ' ' + form.dataset.document + ' ' + @json(__('akan disetujui.'))
-                        : @json(__('Dokumen akan disetujui.'));
-                    let confirmButtonColor = '#059669';
-                    let confirmButtonText = @json(__('Ya, setujui'));
 
                     if (mode === 'many') {
                         const count = document.querySelectorAll('input[name="ids[]"][form="approve-form"]:checked').length;
@@ -279,62 +500,22 @@
                             });
                             return;
                         }
-                        title = @json(__('Setujui dokumen yang dicentang?'));
-                        text = count + ' ' + @json(__('dokumen akan disetujui.'));
-                    }
-
-                    if (mode === 'reject') {
-                        const rejectResult = await Swal.fire({
-                            icon: 'warning',
-                            title: @json(__('Tolak dokumen ini?')),
-                            html: (form.dataset.document
-                                ? '<p class="text-sm text-slate-600 mb-3">' + form.dataset.document + ' — ' + @json(__('Dokumen akan dibatalkan.')) + '</p>'
-                                : '<p class="text-sm text-slate-600 mb-3">' + @json(__('Dokumen akan dibatalkan.')) + '</p>'),
-                            input: 'textarea',
-                            inputLabel: @json(__('Keterangan tolak')),
-                            inputPlaceholder: @json(__('Tulis alasan penolakan...')),
-                            inputAttributes: {
-                                'aria-label': @json(__('Keterangan tolak')),
-                                maxlength: 500,
-                            },
-                            inputValidator: (value) => {
-                                if (!value || !String(value).trim()) {
-                                    return @json(__('Keterangan wajib diisi.'));
-                                }
-                            },
+                        const result = await Swal.fire({
+                            icon: 'question',
+                            title: @json(__('Setujui dokumen yang dicentang?')),
+                            text: count + ' ' + @json(__('dokumen akan disetujui.')),
                             showCancelButton: true,
-                            confirmButtonText: @json(__('Ya, tolak')),
+                            confirmButtonText: @json(__('Ya, setujui')),
                             cancelButtonText: @json(__('Batal')),
-                            confirmButtonColor: '#dc2626',
+                            confirmButtonColor: '#059669',
                             cancelButtonColor: '#64748b',
                         });
-                        if (!rejectResult.isConfirmed) {
+                        if (!result.isConfirmed) {
                             return;
-                        }
-                        const notesInput = form.querySelector('[name="notes"]');
-                        if (notesInput) {
-                            notesInput.value = String(rejectResult.value || '').trim();
                         }
                         form.dataset.submitting = '1';
                         form.submit();
-                        return;
                     }
-
-                    const result = await Swal.fire({
-                        icon: 'question',
-                        title: title,
-                        text: text,
-                        showCancelButton: true,
-                        confirmButtonText: confirmButtonText,
-                        cancelButtonText: @json(__('Batal')),
-                        confirmButtonColor: confirmButtonColor,
-                        cancelButtonColor: '#64748b',
-                    });
-                    if (!result.isConfirmed) {
-                        return;
-                    }
-                    form.dataset.submitting = '1';
-                    form.submit();
                 });
             </script>
         @endpush

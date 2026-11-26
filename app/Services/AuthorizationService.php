@@ -484,17 +484,19 @@ class AuthorizationService
         return $row;
     }
 
-    public function approve(AuthorizationRequest $request, User $user): void
+    public function approve(AuthorizationRequest $request, User $user, ?string $notes = null): void
     {
         $this->assertCanDecide($request, $user);
         if (! $request->isPending()) {
             throw new InvalidArgumentException(__('Pengajuan ini sudah diputuskan.'));
         }
 
+        $notes = $notes !== null ? trim($notes) : '';
         $request->update([
             'status' => AuthorizationRequest::STATUS_APPROVED,
             'decided_by' => $user->id,
             'decided_at' => now(),
+            'notes' => $notes !== '' ? mb_substr($notes, 0, 500) : null,
         ]);
         if ($request->subject) {
             unset(self::$phaseCache[$request->subject::class.'#'.$request->subject->getKey()]);
@@ -820,6 +822,256 @@ class AuthorizationService
     }
 
     /**
+     * Ringkasan dokumen untuk modal otorisasi setuju/tolak.
+     *
+     * @return array{
+     *     id:int,
+     *     module:string,
+     *     module_label:string,
+     *     document_number:string,
+     *     location:string,
+     *     requester:?string,
+     *     transaction_date:?string,
+     *     requested_at:?string,
+     *     detail_url:?string,
+     *     fields:list<array{label:string,value:string}>,
+     *     lines:list<array{title:string,meta:string,amount:string}>,
+     *     payments:list<array{method:string,amount:string}>,
+     *     approve_url:string,
+     *     reject_url:string
+     * }
+     */
+    public function documentDetail(AuthorizationRequest $request): array
+    {
+        $request->loadMissing(['requester', 'branch', 'warehouse', 'subject']);
+        $subject = $request->subject;
+        if ($subject) {
+            $this->eagerLoadSubject($subject);
+        }
+
+        $txDate = $request->transactionDate();
+
+        return [
+            'id' => (int) $request->id,
+            'module' => (string) $request->module,
+            'module_label' => $this->label((string) $request->module),
+            'document_number' => (string) ($request->document_number ?: '#'.$request->id),
+            'location' => $request->locationLabel(),
+            'requester' => $request->requester?->name,
+            'transaction_date' => $txDate
+                ? \Illuminate\Support\Carbon::parse($txDate)->format('d/m/Y')
+                : null,
+            'requested_at' => $request->requested_at
+                ? $request->requested_at->timezone(config('app.display_timezone', config('app.timezone')))->format('d/m/Y H:i')
+                : null,
+            'detail_url' => $this->documentUrl($request),
+            'fields' => $this->detailFields($subject),
+            'lines' => $this->detailLines($subject),
+            'payments' => $this->detailPayments($subject),
+            'approve_url' => route('authorizations.approve', $request),
+            'reject_url' => route('authorizations.reject', $request),
+        ];
+    }
+
+    private function eagerLoadSubject(Model $subject): void
+    {
+        match (true) {
+            $subject instanceof Sale => $subject->loadMissing([
+                'customer',
+                'saleDetails.product',
+                'payments.paymentMethod',
+                'branch',
+                'warehouse',
+            ]),
+            $subject instanceof Purchase => $subject->loadMissing([
+                'distributor',
+                'details.product',
+                'payments.paymentMethod',
+                'branch',
+                'warehouse',
+            ]),
+            $subject instanceof Distribution => $subject->loadMissing([
+                'details.product',
+                'payments.paymentMethod',
+            ]),
+            $subject instanceof Service => $subject->loadMissing([
+                'customer',
+                'payments.paymentMethod',
+                'branch',
+                'warehouse',
+            ]),
+            $subject instanceof Rental => $subject->loadMissing([
+                'customer',
+                'items.product',
+                'payments.paymentMethod',
+                'branch',
+                'warehouse',
+            ]),
+            $subject instanceof UnitExchange => $subject->loadMissing([
+                'items.product',
+                'sale',
+                'branch',
+                'warehouse',
+            ]),
+            default => null,
+        };
+    }
+
+    /**
+     * @return list<array{label:string,value:string}>
+     */
+    private function detailFields(?Model $subject): array
+    {
+        if (! $subject) {
+            return [];
+        }
+
+        $money = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
+
+        return match (true) {
+            $subject instanceof Sale => array_values(array_filter([
+                ['label' => __('Pelanggan'), 'value' => (string) ($subject->customer?->name ?? '-')],
+                ['label' => __('Total'), 'value' => $money($subject->total)],
+                ['label' => __('Dibayar'), 'value' => $money($subject->total_paid)],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            $subject instanceof Purchase => array_values(array_filter([
+                ['label' => __('Distributor'), 'value' => (string) ($subject->distributor?->name ?? '-')],
+                ['label' => __('Total'), 'value' => $money($subject->total)],
+                ['label' => __('Dibayar'), 'value' => $money($subject->total_paid)],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            $subject instanceof Distribution => array_values(array_filter([
+                ['label' => __('Dari'), 'value' => (string) $subject->fromLocationName()],
+                ['label' => __('Ke'), 'value' => (string) $subject->toLocationName()],
+                ['label' => __('Total'), 'value' => $money($subject->total)],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            $subject instanceof Service => array_values(array_filter([
+                ['label' => __('Pelanggan'), 'value' => (string) ($subject->customer?->name ?? '-')],
+                ['label' => __('Laptop'), 'value' => trim(($subject->laptop_type ?? '').' '.($subject->laptop_detail ?? '')) ?: '-'],
+                ['label' => __('Total'), 'value' => $money($subject->total_service_price)],
+                ['label' => __('Dibayar'), 'value' => $money($subject->total_paid)],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            $subject instanceof Rental => array_values(array_filter([
+                ['label' => __('Pelanggan'), 'value' => (string) ($subject->customer?->name ?? '-')],
+                ['label' => __('Total'), 'value' => $money($subject->total)],
+                ['label' => __('Dibayar'), 'value' => $money($subject->total_paid)],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            $subject instanceof UnitExchange => array_values(array_filter([
+                ['label' => __('Invoice penjualan'), 'value' => (string) ($subject->sale?->invoice_number ?? '-')],
+                ['label' => __('Status'), 'value' => (string) ($subject->status ?? '-')],
+            ])),
+            default => [],
+        };
+    }
+
+    /**
+     * @return list<array{title:string,meta:string,amount:string}>
+     */
+    private function detailLines(?Model $subject): array
+    {
+        if (! $subject) {
+            return [];
+        }
+
+        $money = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
+        $lines = [];
+
+        if ($subject instanceof Sale) {
+            foreach ($subject->saleDetails as $detail) {
+                $sku = $detail->product?->sku ?? '-';
+                $name = trim(($detail->product?->brand ?? '').' '.($detail->product?->series ?? ''));
+                $serial = trim((string) ($detail->serial_numbers ?? ''));
+                $lines[] = [
+                    'title' => $name !== '' ? $name : $sku,
+                    'meta' => trim($sku.' · qty '.((int) $detail->quantity).($serial !== '' ? ' · '.$serial : '')),
+                    'amount' => $money((float) $detail->price * (int) $detail->quantity),
+                ];
+            }
+        } elseif ($subject instanceof Purchase) {
+            foreach ($subject->details as $detail) {
+                $sku = $detail->product?->sku ?? '-';
+                $name = trim(($detail->product?->brand ?? '').' '.($detail->product?->series ?? ''));
+                $serial = trim((string) ($detail->serial_numbers ?? ''));
+                $unitPrice = (float) ($detail->unit_price ?? $detail->price ?? 0);
+                $lines[] = [
+                    'title' => $name !== '' ? $name : $sku,
+                    'meta' => trim($sku.' · qty '.((int) $detail->quantity).($serial !== '' ? ' · '.$serial : '')),
+                    'amount' => $money($unitPrice * (int) $detail->quantity),
+                ];
+            }
+        } elseif ($subject instanceof Distribution) {
+            foreach ($subject->details as $detail) {
+                $sku = $detail->product?->sku ?? '-';
+                $name = trim(($detail->product?->brand ?? '').' '.($detail->product?->series ?? ''));
+                $serial = trim((string) ($detail->serial_numbers ?? ''));
+                $unitCost = (float) ($detail->biaya_distribusi_per_unit ?? 0);
+                $lines[] = [
+                    'title' => $name !== '' ? $name : $sku,
+                    'meta' => trim($sku.' · qty '.((int) $detail->quantity).($serial !== '' ? ' · '.$serial : '')),
+                    'amount' => $money($unitCost * (int) $detail->quantity),
+                ];
+            }
+        } elseif ($subject instanceof Rental) {
+            foreach ($subject->items as $item) {
+                $sku = $item->product?->sku ?? '-';
+                $name = trim(($item->product?->brand ?? '').' '.($item->product?->series ?? ''));
+                $serial = trim((string) ($item->serial_number ?? ''));
+                $lines[] = [
+                    'title' => $name !== '' ? $name : $sku,
+                    'meta' => trim($sku.($serial !== '' ? ' · '.$serial : '')),
+                    'amount' => $money($item->rental_price ?? 0),
+                ];
+            }
+        } elseif ($subject instanceof UnitExchange) {
+            foreach ($subject->items as $item) {
+                $sku = $item->product?->sku ?? '-';
+                $name = trim(($item->product?->brand ?? '').' '.($item->product?->series ?? ''));
+                $lines[] = [
+                    'title' => $name !== '' ? $name : $sku,
+                    'meta' => trim($sku.' · '.__('Lama').': '.($item->old_serial ?? '-').' → '.__('Baru').': '.($item->new_serial ?? '-')),
+                    'amount' => $money($item->price_difference ?? 0),
+                ];
+            }
+        } elseif ($subject instanceof Service) {
+            $desc = trim((string) ($subject->damage_description ?? ''));
+            if ($desc !== '') {
+                $lines[] = [
+                    'title' => __('Kerusakan'),
+                    'meta' => $desc,
+                    'amount' => $money($subject->service_price ?? 0),
+                ];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @return list<array{method:string,amount:string}>
+     */
+    private function detailPayments(?Model $subject): array
+    {
+        if (! $subject || ! method_exists($subject, 'payments')) {
+            return [];
+        }
+
+        $money = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
+        $out = [];
+        foreach ($subject->payments as $payment) {
+            $out[] = [
+                'method' => (string) ($payment->paymentMethod?->display_label ?? __('Pembayaran')),
+                'amount' => $money($payment->amount),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  array<string, array{is_active?: mixed, user_ids?: array<int, mixed>}>  $input
      */
     public function saveSettings(array $input): void
@@ -879,6 +1131,11 @@ class AuthorizationService
         });
 
         return $query;
+    }
+
+    public function assertCanView(AuthorizationRequest $request, User $user): void
+    {
+        $this->assertCanDecide($request, $user);
     }
 
     private function assertCanDecide(AuthorizationRequest $request, User $user): void

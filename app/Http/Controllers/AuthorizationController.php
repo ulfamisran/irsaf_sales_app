@@ -112,10 +112,34 @@ class AuthorizationController extends Controller
         return back()->with('success', __('Dokumen diajukan untuk otorisasi.'));
     }
 
+    public function show(Request $request, AuthorizationRequest $authorizationRequest): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user && $this->authorizations->canOpenQueue($user), 403);
+        abort_unless($authorizationRequest->isPending(), 404);
+
+        try {
+            // Reuse the same access rules as approve/reject (module + lokasi).
+            $this->authorizations->assertCanView($authorizationRequest, $user);
+        } catch (InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
+
+        return response()->json($this->authorizations->documentDetail($authorizationRequest));
+    }
+
     public function approve(Request $request, AuthorizationRequest $authorizationRequest): RedirectResponse
     {
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
         try {
-            $this->authorizations->approve($authorizationRequest, $request->user());
+            $this->authorizations->approve(
+                $authorizationRequest,
+                $request->user(),
+                $validated['notes'] ?? null
+            );
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }

@@ -162,6 +162,7 @@ Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::put('authorization-settings', [\App\Http\Controllers\AuthorizationSettingController::class, 'update'])->name('authorization-settings.update');
     Route::get('authorizations', [\App\Http\Controllers\AuthorizationController::class, 'index'])->name('authorizations.index');
     Route::get('authorizations/pending-feed', [\App\Http\Controllers\AuthorizationController::class, 'pendingFeed'])->name('authorizations.pending-feed');
+    Route::get('authorizations/{authorizationRequest}', [\App\Http\Controllers\AuthorizationController::class, 'show'])->name('authorizations.show');
     Route::post('authorizations', [\App\Http\Controllers\AuthorizationController::class, 'submit'])->name('authorizations.submit');
     Route::post('authorizations/approve-many', [\App\Http\Controllers\AuthorizationController::class, 'approveMany'])->name('authorizations.approve-many');
     Route::post('authorizations/{authorizationRequest}/approve', [\App\Http\Controllers\AuthorizationController::class, 'approve'])->name('authorizations.approve');
