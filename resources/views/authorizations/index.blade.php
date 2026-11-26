@@ -8,26 +8,7 @@
         $tabQuery = request()->except(['tab', 'page']);
     @endphp
 
-    <div
-        class="max-w-7xl mx-auto"
-        @if ($tab === 'siap')
-            x-data="authDecisionModal({
-                detailUrlTemplate: @js(url('/authorizations/__ID__')),
-                csrf: @js(csrf_token()),
-                labels: {
-                    loading: @js(__('Memuat detail transaksi...')),
-                    loadError: @js(__('Gagal memuat detail transaksi.')),
-                    notesRequired: @js(__('Keterangan wajib diisi saat menolak.')),
-                    approveTitle: @js(__('Setujui otorisasi')),
-                    rejectTitle: @js(__('Tolak otorisasi')),
-                    approveHelp: @js(__('Periksa detail transaksi sebelum menyetujui.')),
-                    rejectHelp: @js(__('Periksa detail transaksi. Keterangan wajib diisi untuk penolakan.')),
-                    notesOptional: @js(__('Opsional')),
-                    notesRequiredHint: @js(__('Wajib')),
-                }
-            })"
-        @endif
-    >
+    <div class="max-w-7xl mx-auto">
         @if (session('success'))
             <div class="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-800">{{ session('success') }}</div>
         @endif
@@ -206,12 +187,12 @@
                                             <button
                                                 type="button"
                                                 class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium"
-                                                @click="openDecision('approve', {{ (int) $row->id }})"
+                                                onclick="window.dispatchEvent(new CustomEvent('open-auth-decision', { detail: { mode: 'approve', id: {{ (int) $row->id }} } }))"
                                             >{{ __('Setujui') }}</button>
                                             <button
                                                 type="button"
                                                 class="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium"
-                                                @click="openDecision('reject', {{ (int) $row->id }})"
+                                                onclick="window.dispatchEvent(new CustomEvent('open-auth-decision', { detail: { mode: 'reject', id: {{ (int) $row->id }} } }))"
                                             >{{ __('Tolak') }}</button>
                                         </div>
                                     </td>
@@ -271,133 +252,204 @@
             </div>
         @endif
 
-        @if ($tab === 'siap')
-        {{-- Modal detail + keputusan otorisasi --}}
-        <div
-            x-show="open"
-            x-cloak
-            class="fixed inset-0 z-50 overflow-y-auto"
-            aria-modal="true"
-            role="dialog"
-        >
-            <div class="fixed inset-0 bg-slate-900/50" @click="close()"></div>
-            <div class="relative min-h-full flex items-start sm:items-center justify-center p-4">
-                <div class="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden" @click.stop>
-                    <div class="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
-                        <div>
-                            <h3 class="text-lg font-semibold text-slate-900" x-text="mode === 'reject' ? labels.rejectTitle : labels.approveTitle"></h3>
-                            <p class="text-sm text-slate-500 mt-0.5" x-text="mode === 'reject' ? labels.rejectHelp : labels.approveHelp"></p>
-                        </div>
-                        <button type="button" class="text-slate-400 hover:text-slate-600" @click="close()" aria-label="{{ __('Tutup') }}">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
-                    </div>
-
-                    <div class="px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4">
-                        <template x-if="loading">
-                            <p class="text-sm text-slate-500 py-8 text-center" x-text="labels.loading"></p>
-                        </template>
-                        <template x-if="!loading && error">
-                            <p class="text-sm text-red-600 py-8 text-center" x-text="error"></p>
-                        </template>
-                        <template x-if="!loading && !error && detail">
-                            <div class="space-y-4">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                    <div class="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-xs uppercase tracking-wide text-slate-500" x-text="detail.module_label"></p>
-                                            <p class="text-lg font-semibold text-slate-900" x-text="detail.document_number"></p>
-                                        </div>
-                                        <a
-                                            x-show="detail.detail_url"
-                                            :href="detail.detail_url"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            class="text-sm text-indigo-600 hover:underline"
-                                        >{{ __('Buka halaman detail') }}</a>
-                                    </div>
-                                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                                        <div><span class="text-slate-500">{{ __('Cabang/Gudang') }}:</span> <span class="font-medium text-slate-800" x-text="detail.location || '-'"></span></div>
-                                        <div><span class="text-slate-500">{{ __('User') }}:</span> <span class="font-medium text-slate-800" x-text="detail.requester || '-'"></span></div>
-                                        <div><span class="text-slate-500">{{ __('Tanggal Transaksi') }}:</span> <span class="font-medium text-slate-800" x-text="detail.transaction_date || '-'"></span></div>
-                                        <div><span class="text-slate-500">{{ __('Tanggal Catat') }}:</span> <span class="font-medium text-slate-800" x-text="detail.requested_at || '-'"></span></div>
-                                    </div>
-                                </div>
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" x-show="detail.fields?.length">
-                                    <template x-for="(field, idx) in detail.fields" :key="'f'+idx">
-                                        <div class="rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                                            <p class="text-xs text-slate-500" x-text="field.label"></p>
-                                            <p class="font-medium text-slate-800" x-text="field.value"></p>
-                                        </div>
-                                    </template>
-                                </div>
-
-                                <div x-show="detail.lines?.length">
-                                    <h4 class="text-sm font-semibold text-slate-800 mb-2">{{ __('Item transaksi') }}</h4>
-                                    <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
-                                        <template x-for="(line, idx) in detail.lines" :key="'l'+idx">
-                                            <div class="px-3 py-2 flex items-start justify-between gap-3 text-sm">
-                                                <div class="min-w-0">
-                                                    <p class="font-medium text-slate-800" x-text="line.title"></p>
-                                                    <p class="text-xs text-slate-500 whitespace-pre-line" x-text="line.meta"></p>
-                                                </div>
-                                                <p class="font-semibold text-slate-800 whitespace-nowrap" x-text="line.amount"></p>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </div>
-
-                                <div x-show="detail.payments?.length">
-                                    <h4 class="text-sm font-semibold text-slate-800 mb-2">{{ __('Pembayaran') }}</h4>
-                                    <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
-                                        <template x-for="(pay, idx) in detail.payments" :key="'p'+idx">
-                                            <div class="px-3 py-2 flex items-center justify-between gap-3 text-sm">
-                                                <p class="text-slate-700" x-text="pay.method"></p>
-                                                <p class="font-semibold text-slate-800" x-text="pay.amount"></p>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 mb-1">
-                                        {{ __('Keterangan') }}
-                                        <span class="font-normal text-slate-500" x-text="mode === 'reject' ? '(' + labels.notesRequiredHint + ')' : '(' + labels.notesOptional + ')'"></span>
-                                    </label>
-                                    <textarea
-                                        x-model="notes"
-                                        rows="3"
-                                        maxlength="500"
-                                        class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                                        :placeholder="mode === 'reject' ? @js(__('Tulis alasan penolakan...')) : @js(__('Catatan opsional...'))"
-                                    ></textarea>
-                                    <p class="mt-1 text-xs text-red-600" x-show="notesError" x-text="notesError"></p>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-
-                    <div class="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50">
-                        <button type="button" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-white" @click="close()" :disabled="submitting">
-                            {{ __('Batal') }}
-                        </button>
-                        <button
-                            type="button"
-                            class="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
-                            :class="mode === 'reject' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'"
-                            @click="submitDecision()"
-                            :disabled="loading || !!error || submitting || !detail"
-                            x-text="submitting ? @js(__('Memproses...')) : (mode === 'reject' ? @js(__('Tolak')) : @js(__('Setujui')))"
-                        ></button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        @endif
     </div>
 
     @if ($tab === 'siap')
+        @push('modals')
+            <div
+                x-data="authDecisionModal({
+                    detailUrlTemplate: @js(url('/authorizations/__ID__')),
+                    csrf: @js(csrf_token()),
+                    labels: {
+                        loading: @js(__('Memuat detail transaksi...')),
+                        loadError: @js(__('Gagal memuat detail transaksi.')),
+                        notesRequired: @js(__('Alasan penolakan wajib diisi.')),
+                        approveTitle: @js(__('Setujui otorisasi')),
+                        rejectTitle: @js(__('Tolak otorisasi')),
+                        approveHelp: @js(__('Periksa detail sebelum menyetujui.')),
+                        rejectHelp: @js(__('Alasan penolakan wajib diisi.')),
+                        notesApproveLabel: @js(__('Catatan persetujuan')),
+                        notesRejectLabel: @js(__('Alasan penolakan')),
+                        notesOptional: @js(__('Opsional')),
+                        notesRequiredHint: @js(__('Wajib')),
+                    }
+                })"
+                @open-auth-decision.window="openDecision($event.detail.mode, $event.detail.id)"
+            >
+                <div
+                    x-show="open"
+                    x-cloak
+                    class="fixed inset-0 overflow-y-auto"
+                    style="z-index: 99999;"
+                    aria-modal="true"
+                    role="dialog"
+                >
+                    <div class="fixed inset-0 bg-slate-950/75" @click="close()" style="z-index: 99999;"></div>
+                    <div class="relative min-h-full flex items-center justify-center p-3 sm:p-4" style="z-index: 100000;">
+                        <div
+                            class="relative w-full max-w-3xl bg-white rounded-xl shadow-2xl overflow-hidden"
+                            @click.stop
+                        >
+                            <div
+                                class="px-4 py-3 border-b flex items-start justify-between gap-3"
+                                :class="mode === 'reject' ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'"
+                            >
+                                <div class="min-w-0">
+                                    <p
+                                        class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold mb-1"
+                                        :class="mode === 'reject' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'"
+                                        x-text="mode === 'reject' ? @js(__('Aksi: Tolak')) : @js(__('Aksi: Setujui'))"
+                                    ></p>
+                                    <h3
+                                        class="text-base font-bold leading-tight"
+                                        :class="mode === 'reject' ? 'text-red-900' : 'text-emerald-900'"
+                                        x-text="mode === 'reject' ? labels.rejectTitle : labels.approveTitle"
+                                    ></h3>
+                                    <p
+                                        class="text-xs mt-0.5"
+                                        :class="mode === 'reject' ? 'text-red-700/80' : 'text-emerald-800/80'"
+                                        x-text="mode === 'reject' ? labels.rejectHelp : labels.approveHelp"
+                                    ></p>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-800"
+                                    @click="close()"
+                                    aria-label="{{ __('Tutup') }}"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+
+                            <div class="px-4 py-3 overflow-y-auto space-y-3" style="max-height: min(70vh, 560px);">
+                                <template x-if="loading">
+                                    <p class="text-sm text-slate-500 py-10 text-center" x-text="labels.loading"></p>
+                                </template>
+                                <template x-if="!loading && error">
+                                    <p class="text-sm text-red-600 py-10 text-center" x-text="error"></p>
+                                </template>
+                                <template x-if="!loading && !error && detail">
+                                    <div class="space-y-3">
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                                <div>
+                                                    <p class="text-[11px] uppercase tracking-wide text-slate-500 font-semibold" x-text="detail.module_label"></p>
+                                                    <p class="text-base font-bold text-slate-900" x-text="detail.document_number"></p>
+                                                </div>
+                                                <a
+                                                    x-show="detail.detail_url"
+                                                    :href="detail.detail_url"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    class="text-xs font-medium text-indigo-600 hover:underline"
+                                                >{{ __('Buka halaman detail') }}</a>
+                                            </div>
+                                            <div class="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                                                <div class="rounded-md bg-white border border-slate-200 px-2.5 py-1.5">
+                                                    <p class="text-[11px] text-slate-500">{{ __('Cabang/Gudang') }}</p>
+                                                    <p class="font-semibold text-slate-800" x-text="detail.location || '-'"></p>
+                                                </div>
+                                                <div class="rounded-md bg-white border border-slate-200 px-2.5 py-1.5">
+                                                    <p class="text-[11px] text-slate-500">{{ __('User') }}</p>
+                                                    <p class="font-semibold text-slate-800" x-text="detail.requester || '-'"></p>
+                                                </div>
+                                                <div class="rounded-md bg-white border border-slate-200 px-2.5 py-1.5">
+                                                    <p class="text-[11px] text-slate-500">{{ __('Tgl Transaksi') }}</p>
+                                                    <p class="font-semibold text-slate-800" x-text="detail.transaction_date || '-'"></p>
+                                                </div>
+                                                <div class="rounded-md bg-white border border-slate-200 px-2.5 py-1.5">
+                                                    <p class="text-[11px] text-slate-500">{{ __('Tgl Catat') }}</p>
+                                                    <p class="font-semibold text-slate-800" x-text="detail.requested_at || '-'"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2" x-show="detail.fields?.length">
+                                            <template x-for="(field, idx) in detail.fields" :key="'f'+idx">
+                                                <div class="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
+                                                    <p class="text-[11px] text-slate-500" x-text="field.label"></p>
+                                                    <p class="text-sm font-semibold text-slate-900" x-text="field.value"></p>
+                                                </div>
+                                            </template>
+                                        </div>
+
+                                        <div x-show="detail.lines?.length">
+                                            <h4 class="text-xs font-semibold text-slate-700 mb-1.5">{{ __('Item transaksi') }}</h4>
+                                            <div class="rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden bg-white">
+                                                <template x-for="(line, idx) in detail.lines" :key="'l'+idx">
+                                                    <div class="px-3 py-2 flex items-start justify-between gap-3 text-xs">
+                                                        <div class="min-w-0">
+                                                            <p class="font-semibold text-slate-900" x-text="line.title"></p>
+                                                            <p class="text-[11px] text-slate-500 whitespace-pre-line" x-text="line.meta"></p>
+                                                        </div>
+                                                        <p class="font-semibold text-slate-900 whitespace-nowrap" x-text="line.amount"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+
+                                        <div x-show="detail.payments?.length">
+                                            <h4 class="text-xs font-semibold text-slate-700 mb-1.5">{{ __('Pembayaran') }}</h4>
+                                            <div class="rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden bg-white">
+                                                <template x-for="(pay, idx) in detail.payments" :key="'p'+idx">
+                                                    <div class="px-3 py-2 flex items-center justify-between gap-3 text-xs">
+                                                        <p class="text-slate-700" x-text="pay.method"></p>
+                                                        <p class="font-semibold text-slate-900" x-text="pay.amount"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+
+                                        <div
+                                            class="rounded-lg border p-3"
+                                            :class="mode === 'reject' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'"
+                                        >
+                                            <label
+                                                class="block text-xs font-semibold mb-1.5"
+                                                :class="mode === 'reject' ? 'text-red-800' : 'text-emerald-800'"
+                                            >
+                                                <span x-text="mode === 'reject' ? labels.notesRejectLabel : labels.notesApproveLabel"></span>
+                                                <span
+                                                    class="font-normal"
+                                                    :class="mode === 'reject' ? 'text-red-600' : 'text-emerald-700'"
+                                                    x-text="mode === 'reject' ? '(' + labels.notesRequiredHint + ')' : '(' + labels.notesOptional + ')'"
+                                                ></span>
+                                            </label>
+                                            <textarea
+                                                x-model="notes"
+                                                rows="3"
+                                                maxlength="500"
+                                                class="w-full rounded-lg shadow-sm text-sm"
+                                                :class="mode === 'reject'
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-white'
+                                                    : 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white'"
+                                                :placeholder="mode === 'reject' ? @js(__('Tulis alasan penolakan...')) : @js(__('Tulis catatan persetujuan (opsional)...'))"
+                                            ></textarea>
+                                            <p class="mt-1 text-xs text-red-600" x-show="notesError" x-text="notesError"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                                <button type="button" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-white" @click="close()" :disabled="submitting">
+                                    {{ __('Batal') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="px-4 py-1.5 rounded-lg text-white text-sm font-semibold disabled:opacity-60"
+                                    :class="mode === 'reject' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'"
+                                    @click="submitDecision()"
+                                    :disabled="loading || !!error || submitting || !detail"
+                                    x-text="submitting ? @js(__('Memproses...')) : (mode === 'reject' ? @js(__('Tolak')) : @js(__('Setujui')))"
+                                ></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endpush
+
         @push('scripts')
             <script>
                 function authDecisionModal(config) {
@@ -422,6 +474,7 @@
                             this.detail = null;
                             this.open = true;
                             this.loading = true;
+                            document.body.classList.add('overflow-hidden');
                             try {
                                 const url = this.detailUrlTemplate.replace('__ID__', String(id));
                                 const res = await fetch(url, {
@@ -445,6 +498,7 @@
                         close() {
                             if (this.submitting) return;
                             this.open = false;
+                            document.body.classList.remove('overflow-hidden');
                         },
 
                         submitDecision() {

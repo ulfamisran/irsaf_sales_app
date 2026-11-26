@@ -95,6 +95,9 @@
             </div>
         </div>
 
+        {{-- Modal halaman: di luar wrapper sidebar agar tidak tertutup z-index sidebar --}}
+        @stack('modals')
+
         @php
             $authNotifyUser = auth()->user();
             $authNotifyCan = $authNotifyUser
