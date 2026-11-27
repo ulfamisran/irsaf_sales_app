@@ -48,7 +48,7 @@ class PurchaseReceivingController extends Controller
         }
 
         $query = Purchase::with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments'])
-            ->whereIn('status', [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE])
+            ->where('status', Purchase::STATUS_ACTIVE)
             ->where(function ($q) {
                 $q->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
                     ->orWhereNull('jenis_pembelian')
@@ -61,10 +61,7 @@ class PurchaseReceivingController extends Controller
         // Prefilter kasar di SQL, lalu pastikan hanya yang needs_check=true (sumber kebenaran UI).
         $this->receivingService->constrainNeedingCheck($query);
 
-        $purchases = $query->get();
-        app(\App\Services\AuthorizationService::class)->warmPhases($purchases);
-
-        $rows = $purchases->map(function (Purchase $p) {
+        $rows = $query->get()->map(function (Purchase $p) {
             return (object) [
                 'purchase' => $p,
                 'summary' => $this->receivingService->summarize($p),

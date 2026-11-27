@@ -788,8 +788,8 @@ class PurchaseController extends Controller
         if ($purchase->isCancelled()) {
             return back()->with('error', __('Pembelian ini sudah dibatalkan.'));
         }
-        if ($purchase->status === \App\Models\Purchase::STATUS_OPEN) {
-            return back()->with('error', __('Pembelian masih open. Release setelah otorisasi disetujui.'));
+        if ($purchase->status !== \App\Models\Purchase::STATUS_ACTIVE) {
+            return back()->with('error', __('Pembayaran tambahan hanya untuk pembelian yang sudah di-release.'));
         }
 
         $paymentsInput = $request->input('payments', []);

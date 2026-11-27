@@ -145,7 +145,9 @@
                         $sisaInvoice = max(0, (float) $purchase->total - $totalDibayar);
                         $isUangMukaMode = $utangTerakui <= 0.02;
                         $lunasTerakui = $utangTerakui > 0.02 && $sisaBayar <= 0.02;
-                        $canPayMore = ! $purchase->isCancelled() && $sisaInvoice > 0.02;
+                        $canPayMore = ! $purchase->isCancelled()
+                            && $purchase->status === \App\Models\Purchase::STATUS_ACTIVE
+                            && $sisaInvoice > 0.02;
                     @endphp
                     <div id="riwayat-pembayaran" class="mt-6 mb-6 rounded-lg border border-slate-200 bg-slate-50/50 p-4 scroll-mt-24">
                         <p class="text-sm font-semibold text-gray-800 mb-3">{{ __('Riwayat Pembayaran') }}</p>

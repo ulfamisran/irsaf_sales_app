@@ -144,7 +144,15 @@ class AuthorizationController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', __('Otorisasi disetujui. Dokumen siap di-release.'));
+        $isPurchase = $authorizationRequest->module === 'purchases'
+            || $authorizationRequest->reference_type === \App\Models\Purchase::class;
+
+        return back()->with(
+            'success',
+            $isPurchase
+                ? __('Otorisasi disetujui. Pembelian otomatis di-release.')
+                : __('Otorisasi disetujui. Dokumen siap di-release.')
+        );
     }
 
     public function approveMany(Request $request): RedirectResponse

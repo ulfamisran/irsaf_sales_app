@@ -40,7 +40,7 @@
                     <input type="hidden" name="tab" id="filter-tab" value="{{ $activeTab }}">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">{{ __('Cari') }}</label>
-                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('No. invoice, SKU, brand, serial...') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <input type="text" name="search" value="{{ request('search') }}" placeholder="{{ __('No. distribusi, SKU, serial number...') }}" class="w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                     @if($canFilterLocation ?? false)

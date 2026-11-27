@@ -18,13 +18,11 @@ use InvalidArgumentException;
 class PurchaseReceivingService
 {
     public function __construct(
-        protected StockMutationService $stockMutationService,
-        protected AuthorizationService $authorizationService
+        protected StockMutationService $stockMutationService
     ) {}
 
     /**
-     * Pengecekan untuk pembelian unit berstatus open/release yang sudah otorisasi
-     * (atau tidak membutuhkan otorisasi).
+     * Pengecekan hanya untuk pembelian unit yang sudah release (active).
      */
     public function isEligibleForCheck(Purchase $purchase): bool
     {
@@ -32,11 +30,7 @@ class PurchaseReceivingService
             return false;
         }
 
-        if (! in_array($purchase->status, [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE], true)) {
-            return false;
-        }
-
-        return $this->authorizationService->allowsCommit($purchase);
+        return $purchase->status === Purchase::STATUS_ACTIVE;
     }
 
     public function assertEligibleForCheck(Purchase $purchase): void
@@ -45,12 +39,8 @@ class PurchaseReceivingService
             throw new InvalidArgumentException(__('Pembelian yang dibatalkan tidak dapat dicek.'));
         }
 
-        if (! in_array($purchase->status, [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE], true)) {
-            throw new InvalidArgumentException(__('Pengecekan hanya untuk pembelian berstatus open atau release.'));
-        }
-
-        if (! $this->authorizationService->allowsCommit($purchase)) {
-            throw new InvalidArgumentException(__('Pengecekan pembelian dibuka setelah pembelian diotorisasi.'));
+        if ($purchase->status !== Purchase::STATUS_ACTIVE) {
+            throw new InvalidArgumentException(__('Pengecekan hanya untuk pembelian yang sudah di-release.'));
         }
     }
 
@@ -334,7 +324,7 @@ class PurchaseReceivingService
         }
 
         $query = Purchase::query()
-            ->whereIn('status', [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE])
+            ->where('status', Purchase::STATUS_ACTIVE)
             ->where(function ($inner) {
                 $inner->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
                     ->orWhereNull('jenis_pembelian')
@@ -354,9 +344,8 @@ class PurchaseReceivingService
             }
         }
 
-        $purchases = $query->with(['details.product.category', 'details.units', 'payments'])->get();
-        $this->authorizationService->warmPhases($purchases);
-        $count = $purchases
+        $count = $query->with(['details.product.category', 'details.units', 'payments'])
+            ->get()
             ->filter(fn (Purchase $p) => $this->isEligibleForCheck($p) && $this->purchaseNeedsCheck($p))
             ->count();
         request()->attributes->set($key, $count);

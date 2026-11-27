@@ -88,20 +88,9 @@ class Purchase extends Model
      */
     public function canBeEdited(): bool
     {
-        if ($this->isCancelled() || $this->status === self::STATUS_OPEN) {
-            return false;
-        }
-        if ($this->isDistribusiUnit()) {
-            return false;
-        }
-        if ($this->stock_mutation_id) {
-            return false;
-        }
-        if ((float) $this->total_paid > 0.02) {
-            return false;
-        }
-
-        return true;
+        // Item pembelian tidak diubah lewat form edit setelah create.
+        // Setelah release, hanya penambahan pembayaran yang diizinkan.
+        return false;
     }
 
     public function isPaidOff(): bool

@@ -165,7 +165,7 @@
             </div>
         </div>
         @else
-        <p class="mb-4 text-sm text-slate-600">{{ __('Daftar pembelian unit berstatus open/release yang sudah diotorisasi dan masih memiliki barang belum dicek.') }}</p>
+        <p class="mb-4 text-sm text-slate-600">{{ __('Daftar pembelian unit yang sudah di-release dan masih memiliki barang belum dicek.') }}</p>
         <div class="card-modern overflow-hidden">
             <div class="p-6 overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">

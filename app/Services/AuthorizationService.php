@@ -268,7 +268,8 @@ class AuthorizationService
     }
 
     /**
-     * Syarat bisnis sebelum Release: lunas; service sudah diambil; sewa sudah dikembalikan.
+     * Syarat bisnis sebelum Release: penjualan/distribusi lunas; service diambil; sewa dikembalikan.
+     * Pembelian boleh di-release meskipun belum lunas.
      */
     public function assertReadyForRelease(Model $model): void
     {
@@ -277,10 +278,7 @@ class AuthorizationService
                 $model->isPaidOff(),
                 __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.')
             ),
-            $model instanceof Purchase => $this->assertDocumentPaidOff(
-                $model->isPaidOffAgainstInvoice(),
-                __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di form edit.')
-            ),
+            $model instanceof Purchase => null,
             $model instanceof Distribution => $this->assertDocumentPaidOff(
                 $model->isPaidOff(),
                 __('Transaksi harus lunas sebelum release. Lengkapi pembayaran di halaman tambah pembayaran.')
@@ -492,15 +490,24 @@ class AuthorizationService
         }
 
         $notes = $notes !== null ? trim($notes) : '';
-        $request->update([
-            'status' => AuthorizationRequest::STATUS_APPROVED,
-            'decided_by' => $user->id,
-            'decided_at' => now(),
-            'notes' => $notes !== '' ? mb_substr($notes, 0, 500) : null,
-        ]);
-        if ($request->subject) {
-            unset(self::$phaseCache[$request->subject::class.'#'.$request->subject->getKey()]);
-        }
+
+        DB::transaction(function () use ($request, $user, $notes) {
+            $request->update([
+                'status' => AuthorizationRequest::STATUS_APPROVED,
+                'decided_by' => $user->id,
+                'decided_at' => now(),
+                'notes' => $notes !== '' ? mb_substr($notes, 0, 500) : null,
+            ]);
+
+            $subject = $request->subject;
+            // Pembelian: otorisasi disetujui → langsung release (boleh belum lunas).
+            if ($subject instanceof Purchase && $subject->status === Purchase::STATUS_OPEN) {
+                unset(self::$phaseCache[$subject::class.'#'.$subject->getKey()]);
+                app(PurchaseService::class)->releasePurchase($subject, (int) $user->id);
+            } elseif ($subject) {
+                unset(self::$phaseCache[$subject::class.'#'.$subject->getKey()]);
+            }
+        });
     }
 
     public function reject(AuthorizationRequest $request, User $user, string $notes): void

@@ -121,7 +121,7 @@ class StockMutationController extends Controller
             abort(403, __('User branch or warehouse not set.'));
         }
 
-        $applyFilters = function ($query, bool $isDistribution = true) use ($user, $request, $accessConstraint) {
+        $applyFilters = function ($query, bool $isDistribution = true, bool $withSearch = true) use ($user, $request, $accessConstraint) {
             if ($accessConstraint) {
                 $accessConstraint($query);
             }
@@ -145,8 +145,8 @@ class StockMutationController extends Controller
                     $query->where('product_id', $request->product_id);
                 }
             }
-            if ($request->filled('search')) {
-                $term = '%' . $request->search . '%';
+            if ($withSearch && $request->filled('search')) {
+                $term = '%'.$request->search.'%';
                 if ($isDistribution) {
                     $query->where(function ($q) use ($term) {
                         $q->where('invoice_number', 'like', $term)
@@ -196,12 +196,15 @@ class StockMutationController extends Controller
         $invoiceQuery = Distribution::with(['details.product', 'payments.paymentMethod', 'user', 'cancelUser'])
             ->orderByDesc('distribution_date')
             ->orderByDesc('id');
-        $applyFilters($invoiceQuery, true);
+        $applyFilters($invoiceQuery, true, true);
         $distributions = $invoiceQuery->paginate(20, ['*'], 'inv_page')->withQueryString();
 
         // === RIWAYAT TAB (per-product from distribution_details) ===
         $riwayatQuery = DistributionDetail::with(['distribution.user', 'distribution.cancelUser', 'product'])
-            ->whereHas('distribution')
+            ->whereHas('distribution', function ($q) use ($applyFilters) {
+                // Filter lokasi/status/tanggal tanpa search agar tidak bentrok dengan pencarian detail.
+                $applyFilters($q, true, false);
+            })
             ->orderByDesc(
                 Distribution::select('distribution_date')
                     ->whereColumn('distributions.id', 'distribution_details.distribution_id')
@@ -209,23 +212,19 @@ class StockMutationController extends Controller
             )
             ->orderByDesc('id');
 
-        if ($accessConstraint || $request->filled('location_type') || $request->filled('date_from') || $request->filled('date_to')) {
-            $riwayatQuery->whereHas('distribution', function ($q) use ($applyFilters) {
-                $applyFilters($q, true);
-            });
-        }
         if ($request->filled('product_id')) {
             $riwayatQuery->where('product_id', $request->product_id);
         }
         if ($request->filled('search')) {
-            $term = '%' . $request->search . '%';
+            $term = '%'.$request->search.'%';
             $riwayatQuery->where(function ($q) use ($term) {
                 $q->where('serial_numbers', 'like', $term)
                     ->orWhereHas('product', function ($q2) use ($term) {
                         $q2->where('sku', 'like', $term)
                             ->orWhere('brand', 'like', $term)
                             ->orWhere('series', 'like', $term);
-                    });
+                    })
+                    ->orWhereHas('distribution', fn ($q2) => $q2->where('invoice_number', 'like', $term));
             });
         }
         $riwayatDetails = $riwayatQuery->paginate(20, ['*'], 'page')->withQueryString();
