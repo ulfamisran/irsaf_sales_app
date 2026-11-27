@@ -68,7 +68,7 @@
                                 <div id="product-items-container" class="space-y-4"></div>
                             </div>
 
-                            {{-- Location To --}}
+                            {{-- Location To: semua cabang & gudang (kirim ke lokasi lain) --}}
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <x-input-label for="to_location_type" :value="__('Tipe Tujuan')" />
@@ -82,6 +82,7 @@
                                     <select id="to_location_id" name="to_location_id" class="block mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                         <option value="">{{ __('Pilih') }}</option>
                                     </select>
+                                    <p class="mt-1 text-xs text-slate-500">{{ __('Daftar semua cabang dan gudang untuk pengiriman ke lokasi lain.') }}</p>
                                     <x-input-error :messages="$errors->get('to_location_id')" class="mt-2" />
                                 </div>
                             </div>
@@ -143,6 +144,8 @@
     <script>
         const warehouses = @json($warehouses);
         const branches = @json($branches);
+        const destinationWarehouses = @json($destinationWarehouses ?? $warehouses);
+        const destinationBranches = @json($destinationBranches ?? $branches);
         const categories = @json($categories);
         const oldFromLocationId = @json(old('from_location_id'));
         const oldToLocationId = @json(old('to_location_id'));
@@ -169,7 +172,10 @@
         function updateLocationSelect(selectId, type) {
             const sel = document.getElementById(selectId);
             if (!sel || sel.tagName !== 'SELECT') return;
-            const opts = type === 'warehouse' ? warehouses : branches;
+            const isDestination = selectId === 'to_location_id';
+            const opts = type === 'warehouse'
+                ? (isDestination ? destinationWarehouses : warehouses)
+                : (isDestination ? destinationBranches : branches);
             sel.innerHTML = '<option value="">Pilih</option>' + opts.map(o => `<option value="${o.id}">${escHtml(o.name)}</option>`).join('');
         }
 

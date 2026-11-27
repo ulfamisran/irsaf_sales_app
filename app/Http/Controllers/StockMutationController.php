@@ -796,8 +796,12 @@ class StockMutationController extends Controller
 
         $locationOptions = \App\Services\LocationService::getLocationOptionsForUser($user);
         $categories = Category::orderBy('name')->get(['id', 'name']);
+        // Lokasi asal: sesuai akses user (bisa dikunci ke placement).
         $warehouses = $locationOptions['warehouses'];
         $branches = $locationOptions['branches'];
+        // Lokasi tujuan: semua cabang & gudang — distribusi mengirim ke lokasi lain.
+        $destinationWarehouses = Warehouse::query()->orderBy('name')->get(['id', 'name']);
+        $destinationBranches = Branch::query()->orderBy('name')->get(['id', 'name']);
 
         $lockFromLocation = false;
         $defaultFromLocationType = old('from_location_type');
@@ -834,6 +838,8 @@ class StockMutationController extends Controller
             'categories',
             'warehouses',
             'branches',
+            'destinationWarehouses',
+            'destinationBranches',
             'lockFromLocation',
             'defaultFromLocationType',
             'defaultFromLocationId',
