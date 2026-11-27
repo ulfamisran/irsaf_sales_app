@@ -231,6 +231,12 @@ Route::middleware(['auth', 'module.access', 'public.ip'])->group(function () {
     Route::get('stock-mutations', [StockMutationController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-mutations.index');
+    Route::get('stock-mutations/export', [StockMutationController::class, 'export'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.export');
+    Route::get('stock-mutations/export-pdf', [StockMutationController::class, 'exportPdf'])
+        ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
+        ->name('stock-mutations.export-pdf');
     Route::get('stock-units', [StockUnitController::class, 'index'])
         ->middleware('role:admin_cabang,admin_gudang,super_admin,admin_pusat')
         ->name('stock-units.index');

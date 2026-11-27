@@ -22,12 +22,17 @@ use App\Models\Warehouse;
 use App\Services\PurchaseService;
 use App\Services\StockMutationService;
 use App\Services\TransactionProofService;
+use App\Support\DocumentStatusPresenter;
+use App\Support\ExcelExporter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StockMutationController extends Controller
 {
@@ -284,6 +289,277 @@ class StockMutationController extends Controller
             'locationLabel',
             'canCancelDistribution'
         ));
+    }
+
+    public function export(Request $request): StreamedResponse
+    {
+        $payload = $this->buildDistributionsExportPayload($request);
+        $filename = 'rekap-distribusi-'.now()->format('Ymd-His').'.xlsx';
+        $html = view('stock-mutations.export', $payload)->render();
+
+        return ExcelExporter::downloadFromHtml($html, $filename, 'generic');
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $payload = $this->buildDistributionsExportPayload($request);
+        $pdf = Pdf::loadView('stock-mutations.export-pdf', $payload)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download('rekap-distribusi-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    /**
+     * @return array{
+     *     distributions: Collection<int, Distribution>,
+     *     warehousesById: Collection<int|string, string>,
+     *     branchesById: Collection<int|string, string>,
+     *     filterMeta: array<string, string>,
+     *     count: int,
+     *     totalAmount: float,
+     *     totalPaid: float,
+     *     totalUnpaid: float
+     * }
+     */
+    private function buildDistributionsExportPayload(Request $request): array
+    {
+        $user = $request->user();
+
+        $filterLocked = false;
+        $locationLabel = null;
+        $accessConstraint = null;
+
+        if ($user->hasUnrestrictedLocationAccess()) {
+            // no default constraint
+        } elseif ($user->isAdminPusat()) {
+            $branchIds = $user->accessibleBranchIds();
+            $warehouseIds = $user->accessibleWarehouseIds();
+            if ($branchIds === [] && $warehouseIds === []) {
+                abort(403, __('Admin Pusat belum didaftarkan ke cabang/gudang mana pun.'));
+            }
+            $accessConstraint = function ($q) use ($branchIds, $warehouseIds) {
+                $q->where(function ($q2) use ($branchIds, $warehouseIds) {
+                    if ($branchIds !== []) {
+                        $q2->orWhere(function ($q3) use ($branchIds) {
+                            $q3->where(function ($q4) use ($branchIds) {
+                                $q4->where('from_location_type', Stock::LOCATION_BRANCH)->whereIn('from_location_id', $branchIds);
+                            })->orWhere(function ($q4) use ($branchIds) {
+                                $q4->where('to_location_type', Stock::LOCATION_BRANCH)->whereIn('to_location_id', $branchIds);
+                            });
+                        });
+                    }
+                    if ($warehouseIds !== []) {
+                        $q2->orWhere(function ($q3) use ($warehouseIds) {
+                            $q3->where(function ($q4) use ($warehouseIds) {
+                                $q4->where('from_location_type', Stock::LOCATION_WAREHOUSE)->whereIn('from_location_id', $warehouseIds);
+                            })->orWhere(function ($q4) use ($warehouseIds) {
+                                $q4->where('to_location_type', Stock::LOCATION_WAREHOUSE)->whereIn('to_location_id', $warehouseIds);
+                            });
+                        });
+                    }
+                });
+            };
+            $filterLocked = (count($branchIds) + count($warehouseIds)) <= 1;
+            if ($filterLocked) {
+                if (count($branchIds) === 1) {
+                    $bid = (int) $branchIds[0];
+                    $locationLabel = __('Cabang').': '.(Branch::find($bid)?->name ?? '#'.$bid);
+                } elseif (count($warehouseIds) === 1) {
+                    $wid = (int) $warehouseIds[0];
+                    $locationLabel = __('Gudang').': '.(Warehouse::find($wid)?->name ?? '#'.$wid);
+                }
+            }
+        } elseif ($user->warehouse_id) {
+            $warehouseId = (int) $user->warehouse_id;
+            $accessConstraint = function ($q) use ($warehouseId) {
+                $q->where(function ($q2) use ($warehouseId) {
+                    $q2->where(function ($q3) use ($warehouseId) {
+                        $q3->where('from_location_type', Stock::LOCATION_WAREHOUSE)->where('from_location_id', $warehouseId);
+                    })->orWhere(function ($q3) use ($warehouseId) {
+                        $q3->where('to_location_type', Stock::LOCATION_WAREHOUSE)->where('to_location_id', $warehouseId);
+                    });
+                });
+            };
+            $filterLocked = true;
+            $locationLabel = __('Gudang').': '.(Warehouse::find($warehouseId)?->name ?? '#'.$warehouseId);
+        } elseif ($user->branch_id) {
+            $branchId = (int) $user->branch_id;
+            $accessConstraint = function ($q) use ($branchId) {
+                $q->where(function ($q2) use ($branchId) {
+                    $q2->where(function ($q3) use ($branchId) {
+                        $q3->where('from_location_type', Stock::LOCATION_BRANCH)->where('from_location_id', $branchId);
+                    })->orWhere(function ($q3) use ($branchId) {
+                        $q3->where('to_location_type', Stock::LOCATION_BRANCH)->where('to_location_id', $branchId);
+                    });
+                });
+            };
+            $filterLocked = true;
+            $locationLabel = __('Cabang').': '.(Branch::find($branchId)?->name ?? '#'.$branchId);
+        } else {
+            abort(403, __('User branch or warehouse not set.'));
+        }
+
+        $query = Distribution::with(['details.product', 'payments.paymentMethod', 'user', 'cancelUser'])
+            ->orderByDesc('distribution_date')
+            ->orderByDesc('id');
+
+        if ($accessConstraint) {
+            $accessConstraint($query);
+        }
+
+        if ($user->isSuperAdminOrAdminPusat() && $request->filled('location_type') && $request->filled('location_id')) {
+            $locType = (string) $request->location_type;
+            $locId = (int) $request->location_id;
+            if (in_array($locType, [Stock::LOCATION_WAREHOUSE, Stock::LOCATION_BRANCH], true) && $locId > 0) {
+                $query->where(function ($q) use ($locType, $locId) {
+                    $q->where(function ($q2) use ($locType, $locId) {
+                        $q2->where('from_location_type', $locType)->where('from_location_id', $locId);
+                    })->orWhere(function ($q2) use ($locType, $locId) {
+                        $q2->where('to_location_type', $locType)->where('to_location_id', $locId);
+                    });
+                });
+            }
+        }
+        if ($request->filled('product_id')) {
+            $query->whereHas('details', fn ($q) => $q->where('product_id', $request->product_id));
+        }
+        if ($request->filled('search')) {
+            $term = '%'.$request->search.'%';
+            $query->where(function ($q) use ($term) {
+                $q->where('invoice_number', 'like', $term)
+                    ->orWhereHas('details.product', function ($q2) use ($term) {
+                        $q2->where('sku', 'like', $term)
+                            ->orWhere('brand', 'like', $term)
+                            ->orWhere('series', 'like', $term);
+                    })
+                    ->orWhereHas('details', fn ($q2) => $q2->where('serial_numbers', 'like', $term));
+            });
+        }
+        if ($request->filled('status')) {
+            $status = (string) $request->status;
+            if (in_array($status, [Distribution::STATUS_OPEN, Distribution::STATUS_ACTIVE, Distribution::STATUS_CANCELLED], true)) {
+                $query->where('status', $status);
+            } elseif ($status === 'paid_off') {
+                $query->where('status', '!=', Distribution::STATUS_CANCELLED)
+                    ->where(function ($q) {
+                        $q->where('total', '<=', 0)
+                            ->orWhereRaw('total_paid >= (total - 0.02)');
+                    });
+            } elseif ($status === 'unpaid') {
+                $query->where('status', '!=', Distribution::STATUS_CANCELLED)
+                    ->where('total', '>', 0)
+                    ->whereRaw('total_paid < (total - 0.02)');
+            }
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('distribution_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('distribution_date', '<=', $request->date_to);
+        }
+
+        /** @var Collection<int, Distribution> $distributions */
+        $distributions = $query->get();
+
+        $warehouseIds = $distributions->flatMap(function (Distribution $d) {
+            $ids = [];
+            if ($d->from_location_type === Stock::LOCATION_WAREHOUSE) {
+                $ids[] = (int) $d->from_location_id;
+            }
+            if ($d->to_location_type === Stock::LOCATION_WAREHOUSE) {
+                $ids[] = (int) $d->to_location_id;
+            }
+
+            return $ids;
+        })->filter()->unique()->values();
+
+        $branchIds = $distributions->flatMap(function (Distribution $d) {
+            $ids = [];
+            if ($d->from_location_type === Stock::LOCATION_BRANCH) {
+                $ids[] = (int) $d->from_location_id;
+            }
+            if ($d->to_location_type === Stock::LOCATION_BRANCH) {
+                $ids[] = (int) $d->to_location_id;
+            }
+
+            return $ids;
+        })->filter()->unique()->values();
+
+        $warehousesById = $warehouseIds->isNotEmpty()
+            ? Warehouse::whereIn('id', $warehouseIds)->pluck('name', 'id')
+            : collect();
+        $branchesById = $branchIds->isNotEmpty()
+            ? Branch::whereIn('id', $branchIds)->pluck('name', 'id')
+            : collect();
+
+        $canFilterLocation = $user->isSuperAdminOrAdminPusat();
+        $filterMeta = $this->distributionsExportFilterMeta($request, $canFilterLocation, $filterLocked, $locationLabel);
+
+        $active = $distributions->filter(fn (Distribution $d) => ! $d->isCancelled());
+        $totalAmount = (float) $active->sum('total');
+        $totalPaid = (float) $active->sum('total_paid');
+        $totalUnpaid = (float) $active
+            ->filter(fn (Distribution $d) => (float) $d->total > 0 && ! $d->isPaidOff())
+            ->sum(fn (Distribution $d) => max(0, (float) $d->total - (float) $d->total_paid));
+
+        return [
+            'distributions' => $distributions,
+            'warehousesById' => $warehousesById,
+            'branchesById' => $branchesById,
+            'filterMeta' => $filterMeta,
+            'count' => $distributions->count(),
+            'totalAmount' => $totalAmount,
+            'totalPaid' => $totalPaid,
+            'totalUnpaid' => $totalUnpaid,
+        ];
+    }
+
+    /**
+     * @return array{dateFrom: string, dateTo: string, locationLine: string, productLine: string, statusLine: string, searchLine: string}
+     */
+    private function distributionsExportFilterMeta(
+        Request $request,
+        bool $canFilterLocation,
+        bool $filterLocked,
+        ?string $locationLabel
+    ): array {
+        $locationLine = $locationLabel ?? __('Semua');
+        if ($canFilterLocation && ! $filterLocked) {
+            $lt = $request->get('location_type');
+            $lid = $request->get('location_id');
+            if ($lt === Stock::LOCATION_WAREHOUSE && $lid) {
+                $locationLine = __('Gudang').': '.(Warehouse::find($lid)?->name ?? '#'.$lid);
+            } elseif ($lt === Stock::LOCATION_BRANCH && $lid) {
+                $locationLine = __('Cabang').': '.(Branch::find($lid)?->name ?? '#'.$lid);
+            } elseif ($lt === Stock::LOCATION_WAREHOUSE) {
+                $locationLine = __('Semua Gudang');
+            } elseif ($lt === Stock::LOCATION_BRANCH) {
+                $locationLine = __('Semua Cabang');
+            } else {
+                $locationLine = __('Semua');
+            }
+        }
+
+        $productLine = __('Semua');
+        if ($request->filled('product_id')) {
+            $product = Product::find($request->product_id);
+            $productLine = $product
+                ? trim(($product->sku ?? '').' - '.($product->brand ?? ''), ' -')
+                : '#'.$request->product_id;
+        }
+
+        $statusOptions = collect(DocumentStatusPresenter::filterOptions('stock-mutations', true))
+            ->pluck('label', 'value');
+        $statusLine = $statusOptions[(string) $request->get('status', '')] ?? __('Semua');
+
+        return [
+            'dateFrom' => $request->get('date_from') ?: '-',
+            'dateTo' => $request->get('date_to') ?: '-',
+            'locationLine' => $locationLine,
+            'productLine' => $productLine,
+            'statusLine' => $statusLine,
+            'searchLine' => $request->filled('search') ? (string) $request->search : '-',
+        ];
     }
 
     public function show(Distribution $distribution): View
