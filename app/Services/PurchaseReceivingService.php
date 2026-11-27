@@ -18,8 +18,41 @@ use InvalidArgumentException;
 class PurchaseReceivingService
 {
     public function __construct(
-        protected StockMutationService $stockMutationService
+        protected StockMutationService $stockMutationService,
+        protected AuthorizationService $authorizationService
     ) {}
+
+    /**
+     * Pengecekan untuk pembelian unit berstatus open/release yang sudah otorisasi
+     * (atau tidak membutuhkan otorisasi).
+     */
+    public function isEligibleForCheck(Purchase $purchase): bool
+    {
+        if ($purchase->isCancelled()) {
+            return false;
+        }
+
+        if (! in_array($purchase->status, [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE], true)) {
+            return false;
+        }
+
+        return $this->authorizationService->allowsCommit($purchase);
+    }
+
+    public function assertEligibleForCheck(Purchase $purchase): void
+    {
+        if ($purchase->isCancelled()) {
+            throw new InvalidArgumentException(__('Pembelian yang dibatalkan tidak dapat dicek.'));
+        }
+
+        if (! in_array($purchase->status, [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE], true)) {
+            throw new InvalidArgumentException(__('Pengecekan hanya untuk pembelian berstatus open atau release.'));
+        }
+
+        if (! $this->authorizationService->allowsCommit($purchase)) {
+            throw new InvalidArgumentException(__('Pengecekan pembelian dibuka setelah pembelian diotorisasi.'));
+        }
+    }
 
     /**
      * @return array{
@@ -301,7 +334,7 @@ class PurchaseReceivingService
         }
 
         $query = Purchase::query()
-            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->whereIn('status', [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE])
             ->where(function ($inner) {
                 $inner->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
                     ->orWhereNull('jenis_pembelian')
@@ -321,9 +354,10 @@ class PurchaseReceivingService
             }
         }
 
-        $count = $query->with(['details.product.category', 'details.units', 'payments'])
-            ->get()
-            ->filter(fn (Purchase $p) => $this->purchaseNeedsCheck($p))
+        $purchases = $query->with(['details.product.category', 'details.units', 'payments'])->get();
+        $this->authorizationService->warmPhases($purchases);
+        $count = $purchases
+            ->filter(fn (Purchase $p) => $this->isEligibleForCheck($p) && $this->purchaseNeedsCheck($p))
             ->count();
         request()->attributes->set($key, $count);
 
@@ -336,9 +370,7 @@ class PurchaseReceivingService
      */
     public function applyCheck(Purchase $purchase, array $unitResults, array $qtyResults, int $userId): void
     {
-        if ($purchase->isCancelled()) {
-            throw new InvalidArgumentException(__('Pembelian yang dibatalkan tidak dapat dicek.'));
-        }
+        $this->assertEligibleForCheck($purchase);
 
         DB::transaction(function () use ($purchase, $unitResults, $qtyResults, $userId) {
             $now = Carbon::now();

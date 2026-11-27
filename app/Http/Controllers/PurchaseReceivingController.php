@@ -48,7 +48,7 @@ class PurchaseReceivingController extends Controller
         }
 
         $query = Purchase::with(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments'])
-            ->where('status', '!=', Purchase::STATUS_CANCELLED)
+            ->whereIn('status', [Purchase::STATUS_OPEN, Purchase::STATUS_ACTIVE])
             ->where(function ($q) {
                 $q->where('jenis_pembelian', Purchase::JENIS_PEMBELIAN_UNIT)
                     ->orWhereNull('jenis_pembelian')
@@ -61,12 +61,16 @@ class PurchaseReceivingController extends Controller
         // Prefilter kasar di SQL, lalu pastikan hanya yang needs_check=true (sumber kebenaran UI).
         $this->receivingService->constrainNeedingCheck($query);
 
-        $rows = $query->get()->map(function (Purchase $p) {
+        $purchases = $query->get();
+        app(\App\Services\AuthorizationService::class)->warmPhases($purchases);
+
+        $rows = $purchases->map(function (Purchase $p) {
             return (object) [
                 'purchase' => $p,
                 'summary' => $this->receivingService->summarize($p),
             ];
-        })->filter(fn ($row) => (bool) ($row->summary['needs_check'] ?? false))->values();
+        })->filter(fn ($row) => $this->receivingService->isEligibleForCheck($row->purchase)
+            && (bool) ($row->summary['needs_check'] ?? false))->values();
 
         $page = max(1, (int) $request->get('page', 1));
         $perPage = 20;
@@ -152,8 +156,10 @@ class PurchaseReceivingController extends Controller
     public function show(Request $request, Purchase $purchase): View
     {
         $this->authorizePurchaseAccess($request, $purchase);
-        if ($purchase->status === \App\Models\Purchase::STATUS_OPEN) {
-            abort(403, __('Pengecekan pembelian dibuka setelah pembelian di-release.'));
+        try {
+            $this->receivingService->assertEligibleForCheck($purchase);
+        } catch (InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
         }
         $purchase->load(['distributor', 'warehouse', 'branch', 'details.product.category', 'details.units', 'payments']);
 
